@@ -94,7 +94,7 @@ class GridStrategy:
             self.logger.info(f"📊 Nenhuma ordem existente - criando novo grid...")
             self.active_grid = self.calculator.calculate_grid_levels(current_price)
 
-            # 🆕  Atualizar tracker com saldo inicial
+            # Atualizar tracker com saldo inicial
             if hasattr(self.position_mgr, 'account_balance') and self.position_mgr.account_balance > 0:
                 self.performance_tracker.update_balance(self.position_mgr.account_balance)
 
@@ -179,8 +179,15 @@ class GridStrategy:
             for order in open_orders:
                 if order.get('symbol') == self.symbol:
                     price = float(order.get('price', 0))
-                    side = order.get('side')
-                    existing_prices[f"{price}_{side}"] = order.get('order_id')
+                    raw_side = order.get('side')
+                    # NORMALIZAR side para 'buy'/'sell' para casar com as keys usadas abaixo
+                    if raw_side in ['bid', 'buy']:
+                        side_norm = 'buy'
+                    elif raw_side in ['ask', 'sell']:
+                        side_norm = 'sell'
+                    else:
+                        side_norm = str(raw_side)
+                    existing_prices[f"{price}_{side_norm}"] = order.get('order_id')
         
         # Ordens de compra
         for price in self.active_grid['buy_levels']:
@@ -220,9 +227,13 @@ class GridStrategy:
             # Verificar se pode colocar ordem
             can_place, reason = self.position_mgr.can_place_order(order_value)
             if not can_place:
-                self.logger.warning(f"⚠️ Não pode colocar ordem: {reason}")
-                return False
-            
+                if "Máximo de ordens atingido" in reason:
+                    self.logger.info(f"📊 {reason} - aguardando execução de ordens existentes")
+                    return False
+                else:  # ← ADICIONAR else AQUI
+                    self.logger.warning(f"⚠️ Não pode colocar ordem: {reason}")
+                    return False
+
             # Preparar ordem
             order_data = self.calculator.format_order_for_api(price, quantity, side, self.symbol)
             
@@ -242,16 +253,17 @@ class GridStrategy:
                 if 'data' in result and 'order_id' in result['data']:
                     order_id = result['data']['order_id']
                 
-                # Registrar ordem
-                self.placed_orders[price] = order_id
+                # Registrar ordem (usar preço normalizado como chave)
+                key = self._price_key(price)
+                self.placed_orders[key] = order_id
                 self.position_mgr.add_order(order_id, {
                     'price': price,
                     'quantity': quantity,
                     'side': side,
                     'symbol': self.symbol
                 })
-
-                # 🆕 Registrar no performance tracker
+                
+                # Registrar no performance tracker
                 grid_execution = GridExecution(
                     order_id=order_id,
                     symbol=self.symbol,
@@ -287,9 +299,8 @@ class GridStrategy:
                 self.pause_grid()
                 return
         
-        # 🆕 NEW: Verificar se precisa adicionar ordens faltantes
+        # Verificar se precisa adicionar ordens faltantes
         self.rebalance_grid_orders(current_price)
-        # 🆕 END NEW
         
         # Para Market Making - verificar se precisa deslocar grid
         if self.strategy_type == 'market_making':
@@ -298,36 +309,51 @@ class GridStrategy:
                 self.shift_grid(current_price)  # Função para deslocar (próximo passo)
     
     def check_filled_orders(self, current_price: float) -> None:
-        """Verifica ordens executadas e cria ordens opostas"""
+        """Verifica ordens executadas e cria ordens opostas COM CORREÇÃO"""
         
         try:
-            # 🔧 MODIFIED: Buscar TODAS as ordens abertas (sem filtro de símbolo)
-            # ANTES: open_orders = self.auth.get_open_orders(self.symbol)
-            # DEPOIS: buscar todas e filtrar depois
-            all_open_orders = self.auth.get_open_orders()  # SEM parâmetro symbol
-            # 🔧 END MODIFIED
+            # 🔧 CORREÇÃO: Buscar TODAS as ordens abertas e filtrar corretamente
+            all_open_orders = self.auth.get_open_orders()
             
             if all_open_orders is None:
                 self.logger.warning("⚠️ Não foi possível buscar ordens abertas")
                 return
             
-            # 🆕 NEW: Filtrar apenas ordens do nosso símbolo
+            # FILTRAR APENAS ORDENS PRINCIPAIS (não TP/SL)
             open_orders = []
+            tp_sl_orders = []
+            
             for order in all_open_orders:
-                if order.get('symbol') == self.symbol:
-                    open_orders.append(order)
+                symbol = order.get('symbol')
+                
+                if symbol == self.symbol:
+                    order_type = order.get('type', '')
+                    order_subtype = order.get('subType', '')
+                    order_label = order.get('label', '').lower()
+                    
+                    # Identificar ordens TP/SL
+                    if (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or 
+                        order_subtype in ['take_profit', 'stop_loss'] or
+                        'tp' in order_label or 'sl' in order_label):
+                        tp_sl_orders.append(order)
+                    else:
+                        open_orders.append(order)
             
-            self.logger.debug(f"📋 Total: {len(all_open_orders)} ordens | {self.symbol}: {len(open_orders)} ordens")
-            # 🆕 END NEW
+            # Log da classificação
+            total_symbol_orders = len([o for o in all_open_orders if o.get('symbol') == self.symbol])
+            main_count = len(open_orders)
+            tp_sl_count = len(tp_sl_orders)
             
-            # Criar set de IDs das ordens abertas DO NOSSO SÍMBOLO
+            self.logger.debug(f"📋 {self.symbol}: {total_symbol_orders} total | {main_count} principais | {tp_sl_count} TP/SL")
+            
+            # 🔧 USAR APENAS ORDENS PRINCIPAIS para detecção de fills
             open_order_ids = set()
             for order in open_orders:
                 order_id = order.get('order_id')
                 if order_id:
                     open_order_ids.add(str(order_id))
             
-            self.logger.debug(f"📋 {len(open_order_ids)} ordens abertas de {self.symbol}")
+            self.logger.debug(f"📋 {len(open_order_ids)} ordens principais abertas de {self.symbol}")
             
             # Verificar quais ordens foram executadas
             filled_orders = []
@@ -359,41 +385,10 @@ class GridStrategy:
             
             if filled_orders:
                 self.logger.info(f"✅ Processadas {len(filled_orders)} ordens executadas")
-
-                 # 🆕 NEW: Usar nova função de resumo
+                
+                # Atualizar resumo de posições
                 summary = self.position_mgr.get_active_positions_summary()
-                
                 self.logger.info(f"📊 Posições: {summary['total_longs']} longs, {summary['total_shorts']} shorts")
-                
-                # Log detalhado
-                if summary['longs']:
-                    for pos in summary['longs']:
-                        self.logger.debug(f"   Long {pos['symbol']}: {pos['quantity']:.6f} @ ${pos['avg_price']:.2f}")
-                
-                if summary['shorts']:
-                    for pos in summary['shorts']:
-                        self.logger.debug(f"   Short {pos['symbol']}: {pos['quantity']:.6f} @ ${pos['avg_price']:.2f}")
-                # 🆕 END NEW
-                
-               # 🔧 CORREÇÃO: Verificar estrutura real das posições
-                self.logger.debug(f"📊 Estrutura de posições: {self.position_mgr.positions}")
-            
-                # 🔧 MODIFIED: Corrigir contagem de posições
-                total_longs = 0
-                total_shorts = 0
-                
-                for symbol, pos_data in self.position_mgr.positions.items():
-                    qty = pos_data.get('quantity', 0)
-                    
-                    self.logger.debug(f"   {symbol}: quantity={qty}, data={pos_data}")
-                    
-                    if qty > 0:
-                        total_longs += 1
-                    elif qty < 0:
-                        total_shorts += 1
-                
-                self.logger.info(f"📊 Posições abertas: {total_longs} longs, {total_shorts} shorts")
-                # 🔧 END MODIFIED
             
         except Exception as e:
             self.logger.error(f"❌ Erro ao verificar fills: {e}")
@@ -401,7 +396,7 @@ class GridStrategy:
             self.logger.debug(traceback.format_exc())
 
     def rebalance_grid_orders(self, current_price: float) -> None:
-        """Rebalanceia o grid adicionando ordens faltantes"""
+        """Rebalanceia o grid adicionando ordens faltantes COM CORREÇÃO"""
         
         try:
             self.logger.info(f"🔄 Iniciando rebalanceamento do grid...")
@@ -412,42 +407,44 @@ class GridStrategy:
                 self.logger.warning("⚠️ Não foi possível buscar ordens para rebalanceamento")
                 return
             
-            # 🆕 DEBUG: Ver símbolos reais
-            symbols_found = set()
+            # FILTRAR APENAS ORDENS PRINCIPAIS
+            main_orders = []
+            
             for order in all_open_orders:
-                symbols_found.add(order.get('symbol', 'N/A'))
+                if order.get('symbol') == self.symbol:
+                    order_type = order.get('type', '')
+                    order_subtype = order.get('subType', '')
+                    order_label = order.get('label', '').lower()
+                    
+                    # Filtrar TP/SL
+                    if not (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or 
+                        order_subtype in ['take_profit', 'stop_loss'] or
+                        'tp' in order_label or 'sl' in order_label):
+                        main_orders.append(order)
             
-            self.logger.info(f"🔍 Símbolos encontrados na API: {symbols_found}")
-            self.logger.info(f"🔍 Procurando por símbolo: '{self.symbol}'")
-            # 🆕 END DEBUG
-            
-            # 2. Filtrar apenas ordens do nosso símbolo
-            open_orders = [o for o in all_open_orders if o.get('symbol') == self.symbol]
-            
-            # 3. Separar por tipo e coletar preços existentes
+            # 2. Separar por tipo e coletar preços existentes
             existing_buy_prices = set()
             existing_sell_prices = set()
             
-            for order in open_orders:
+            for order in main_orders:
                 price = float(order.get('price', 0))
                 side = order.get('side')
                 order_id = order.get('order_id')
                 
-                # 🔧 CORREÇÃO: Aceitar 'bid' OU 'buy'
+                # Aceitar tanto 'bid'/'buy' quanto 'ask'/'sell'
                 if side in ['buy', 'bid']:
                     existing_buy_prices.add(price)
                     if price not in self.placed_orders:
                         self.placed_orders[price] = order_id
-                # 🔧 CORREÇÃO: Aceitar 'ask' OU 'sell'
                 elif side in ['sell', 'ask']:
                     existing_sell_prices.add(price)
                     if price not in self.placed_orders:
                         self.placed_orders[price] = order_id
             
             total_existing = len(existing_buy_prices) + len(existing_sell_prices)
-            self.logger.info(f"📊 Ordens existentes: {len(existing_buy_prices)} buy, {len(existing_sell_prices)} sell (Total: {total_existing})")
+            self.logger.info(f"📊 Ordens PRINCIPAIS existentes: {len(existing_buy_prices)} buy, {len(existing_sell_prices)} sell (Total: {total_existing})")
             
-            # 🔧 CORREÇÃO: Calcular quantas ordens FALTAM para completar o grid original
+            # 3. Calcular quantas ordens FALTAM para completar o grid original
             total_grid_size = self.calculator.grid_levels
             target_per_side = total_grid_size // 2
             
@@ -469,7 +466,6 @@ class GridStrategy:
             if buy_needed > 0:
                 self.logger.info(f"➕ Criando {buy_needed} ordens BUY...")
                 
-                # 🔧 Calcular níveis BUY baseado no preço atual
                 buy_count = 0
                 level = 1
                 while buy_count < buy_needed:
@@ -483,8 +479,8 @@ class GridStrategy:
                         if self._place_single_order(price, 'buy'):
                             orders_created += 1
                             buy_count += 1
-                            existing_buy_prices.add(price)  # Adicionar para não duplicar
-                        time.sleep(0.3)  # Delay entre ordens
+                            existing_buy_prices.add(price)
+                        time.sleep(0.3)
                     
                     level += 1
                     
@@ -496,7 +492,6 @@ class GridStrategy:
             if sell_needed > 0:
                 self.logger.info(f"➕ Criando {sell_needed} ordens SELL...")
                 
-                # 🔧 Calcular níveis SELL baseado no preço atual
                 sell_count = 0
                 level = 1
                 while sell_count < sell_needed:
@@ -510,8 +505,8 @@ class GridStrategy:
                         if self._place_single_order(price, 'sell'):
                             orders_created += 1
                             sell_count += 1
-                            existing_sell_prices.add(price)  # Adicionar para não duplicar
-                        time.sleep(0.3)  # Delay entre ordens
+                            existing_sell_prices.add(price)
+                        time.sleep(0.3)
                     
                     level += 1
                     
@@ -544,43 +539,35 @@ class GridStrategy:
         # Lado oposto
         opposite_side = 'sell' if entry_side == 'buy' else 'buy'
         
-        # 🔧 MODIFIED: Log mais descritivo
-        # ANTES: self.logger.info(f"💰 Criando ordem de lucro: {opposite_side} @ ${target_price}")
         self.logger.info(f"📝 Criando ordem de LUCRO: {opposite_side.upper()} @ ${target_price}")
-        # 🔧 END MODIFIED
         
-        # 🆕 NEW: Verificar se já existe ordem nesse preço e cancelar
-        if target_price in self.placed_orders:
+        # Verificar se já existe ordem nesse preço e cancelar
+        key = self._price_key(target_price)
+        if key in self.placed_orders:
             self.logger.warning(f"⚠️ Já existe ordem em ${target_price} - cancelando antiga")
-            old_order_id = self.placed_orders[target_price]
+            old_order_id = self.placed_orders[key]
             self.auth.cancel_order(str(old_order_id))
-            del self.placed_orders[target_price]
+            del self.placed_orders[key]
             time.sleep(0.5)  # Aguardar cancelamento
-        # 🆕 END NEW
         
         # Criar nova ordem com mesma quantidade
         success = self._place_single_order(target_price, opposite_side, quantity)
         
         if success:
-            # 🔧 MODIFIED: Log mais informativo
-            # ANTES: self.logger.info(f"✅ Ordem de lucro colocada com sucesso")
+
             self.logger.info(f"✅ Ordem de lucro criada: {opposite_side.upper()} {quantity} @ ${target_price}")
-            # 🔧 END MODIFIED
             
-            # 🆕 NEW: Calcular e mostrar lucro esperado
+            # Calcular e mostrar lucro esperado
             if entry_side == 'buy':
                 expected_profit = (target_price - entry_price) * quantity
             else:
                 expected_profit = (entry_price - target_price) * quantity
             
             self.logger.info(f"💵 Lucro esperado: ${expected_profit:.2f}")
-            # 🆕 END NEW
+  
         else:
-            # 🔧 MODIFIED: Log de erro mais específico
-            # ANTES: self.logger.error(f"❌ Falha ao criar ordem de lucro")
             self.logger.error(f"❌ Falha ao criar ordem de lucro em ${target_price}")
-            # 🔧 END MODIFIED
- 
+
     def _check_price_in_range(self, price: float) -> bool:
         """Verifica se preço está dentro do range do Pure Grid"""
         
@@ -603,8 +590,18 @@ class GridStrategy:
         # Cancelar ordens antigas
         self.cancel_all_orders()
         
-        # Aguardar cancelamento
-        time.sleep(1)
+        # Aguardar processamento dos cancelamentos na exchange (poll curto)
+        timeout = 5.0
+        poll_interval = 0.5
+        elapsed = 0.0
+        while elapsed < timeout:
+            current_open = self.auth.get_open_orders(self.symbol)
+            if not current_open or len(current_open) == 0:
+                break
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+        if elapsed >= timeout:
+            self.logger.warning("⚠️ Timeout aguardando cancelamentos na exchange; prosseguindo...")
         
         # Recalcular grid
         self.active_grid = self.calculator.calculate_grid_levels(new_price)
@@ -644,11 +641,22 @@ class GridStrategy:
         
         for price, order_id in list(self.placed_orders.items()):
             try:
-                # Aqui você chamaria a API real para cancelar
-                # self.auth.cancel_order(order_id)
+                # Tentar cancelar na API e garantir remoção do estado local
+                try:
+                    result = self.auth.cancel_order(str(order_id))
+                    if result and isinstance(result, dict) and result.get('success'):
+                        self.logger.debug(f"✅ Ordem cancelada na API: {order_id}")
+                    else:
+                        self.logger.warning(f"⚠️ API cancel returned for {order_id}: {result}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Falha ao cancelar na API {order_id}: {e}")
                 
-                self.position_mgr.remove_order(order_id)
-                self.logger.debug(f"Ordem cancelada: {order_id}")
+                # Remover do position manager (caso esteja registrado)
+                removed = self.position_mgr.remove_order(str(order_id))
+                if removed:
+                    self.logger.debug(f"🔄 Ordem removida do position_mgr: {order_id}")
+                else:
+                    self.logger.debug(f"ℹ️ Ordem {order_id} não estava no position_mgr")
                 
             except Exception as e:
                 self.logger.error(f"Erro ao cancelar ordem {order_id}: {e}")
@@ -739,6 +747,36 @@ class GridStrategy:
         
         self.logger.info(summary + grid_info)
 
+    def get_grid_status_detailed(self) -> Dict:
+        """Retorna status detalhado do grid incluindo limitações"""
+        
+        try:
+            # Status básico
+            status = self.get_grid_status()
+            
+            # Verificar se está no limite
+            position_status = self.position_mgr.get_status_summary()
+            orders_count = position_status.get('open_orders_count', 0)
+            max_orders = position_status.get('max_orders', 20)
+            
+            # Calcular % de uso
+            usage_percent = (orders_count / max_orders) * 100 if max_orders > 0 else 0
+            
+            # Adicionar informações extras
+            status.update({
+                'orders_usage_percent': usage_percent,
+                'is_at_limit': usage_percent >= 95,
+                'can_create_new_orders': usage_percent < 90,
+                'pending_executions': orders_count > 0,
+                'grid_health': 'healthy' if usage_percent < 80 else 'near_limit' if usage_percent < 95 else 'at_limit'
+            })
+            
+            return status
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao obter status detalhado: {e}")
+            return self.get_grid_status()  # Fallback para status básico
+    
     def shift_grid(self, new_center_price: float) -> None:
         """Desloca o grid para um novo preço central (Market Making)"""
         
@@ -750,13 +788,21 @@ class GridStrategy:
             for price, order_id in list(self.placed_orders.items()):
                 try:
                     result = self.auth.cancel_order(str(order_id))
-                    if result and result.get('success'):
+                    if result and isinstance(result, dict) and result.get('success'):
                         cancelled_orders += 1
                         self.logger.debug(f"✅ Ordem cancelada: {order_id} @ ${price}")
                     else:
-                        self.logger.warning(f"⚠️ Falha ao cancelar ordem {order_id}")
+                        self.logger.warning(f"⚠️ Falha ao cancelar ordem {order_id} (API retornou: {result})")
                 except Exception as e:
                     self.logger.error(f"❌ Erro ao cancelar ordem {order_id}: {e}")
+                
+                # Garantir remoção do estado local também
+                try:
+                    removed = self.position_mgr.remove_order(str(order_id))
+                    if removed:
+                        self.logger.debug(f"🔄 Removida do position_mgr: {order_id}")
+                except Exception as e:
+                    self.logger.debug(f"⚠️ Falha ao remover do position_mgr {order_id}: {e}")
                 
                 time.sleep(0.2)  # Delay entre cancelamentos
             
@@ -785,3 +831,10 @@ class GridStrategy:
             self.logger.error(f"❌ Erro ao deslocar grid: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())
+
+    def _price_key(self, price: float) -> float:
+        """Retorna preço normalizado (usado como chave em placed_orders)"""
+        try:
+            return float(self.calculator.round_price(price))
+        except Exception:
+            return float(round(price, 8))

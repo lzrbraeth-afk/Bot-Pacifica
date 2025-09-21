@@ -3,6 +3,7 @@ Position Manager - Gerenciamento de posições, margem e risco
 """
 
 import os
+import time
 import logging
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
@@ -29,12 +30,12 @@ class PositionManager:
         self.logger.info(f"PositionManager inicializado - Safety: {self.margin_safety_percent}%, Max Position: ${self.max_position_size}")
     
     def update_account_state(self) -> bool:
-        """Atualiza estado da conta (saldo, margem, posições)"""
+        """Atualiza estado da conta (saldo, margem, posições) COM CORREÇÃO"""
         
         try:
             self.logger.info("🔄 Atualizando estado da conta...")
             
-            # Chamar API real
+            # 1. Obter dados da conta
             account_data = self.auth.get_account_info()
             
             if account_data and 'data' in account_data:
@@ -55,6 +56,9 @@ class PositionManager:
                 self.logger.info(f"💰 Margem Disponível: ${self.margin_available:.2f}")
                 self.logger.info(f"📊 Posições: {positions_count} | Ordens: {orders_count}")
                 
+                # Atualizar contadores internos baseado no estado real da API
+                self._sync_internal_state_with_api()
+                
                 return True
             else:
                 self.logger.error("❌ Falha ao obter dados da conta")
@@ -65,6 +69,167 @@ class PositionManager:
             import traceback
             self.logger.error(traceback.format_exc())
             return False
+    
+    def _sync_internal_state_with_api(self):
+        """ Sincroniza estado interno com API real"""
+        
+        try:
+            # Obter ordens abertas REAIS da API
+            real_open_orders = self.auth.get_open_orders()
+            
+            if real_open_orders is None:
+                self.logger.warning("⚠️ Não foi possível obter ordens da API para sincronização")
+                return
+            
+            # 🔧 FILTRAR APENAS ORDENS PRINCIPAIS (não TP/SL)
+            main_orders = []
+            tp_sl_orders = []
+            
+            for order in real_open_orders:
+                order_type = order.get('type', '')
+                order_subtype = order.get('subType', '')
+                
+                # Identificar ordens TP/SL pelos campos específicos
+                if (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or 
+                    order_subtype in ['take_profit', 'stop_loss'] or
+                    'tp' in order.get('label', '').lower() or
+                    'sl' in order.get('label', '').lower()):
+                    tp_sl_orders.append(order)
+                else:
+                    main_orders.append(order)
+            
+            # Atualizar contadores SOMENTE com ordens principais
+            self.open_orders.clear()
+            
+            for order in main_orders:
+                order_id = order.get('order_id', str(order.get('id', '')))
+                
+                self.open_orders[order_id] = {
+                    'price': float(order.get('price', 0)),
+                    'quantity': float(order.get('quantity', 0)),
+                    'side': order.get('side', ''),
+                    'symbol': order.get('symbol', ''),
+                    'timestamp': datetime.now().isoformat(),
+                    'margin': 0,  # Será calculado se necessário
+                    'value': 0    # Será calculado se necessário
+                }
+            
+            # Log da sincronização
+            total_api_orders = len(real_open_orders)
+            main_count = len(main_orders)
+            tp_sl_count = len(tp_sl_orders)
+            
+            self.logger.info(f"🔄 Sincronização concluída:")
+            self.logger.info(f"   Total API: {total_api_orders} ordens")
+            self.logger.info(f"   Principais: {main_count} ordens")
+            self.logger.info(f"   TP/SL: {tp_sl_count} ordens")
+            self.logger.info(f"   Contadas para limite: {main_count}")
+            
+            # Atualizar margem se necessário
+            self._recalculate_margin_from_orders()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro na sincronização: {e}")
+
+    def _recalculate_margin_from_orders(self):
+        """ Recalcula margem baseado nas ordens principais atuais"""
+        
+        total_margin = 0
+        
+        for order_data in self.open_orders.values():
+            price = order_data.get('price', 0)
+            quantity = order_data.get('quantity', 0)
+            
+            if price > 0 and quantity > 0:
+                order_value = price * quantity
+                margin = order_value / self.leverage
+                total_margin += margin
+                
+                # Atualizar dados da ordem
+                order_data['value'] = order_value
+                order_data['margin'] = margin
+        
+        # Atualizar margem usada
+        self.margin_used = total_margin
+        self.margin_available = self.account_balance - self.margin_used
+        
+        self.logger.debug(f"💰 Margem recalculada: ${total_margin:.2f}")
+
+    def can_place_order(self, order_value: float) -> Tuple[bool, str]:
+        """Verifica se pode colocar uma nova ordem COM CORREÇÃO"""
+        
+        #  Sincronizar com API antes da verificação
+        if hasattr(self, '_last_sync_time'):
+            time_since_sync = time.time() - self._last_sync_time
+            if time_since_sync > 30:  # Re-sincronizar a cada 30 segundos
+                self._sync_internal_state_with_api()
+        else:
+            self._sync_internal_state_with_api()
+        
+        self._last_sync_time = time.time()
+        
+        # Calcular margem necessária
+        margin_needed = order_value / self.leverage
+        
+        # Verificar margem disponível
+        if margin_needed > self.margin_available:
+            return False, f"Margem insuficiente: precisa ${margin_needed:.2f}, disponível ${self.margin_available:.2f}"
+        
+        # 🔧 SEGUNDA CORREÇÃO: Contar APENAS ordens principais
+        main_orders_count = len(self.open_orders)  # Agora já filtrado na sincronização
+        
+        # Verificar número máximo de ordens
+        if main_orders_count >= self.max_open_orders:
+            return False, f"Máximo de ordens atingido: {main_orders_count}/{self.max_open_orders}"
+
+        # Verificar posição máxima
+        total_exposure = sum(o.get('value', 0) for o in self.open_orders.values()) + order_value
+        if total_exposure > self.max_position_size:
+            return False, f"Exposição máxima excedida: ${total_exposure:.2f} > ${self.max_position_size}"
+        
+        return True, "OK"
+
+    def add_order(self, order_id: str, order_data: Dict) -> None:
+        """Adiciona ordem ao tracking COM VERIFICAÇÃO"""
+        
+        # 🔧 CORREÇÃO: Verificar se não é ordem TP/SL
+        order_type = order_data.get('type', '')
+        if order_type in ['TAKE_PROFIT', 'STOP_LOSS']:
+            self.logger.debug(f"🎯 Ordem TP/SL {order_id} não contada para limite")
+            return  # Não adicionar ao tracking de ordens principais
+        
+        self.open_orders[order_id] = {
+            **order_data,
+            'timestamp': datetime.now().isoformat(),
+            'margin': (order_data['price'] * order_data['quantity']) / self.leverage,
+            'value': order_data['price'] * order_data['quantity']
+        }
+        
+        self.logger.info(f"📝 Ordem principal adicionada: {order_id} - {order_data['side']} {order_data['quantity']} @ ${order_data['price']}")
+        
+        # Atualizar margem
+        self.margin_used += self.open_orders[order_id]['margin']
+        self.margin_available = self.account_balance - self.margin_used
+        
+        # Log do status atual
+        self.logger.info(f"📊 Ordens principais ativas: {len(self.open_orders)}/{self.max_open_orders}")
+
+    def get_status_summary(self) -> Dict:
+        """Retorna resumo do status atual COM CORREÇÃO"""
+        
+        # 🔧 CORREÇÃO: Mostrar contagem correta
+        main_orders_count = len(self.open_orders)  # Só ordens principais
+        
+        return {
+            'account_balance': self.account_balance,
+            'margin_used': self.margin_used,
+            'margin_available': self.margin_available,
+            'margin_percent': (self.margin_available / self.account_balance * 100) if self.account_balance > 0 else 0,
+            'open_orders_count': main_orders_count,  # 🔧 CORRIGIDO
+            'max_orders': self.max_open_orders,
+            'positions': self.positions,
+            'total_exposure': sum(o.get('value', 0) for o in self.open_orders.values())
+        }
     
     def get_current_balance(self) -> float:
         """Retorna saldo atual da conta"""
@@ -97,43 +262,6 @@ class PositionManager:
             return False, warning
         
         return True, f"Margem OK: {margin_percent:.1f}%"
-    
-    def can_place_order(self, order_value: float) -> Tuple[bool, str]:
-        """Verifica se pode colocar uma nova ordem"""
-        
-        # Calcular margem necessária
-        margin_needed = order_value / self.leverage
-        
-        # Verificar margem disponível
-        if margin_needed > self.margin_available:
-            return False, f"Margem insuficiente: precisa ${margin_needed:.2f}, disponível ${self.margin_available:.2f}"
-        
-        # Verificar número máximo de ordens
-        if len(self.open_orders) >= self.max_open_orders:
-            return False, f"Máximo de ordens atingido: {len(self.open_orders)}/{self.max_open_orders}"
-        
-        # Verificar posição máxima
-        total_exposure = sum(o.get('value', 0) for o in self.open_orders.values()) + order_value
-        if total_exposure > self.max_position_size:
-            return False, f"Exposição máxima excedida: ${total_exposure:.2f} > ${self.max_position_size}"
-        
-        return True, "OK"
-    
-    def add_order(self, order_id: str, order_data: Dict) -> None:
-        """Adiciona ordem ao tracking"""
-        
-        self.open_orders[order_id] = {
-            **order_data,
-            'timestamp': datetime.now().isoformat(),
-            'margin': (order_data['price'] * order_data['quantity']) / self.leverage,
-            'value': order_data['price'] * order_data['quantity']
-        }
-        
-        self.logger.info(f"📝 Ordem adicionada: {order_id} - {order_data['side']} {order_data['quantity']} @ ${order_data['price']}")
-        
-        # Atualizar margem
-        self.margin_used += self.open_orders[order_id]['margin']
-        self.margin_available = self.account_balance - self.margin_used
     
     def remove_order(self, order_id: str) -> Optional[Dict]:
         """Remove ordem do tracking (executada ou cancelada)"""
@@ -268,7 +396,7 @@ class PositionManager:
             # Aqui você chamaria a API para cancelar de fato
             # self.auth.cancel_order(order_id)
 
-    # 🆕 NEW: Função completamente nova para estatísticas
+    # Função completamente nova para estatísticas
     def get_trade_summary(self) -> Dict:
         """Retorna resumo dos trades realizados"""
         
@@ -297,20 +425,6 @@ class PositionManager:
             'losing_trades': losing_trades,
             'win_rate': win_rate,
             'total_pnl': total_pnl
-        }
-    # 🆕 END NEW
-    
-    def get_status_summary(self) -> Dict:
-        """Retorna resumo do status atual"""
-        
-        return {
-            'account_balance': self.account_balance,
-            'margin_used': self.margin_used,
-            'margin_available': self.margin_available,
-            'margin_percent': (self.margin_available / self.account_balance * 100) if self.account_balance > 0 else 0,
-            'open_orders_count': len(self.open_orders),
-            'positions': self.positions,
-            'total_exposure': sum(o.get('value', 0) for o in self.open_orders.values())
         }
     
     def should_stop_trading(self) -> Tuple[bool, str]:

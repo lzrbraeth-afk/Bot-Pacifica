@@ -125,7 +125,7 @@ class GridTradingBot:
             if open_orders:
                 self.logger.info(f"🚫 Cancelando {len(open_orders)} ordens antigas...")
                 
-                for order in open_orders:
+                for order in main_orders:
                     order_id = order.get('order_id')
                     if order_id:
                         self.auth.cancel_order(str(order_id))
@@ -259,8 +259,12 @@ class GridTradingBot:
                 # Rebalancear grid se necessário
                 if current_time - last_rebalance >= self.rebalance_interval:
                     self.logger.info(f"🔄 Verificando rebalanceamento em ${current_price:,.2f}")
-                    self.strategy.check_and_rebalance(current_price)  
-                    last_rebalance = current_time   
+                    try:
+                        self.strategy.check_and_rebalance(current_price)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Erro no rebalanceamento: {e}")
+                        # Não para o bot - apenas continua
+                    last_rebalance = current_time 
                         
                 # Status periódico
                 if iteration % 60 == 0:  # 🔧 A cada 60 iterações (1 minuto)
