@@ -56,6 +56,16 @@ class GridStrategy:
                 
                 # Carregar ordens existentes no tracking
                 for order in existing_orders:
+                    # Filtrar TP/SL para não carregá-las como ordens do grid
+                    order_type = order.get('type', '')
+                    order_subtype = order.get('subType', '')
+                    order_label = str(order.get('label', '')).lower()
+                    if (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or
+                        order_subtype in ['take_profit', 'stop_loss'] or
+                        'tp' in order_label or 'sl' in order_label):
+                        self.logger.debug(f"🔕 Pulando ordem TP/SL: {order.get('order_id')} @ {order.get('price')}")
+                        continue
+
                     order_id = order.get('order_id')
                     price = float(order.get('price', 0))
                     side = order.get('side')
@@ -67,17 +77,14 @@ class GridStrategy:
                     elif side == 'ask':
                         side = 'sell'
 
-                    # Adicionar ao tracking
+                    # Adicionar ao tracking principal (apenas ordens do grid)
                     self.placed_orders[price] = order_id
-                    
-                    # Adicionar ao position manager
                     self.position_mgr.add_order(order_id, {
                         'price': price,
                         'quantity': quantity,
                         'side': side,
                         'symbol': self.symbol
                     })
-                    
                     self.logger.debug(f"  📌 Carregada: {side} @ ${price} (ID: {order_id})")
                 
                 # Reconstruir grid baseado nas ordens existentes

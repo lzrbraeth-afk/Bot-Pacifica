@@ -134,11 +134,14 @@ Parâmetros essenciais:
 
 ```ini
 # API / Segurança
-PRIVATE_KEY=SEU_PRIVKEY_WALLET
+PRIVATE_KEY=SEU_PRIVATE_KEY_WALLET # Aqui vocë vai inserir a chave privada da sua carteira.
 WALLET_ADDRESS=COLOQUE_SUA_SOL_WALLET_ADDRESS
 REST_URL=https://api.pacifica.fi/api/v1
 WS_URL=wss://ws.pacifica.fi/ws
 
+ Recomendavel, para sua segurança usar uma carteira com fundos somente para esta corretora, pois será colocado no arquivo .env a chave privada da carteira. Esta chave não é exposta na conexão com a API, mas ela fica armazenada em um arquivo no computador. Proteja-o igual protege suas chaves privadas! 
+
+ Se ainda não adota segurança em seu computador como criptografia do disco, antivirus eficiente, plugins de proteção para a carteira, pense em fazer isto para a sua proteção futura, não somente sobre este bot, mas sobre sua segurança on chain.
 
 # Ativo e alavancagem
 SYMBOL=BTC
