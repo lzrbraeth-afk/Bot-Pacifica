@@ -104,13 +104,21 @@ class GridStrategy:
             self.placed_orders.clear()
 
             # Colocar ordens iniciais
+            # Durante a inicialização precisamos permitir que _place_single_order
+            # execute mesmo com grid_active inicialmente False. Definimos o
+            # grid_active temporariamente para True para permitir a criação
+            # das ordens iniciais; se falhar, reverteremos para False.
+            self.logger.debug("🔧 Temporariamente ativando grid para criação de ordens iniciais")
+            self.grid_active = True
             success = self._place_grid_orders()
-            
-            if success:  # 🔧 Esta condição estava causando o problema
-                self.grid_active = True
+
+            if success:
+                # grid_active já está True
                 self.logger.info(f"✅ Grid ativo com {len(self.placed_orders)} ordens")
                 return True  # ✅ Retorna True para continuar
             else:
+                # Reverter para estado inativo se falhou
+                self.grid_active = False
                 self.logger.error(f"❌ Falha ao criar ordens do grid")
                 return False  # ❌ Retorna False para encerrar
             
