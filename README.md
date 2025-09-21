@@ -30,12 +30,58 @@ performance_tracker.py # Métricas e relatórios
 ## 🚀 Instalação
 
 ### 1) Pré-requisitos
-- Python 3.10+ (recomendado 3.12) - Instalar a partir de https://www.python.org/downloads/
+- Python 3.10+ (recomendado 3.12) 
+
+a. Baixe o instalador no [site oficial](https://www.python.org/downloads/).
+
+b. Durante a instalação na primeira tela, selecione todas as opções
+
+![Tela 1 - Selecionar componentes](docs/images/Setup_Python_01.png)
+
+c. Na próxima tela, marque **Add Python to PATH**:
+
+![Tela 2 - Add Python to PATH](docs/images/Setup_Python_02.png)
+Anote o caminho informado em customize install location ou altere para um caminho mais facil como c:\python3
+
+d. Next, Next, Next até o final
+
+e. Testar a instalação do python. Abra o Prompt de Comando e digite:
+
+python --version
+pip --version
+
+Se aparecer a versão está ok ✅
+
+* se não mostrar a versão é porque o PATH ainda não está ativado e precisa de um reboot. Se quiser testar sem o reboot, digite o comando com o caminho completo (exemplo c:\python3\python)
+
 - `git` instalado
 
+a. Baixe em git-scm.com/download/win
+
+b. Execute o instalador → Next, Next, Next até o final, só confira estas opções:
+
+    Git from the command line and also from 3rd-party software (adiciona o Git ao PATH).
+
+    Enable Git Credential Manager (facilita login no GitHub, pode deixar marcado).
+
+    O resto pode deixar padrão.
+
+c. Teste no terminal:
+
+git --version
+
+Se aparecer a versão está ok ✅
+
 ### 2) Clonar o repositório
+
+Entre na pasta onde vai fazer o download dos arquivos do bot, como exemplo crie uma pasta dentro do C: chamada Bot e entre nela c:\bot.
+
+cd\
+mkdir Bot
+cd Bot
+
 ```bash
-git clone https://github.com/SEU_USUARIO/pacifica-grid-bot.git
+git clone https://github.com/lzrbraeth-afk/pacifica-grid-bot.git
 cd pacifica-grid-bot
 ```
 
@@ -65,6 +111,22 @@ cp .env.example .env   # no Windows use: copy .env.example .env
 ```
 
 Edite **PRIVATE_KEY**, **SYMBOL**, **WALLET_ADDRESS** e demais parâmetros conforme sua preferência (ver seção Configuração).
+
+## ▶️ Como executar
+
+Iniciar o bot:
+
+```bash
+python grid_bot.py
+```
+
+Primeiro teste (checar API/credenciais):
+
+```bash
+python pacifica_auth.py      # testa credenciais/conexão
+```
+Para encerrar com segurança: `Ctrl + C` (o bot finaliza e imprime um resumo).
+
 
 ## ⚙️ Configuração (.env)
 
@@ -113,20 +175,6 @@ LOG_LEVEL=INFO
 ```
 
 > **Dica**: Comece conservador (menos níveis, maior espaçamento, ordem menor) e aumente aos poucos.
-
-## ▶️ Como executar
-
-```bash
-python grid_bot.py
-```
-
-Primeira execução:
-```bash
-python pacifica_auth.py      # testa credenciais/conexão
-python grid_bot.py | tee -a bot_output.log   # roda com log espelhado
-```
-
-Para encerrar com segurança: `Ctrl + C` (o bot finaliza e imprime um resumo).
 
 ## 📊 Métricas e logs
 
