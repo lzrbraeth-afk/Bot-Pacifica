@@ -470,36 +470,6 @@ class PerformanceTracker:
             self.logger.warning(f"⚠️ Erro ao carregar dados históricos: {e}")
     
     def export_trades_csv(self, filename: Optional[str] = None) -> str:
-        """Exporta trades para CSV"""
-        if filename is None:
-            filename = f"trades_{self.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        
-        import csv
-        
-        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['id', 'symbol', 'side', 'entry_price', 'exit_price', 
-                         'quantity', 'entry_time', 'exit_time', 'pnl', 'commission', 
-                         'grid_level', 'duration_minutes', 'return_percent']
-            
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for trade in self.trades:
-                writer.writerow({
-                    'id': trade.id,
-                    'symbol': trade.symbol,
-                    'side': trade.side,
-                    'entry_price': trade.entry_price,
-                    'exit_price': trade.exit_price,
-                    'quantity': trade.quantity,
-                    'entry_time': trade.entry_time.isoformat(),
-                    'exit_time': trade.exit_time.isoformat(),
-                    'pnl': trade.pnl,
-                    'commission': trade.commission,
-                    'grid_level': trade.grid_level,
-                    'duration_minutes': trade.duration_seconds / 60,
-                    'return_percent': trade.return_percent
-                })
-        
-        self.logger.info(f"📄 Trades exportados para {filename}")
-        return filename
+        """Export de CSV desativado pelo usuário — função mantida como no-op para compatibilidade."""
+        self.logger.info("📄 Export de CSV de trades está desativado (removido conforme solicitado).")
+        return ""

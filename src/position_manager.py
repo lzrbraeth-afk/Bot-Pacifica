@@ -214,6 +214,30 @@ class PositionManager:
         # Log do status atual
         self.logger.info(f"📊 Ordens principais ativas: {len(self.open_orders)}/{self.max_open_orders}")
 
+    """ Funcao usada para ordens scalping - estrategia diferente 
+   
+    def can_open_new_positions(self) -> Tuple[bool, str]:
+        #Verifica se é seguro abrir novas posições (sem parar o bot)
+        
+        # Margem baixa para novas posições (< 15%)
+        if self.account_balance > 0:
+            margin_percent = (self.margin_available / self.account_balance) * 100
+            if margin_percent < 15:
+                return False, f"⚠️ ⚠️ Margem baixa: {margin_percent:.1f}% < 15.0%"
+        
+        # Saldo zero ou negativo
+        if self.account_balance <= 0:
+            return False, "⛔ SALDO ZERADO"
+        
+        # Perda total > 30% (menor que o critério de parada)
+        total_pnl = sum(p.get('realized_pnl', 0) for p in self.positions.values())
+        if total_pnl < -(self.account_balance * 0.3):
+            return False, f"⚠️ PERDA ALTA: ${total_pnl:.2f}"
+        
+        return True, "OK""
+
+        """
+
     def get_status_summary(self) -> Dict:
         """Retorna resumo do status atual COM CORREÇÃO"""
         
