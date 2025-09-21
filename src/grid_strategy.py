@@ -738,3 +738,50 @@ class GridStrategy:
     """
         
         self.logger.info(summary + grid_info)
+
+    def shift_grid(self, new_center_price: float) -> None:
+        """Desloca o grid para um novo preço central (Market Making)"""
+        
+        try:
+            self.logger.info(f"🔄 Iniciando deslocamento do grid para ${new_center_price}")
+            
+            # 1. Cancelar ordens existentes
+            cancelled_orders = 0
+            for price, order_id in list(self.placed_orders.items()):
+                try:
+                    result = self.auth.cancel_order(str(order_id))
+                    if result and result.get('success'):
+                        cancelled_orders += 1
+                        self.logger.debug(f"✅ Ordem cancelada: {order_id} @ ${price}")
+                    else:
+                        self.logger.warning(f"⚠️ Falha ao cancelar ordem {order_id}")
+                except Exception as e:
+                    self.logger.error(f"❌ Erro ao cancelar ordem {order_id}: {e}")
+                
+                time.sleep(0.2)  # Delay entre cancelamentos
+            
+            self.logger.info(f"🚫 {cancelled_orders} ordens canceladas")
+            
+            # 2. Limpar tracking de ordens
+            self.placed_orders.clear()
+            
+            # 3. Aguardar processamento dos cancelamentos
+            time.sleep(1.0)
+            
+            # 4. Recalcular grid com novo centro
+            self.active_grid = self.calculator.calculate_grid_levels(new_center_price)
+            self.grid_center = new_center_price
+            
+            # 5. Colocar novas ordens
+            success = self._place_grid_orders()
+            
+            if success:
+                self.logger.info(f"✅ Grid deslocado com sucesso para ${new_center_price}")
+                self.logger.info(f"📊 Novas ordens: {len(self.placed_orders)} total")
+            else:
+                self.logger.error(f"❌ Falha ao colocar ordens do novo grid")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao deslocar grid: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
