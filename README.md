@@ -30,7 +30,7 @@ performance_tracker.py # Métricas e relatórios
 ## 🚀 Instalação
 
 ### 1) Pré-requisitos
-- Python 3.10+ (recomendado 3.12)
+- Python 3.10+ (recomendado 3.12) - Instalar a partir de https://www.python.org/downloads/
 - `git` instalado
 
 ### 2) Clonar o repositório
@@ -56,8 +56,6 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> Se você já tiver um arquivo `requirements.tx`, renomeie para `requirements.txt` antes do comando acima.
-
 ### 4) Configuração (.env)
 
 Copie o arquivo de exemplo e edite os valores:
@@ -66,7 +64,7 @@ Copie o arquivo de exemplo e edite os valores:
 cp .env.example .env   # no Windows use: copy .env.example .env
 ```
 
-Edite **PRIVATE_KEY**, **SYMBOL** e demais parâmetros conforme sua preferência (ver seção Configuração).
+Edite **PRIVATE_KEY**, **SYMBOL**, **WALLET_ADDRESS** e demais parâmetros conforme sua preferência (ver seção Configuração).
 
 ## ⚙️ Configuração (.env)
 
