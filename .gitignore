@@ -23,3 +23,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Arquivos renomeados
+*_old.*
