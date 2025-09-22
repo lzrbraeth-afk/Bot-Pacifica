@@ -179,49 +179,69 @@ class GridStrategy:
         
         orders_placed = 0
         
-        # Buscar ordens abertas primeiro
-        open_orders = self.auth.get_open_orders(self.symbol)
+        # ===== Guard: não criar mais do que o total configurado (GRID_LEVELS) =====
+        total_grid_size = getattr(self.calculator, 'grid_levels', None) or int(os.getenv('GRID_LEVELS', '10'))
         
-        # Criar set com preços que já têm ordens (SEMPRE inicializar)
-        existing_prices = {}  # 🔧 SEMPRE criar o dicionário
-        
-        if open_orders:  # Só preencher se houver ordens
+        # Buscar ordens abertas da API e contar apenas ordens "principais" (filtrando TP/SL)
+        open_orders = self.auth.get_open_orders(self.symbol) or []
+        api_main_count = 0
+        existing_prices = {}  # inicializar aqui (usado abaixo)
+        if open_orders:
             for order in open_orders:
-                if order.get('symbol') == self.symbol:
+                if order.get('symbol') != self.symbol:
+                    continue
+                # filtrar TP/SL
+                order_type = order.get('type', '')
+                order_subtype = order.get('subType', '')
+                order_label = str(order.get('label', '')).lower()
+                if (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or
+                    order_subtype in ['take_profit', 'stop_loss'] or
+                    'tp' in order_label or 'sl' in order_label):
+                    continue
+
+                api_main_count += 1
+
+                # Também preencher mapa de preços existentes (normalizado)
+                try:
                     price = float(order.get('price', 0))
                     raw_side = order.get('side')
-                    # NORMALIZAR side para 'buy'/'sell' para casar com as keys usadas abaixo
                     if raw_side in ['bid', 'buy']:
                         side_norm = 'buy'
                     elif raw_side in ['ask', 'sell']:
                         side_norm = 'sell'
                     else:
                         side_norm = str(raw_side)
-
-                    # 🔧 NORMALIZAR PREÇO para o mesmo formato usado em placed_orders
                     price_key = self._price_key(price)
                     existing_prices[f"{price_key}_{side_norm}"] = order.get('order_id')
+                except Exception:
+                    continue
+        
+        if api_main_count >= int(total_grid_size):
+            self.logger.warning(f"⚠️ Já existem {api_main_count}/{total_grid_size} ordens principais na exchange - pulando criação de novas ordens")
+            return False
+        # ===== end guard =====
         
         # Ordens de compra
-        for price in self.active_grid['buy_levels']:
+        for price in self.active_grid.get('buy_levels', []):
             price_key = self._price_key(price)
             key = f"{price_key}_buy"
             # Verificar se já existe ordem nesse preço
-            if key not in existing_prices:
+            if key not in existing_prices and price_key not in self.placed_orders:
                 if self._place_single_order(price_key, 'buy'):
                     orders_placed += 1
             else:
-                self.logger.warning(f"⏭️ Pulando ordem buy em ${price_key} - já existe (ID: {existing_prices[key]})")
+                # detalhe: preferir debug para não poluir muito o log
+                self.logger.debug(f"⏭️ Pulando ordem buy em ${price_key} - já existe (ID: {existing_prices.get(key) or self.placed_orders.get(price_key)})")
         
         # Ordens de venda
-        for price in self.active_grid['sell_levels']:
+        for price in self.active_grid.get('sell_levels', []):
             price_key = self._price_key(price)
             key = f"{price_key}_sell"
-            if key not in existing_prices:
+            if key not in existing_prices and price_key not in self.placed_orders:
                 if self._place_single_order(price_key, 'sell'):
                     orders_placed += 1
             else:
-                self.logger.warning(f"⏭️ Pulando ordem sell em ${price_key} - já existe (ID: {existing_prices[key]})")
+                self.logger.debug(f"⏭️ Pulando ordem sell em ${price_key} - já existe (ID: {existing_prices.get(key) or self.placed_orders.get(price_key)})")
 
         self.logger.info(f"📊 {orders_placed} novas ordens colocadas no grid")
         return orders_placed > 0
@@ -238,7 +258,7 @@ class GridStrategy:
                 quantity = self.calculator.calculate_quantity(price)
             
             order_value = price * quantity
-            
+            self.logger.info(f"Ordem de teste: {price} - {quantity} - {order_value}")
             # Verificar se pode colocar ordem
             can_place, reason = self.position_mgr.can_place_order(order_value)
             if not can_place:
