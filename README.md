@@ -205,4 +205,4 @@ Veja [CONTRIBUTING](CONTRIBUTING.md) e [SECURITY](SECURITY.md).
 
 ---
 
-> Feito para a comunidade Pacifica. Pull Requests são bem-vindos!
+> Feito para a comunidade Coleta Cripto (https://x.com/Coleta_Cripto). Pull Requests são bem-vindos!
