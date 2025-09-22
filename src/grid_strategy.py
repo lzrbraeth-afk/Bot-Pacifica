@@ -77,8 +77,11 @@ class GridStrategy:
                     elif side == 'ask':
                         side = 'sell'
 
+                    # 🔧 NORMALIZAR CHAVE DE PREÇO (usar sempre _price_key)
+                    price_key = self._price_key(price)
+
                     # Adicionar ao tracking principal (apenas ordens do grid)
-                    self.placed_orders[price] = order_id
+                    self.placed_orders[price_key] = order_id
                     self.position_mgr.add_order(order_id, {
                         'price': price,
                         'quantity': quantity,
@@ -194,26 +197,31 @@ class GridStrategy:
                         side_norm = 'sell'
                     else:
                         side_norm = str(raw_side)
-                    existing_prices[f"{price}_{side_norm}"] = order.get('order_id')
+
+                    # 🔧 NORMALIZAR PREÇO para o mesmo formato usado em placed_orders
+                    price_key = self._price_key(price)
+                    existing_prices[f"{price_key}_{side_norm}"] = order.get('order_id')
         
         # Ordens de compra
         for price in self.active_grid['buy_levels']:
-            key = f"{price}_buy"
+            price_key = self._price_key(price)
+            key = f"{price_key}_buy"
             # Verificar se já existe ordem nesse preço
             if key not in existing_prices:
-                if self._place_single_order(price, 'buy'):
+                if self._place_single_order(price_key, 'buy'):
                     orders_placed += 1
             else:
-                self.logger.warning(f"⏭️ Pulando ordem buy em ${price} - já existe (ID: {existing_prices[key]})")
+                self.logger.warning(f"⏭️ Pulando ordem buy em ${price_key} - já existe (ID: {existing_prices[key]})")
         
         # Ordens de venda
         for price in self.active_grid['sell_levels']:
-            key = f"{price}_sell"
+            price_key = self._price_key(price)
+            key = f"{price_key}_sell"
             if key not in existing_prices:
-                if self._place_single_order(price, 'sell'):
+                if self._place_single_order(price_key, 'sell'):
                     orders_placed += 1
             else:
-                self.logger.warning(f"⏭️ Pulando ordem sell em ${price} - já existe (ID: {existing_prices[key]})")
+                self.logger.warning(f"⏭️ Pulando ordem sell em ${price_key} - já existe (ID: {existing_prices[key]})")
 
         self.logger.info(f"📊 {orders_placed} novas ordens colocadas no grid")
         return orders_placed > 0
@@ -440,13 +448,16 @@ class GridStrategy:
                 
                 # Aceitar tanto 'bid'/'buy' quanto 'ask'/'sell'
                 if side in ['buy', 'bid']:
-                    existing_buy_prices.add(price)
-                    if price not in self.placed_orders:
-                        self.placed_orders[price] = order_id
+                    price_key = self._price_key(price)
+                    existing_buy_prices.add(price_key)
+                    # normalizar também placed_orders tracking
+                    if price_key not in self.placed_orders:
+                        self.placed_orders[price_key] = order_id
                 elif side in ['sell', 'ask']:
-                    existing_sell_prices.add(price)
-                    if price not in self.placed_orders:
-                        self.placed_orders[price] = order_id
+                    price_key = self._price_key(price)
+                    existing_sell_prices.add(price_key)
+                    if price_key not in self.placed_orders:
+                        self.placed_orders[price_key] = order_id
             
             total_existing = len(existing_buy_prices) + len(existing_sell_prices)
             self.logger.info(f"📊 Ordens PRINCIPAIS existentes: {len(existing_buy_prices)} buy, {len(existing_sell_prices)} sell (Total: {total_existing})")
@@ -665,6 +676,9 @@ class GridStrategy:
                 else:
                     self.logger.debug(f"ℹ️ Ordem {order_id} não estava no position_mgr")
                 
+                # Remover qualquer referência em placed_orders (por segurança)
+                self._remove_placed_by_order_id(order_id)
+                
             except Exception as e:
                 self.logger.error(f"Erro ao cancelar ordem {order_id}: {e}")
         
@@ -845,3 +859,13 @@ class GridStrategy:
             return float(self.calculator.round_price(price))
         except Exception:
             return float(round(price, 8))
+
+    def _remove_placed_by_order_id(self, order_id: str) -> None:
+        """Utility to remove any placed_orders entry that references order_id"""
+        for p, oid in list(self.placed_orders.items()):
+            if str(oid) == str(order_id):
+                try:
+                    del self.placed_orders[p]
+                    self.logger.debug(f"🔄 Removido placed_orders entry {p} -> {order_id}")
+                except KeyError:
+                    pass
