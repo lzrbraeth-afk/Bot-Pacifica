@@ -31,37 +31,38 @@ performance_tracker.py # Métricas e relatórios
 ## 🚀 Instalação
 
 ### 1) Pré-requisitos
-- Python 3.10+ (recomendado 3.12) 
+a. Python 3.10+ (recomendado 3.12) 
 
-a. Baixe o instalador no [site oficial](https://www.python.org/downloads/).
+. Baixe o instalador no [site oficial](https://www.python.org/downloads/).
 
-b. Durante a instalação na primeira tela, selecione todas as opções
+. Durante a instalação na primeira tela, selecione todas as opções
 
 ![Tela 1 - Selecionar componentes](docs/images/Setup_Python_01.png)
 
-c. Na próxima tela, marque **Add Python to PATH**:
+. Na próxima tela, marque **Add Python to PATH**:
 
 ![Tela 2 - Add Python to PATH](docs/images/Setup_Python_02.png)
 
 Anote o caminho informado em customize install location ou altere para um caminho mais facil como c:\python3
 
-d. Next, Next, Next até o final
+. Next, Next, Next até o final
 
-e. Testar a instalação do python. Abra o Prompt de Comando e digite:
+. Testar a instalação do python. Abra o Prompt de Comando, Powershell ou Terminal e digite:
 
-python --version
-pip --version
+```
+  python --version
+  pip --version
+```
 
 Se aparecer a versão está ok ✅
 
-* se não mostrar a versão é porque o PATH ainda não está ativado e precisa de um reboot.
-  Se quiser testar sem o reboot, digite o comando com o caminho completo (exemplo c:\python3\python)
+* se não mostrar a versão é porque o PATH ainda não está ativado e precisa de um reboot. Se quiser testar sem o reboot, digite o comando com o caminho completo (exemplo c:\python3\python.exe --version)
 
-- `git` instalado
+b `git` instalado (opcional)
 
-a. Baixe em git-scm.com/download/win
+. Baixe em git-scm.com/download/win
 
-b. Execute o instalador → Next, Next, Next até o final, só confira estas opções:
+. Execute o instalador → Next, Next, Next até o final, só confira estas opções:
 
     Git from the command line and also from 3rd-party software (adiciona o Git ao PATH).
 
@@ -69,13 +70,15 @@ b. Execute o instalador → Next, Next, Next até o final, só confira estas op�
 
     O resto pode deixar padrão.
 
-c. Teste no terminal:
+c. Teste no Prompt, Powershell ou Terminal:
 
+```
 git --version
+```
 
 Se aparecer a versão está ok ✅
 
-### 2) Clonar o repositório
+### 2) Clonar o repositório (necessário git) ou fazer download
 
 Opção 1) Entrar no repositório, clicar em Code e selecionar a opção download ZIP. Extraia o arquivo ZIP em uma pasta que será usada para a execução do Bot (anote o caminho desta pasta). 
 
@@ -108,7 +111,7 @@ pip install -r requirements.txt
 
 ### 4) Gerar chave API na corretora
 
-na corretora entre na página API KEY (https://app.pacifica.fi/apikey), clique em generate e copie o codigo que vai surgir e cole no campo AGENT_PRIVATE_KEY_B58 do arquivo .env (etapa descrita abaixo). Por enquanto pode só copiar esta chave e depois clicar em create para que a chave seja aprovada com sua carteira. Depois de autorizado pode seguir para o próximo passo. 
+Na corretora entre na página API KEY (https://app.pacifica.fi/apikey), clique em generate e copie o codigo que vai surgir e cole no campo AGENT_PRIVATE_KEY_B58 do arquivo .env (etapa descrita abaixo). Por enquanto pode só copiar esta chave e depois clicar em create para que a chave seja aprovada com sua carteira. Depois de autorizado pode seguir para o próximo passo. 
 
 ### 5) Configuração (.env)
 
