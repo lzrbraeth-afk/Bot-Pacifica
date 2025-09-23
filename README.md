@@ -42,6 +42,7 @@ b. Durante a instalação na primeira tela, selecione todas as opções
 c. Na próxima tela, marque **Add Python to PATH**:
 
 ![Tela 2 - Add Python to PATH](docs/images/Setup_Python_02.png)
+
 Anote o caminho informado em customize install location ou altere para um caminho mais facil como c:\python3
 
 d. Next, Next, Next até o final
@@ -76,11 +77,9 @@ Se aparecer a versão está ok ✅
 
 ### 2) Clonar o repositório
 
-Entre na pasta onde vai fazer o download dos arquivos do bot, como exemplo crie uma pasta dentro do C: chamada Bot e entre nela c:\bot.
+Opção 1) Entrar no repositório, clicar em Code e selecionar a opção download ZIP. Extraia o arquivo ZIP em uma pasta que será usada para a execução do Bot (anote o caminho desta pasta). 
 
-cd\
-mkdir Bot
-cd Bot
+Opção 2) Crie manualmente uma pasta e entre no powershell ou terminal e caminhe até a pasta. Depois execute: 
 
 ```bash
 git clone https://github.com/lzrbraeth-afk/pacifica-grid-bot.git
@@ -88,15 +87,18 @@ cd pacifica-grid-bot
 ```
 
 ### 3) Ambiente virtual
-**Windows (PowerShell):**
-```powershell
+
+Abra o powershell ou terminal, navegue até a pasta onde está o bot e confirme que os arquivos estão aparecendo. Na lista tem que aparecer principalmente grid_bot.py, .env.example e a pasta src.
+
+Digite um comando de cada vez no **Windows (PowerShell) ou Terminal:**
+```
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Linux/macOS:**
+Ou se estiver usando **Linux/macOS:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -104,29 +106,28 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4) Configuração (.env)
+### 4) Gerar chave API na corretora
 
-Copie o arquivo de exemplo e edite os valores:
+na corretora entre na página API KEY (https://app.pacifica.fi/apikey), clique em generate e copie o codigo que vai surgir e cole no campo AGENT_PRIVATE_KEY_B58 do arquivo .env (etapa descrita abaixo). Por enquanto pode só copiar esta chave e depois clicar em create para que a chave seja aprovada com sua carteira. Depois de autorizado pode seguir para o próximo passo. 
 
-```bash
-cp .env.example .env   # no Windows use: copy .env.example .env
-```
+### 5) Configuração (.env)
 
-Edite **MAIN_PUBLIC_KEY**, **SYMBOL**, **AGENT_PRIVATE_KEY_B58** e demais parâmetros conforme sua preferência (ver seção Configuração).
+Renomeie o arquivo de exemplo e edite os valores. A melhor forma de fazer isto é ir no windows explorer e renomear o arquivo de .env.example para .env
+
+Lembre-se de manter o nome com o ponto no inicio. Depois abra o arquivo e edite-o no notepad ou qualquer outro editor de texto.
+
+Edite **MAIN_PUBLIC_KEY** e **AGENT_PRIVATE_KEY_B58** e demais parâmetros conforme sua preferência (ver seção Configuração).
+
+No campo MAIN_PUBLIC_KEY você inclui o endereço publico da sua carteira usada na corretora e no campo AGENT_PRIVATE_KEY_B58 vai colar a chave API que vai ser gerada na corretora, conforme orientação anterior. 
 
 ## ▶️ Como executar
 
-Iniciar o bot:
+Na raiz da pasta do bot, a mesma que tem o arquivo .env, digite o comando: 
 
 ```bash
 python grid_bot.py
 ```
 
-Primeiro teste (checar API/credenciais):
-
-```bash
-python pacifica_auth.py      # testa credenciais/conexão
-```
 Para encerrar com segurança: `Ctrl + C` (o bot finaliza e imprime um resumo).
 
 
@@ -176,6 +177,10 @@ LOG_LEVEL=INFO
 ```
 
 > **Dica**: Comece conservador (menos níveis, maior espaçamento, ordem menor) e aumente aos poucos.
+
+## Video com passo a passo para instalar o BOT, depois de instalado o PYTHON 
+
+<https://www.youtube.com/watch?v=cKypCQwXctc>
 
 ## 📊 Métricas e logs
 
