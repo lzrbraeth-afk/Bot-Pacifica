@@ -9,9 +9,12 @@ Inclui gerenciamento de risco, métricas de performance e logs detalhados.
 
 ## ✨ Principais recursos
 
-- Estratégias: **Pure Grid** e **Market Making Grid**
+- Estratégias: **Pure Grid**, **Market Making Grid** e **Multi-Asset**
 - Rebalanceamento automático e deslocamento de grid por limiar
+- **Multi-Asset Trading** com gerenciamento individual de risco por símbolo
 - Gestão de margem, limite de ordens e tamanho máximo de posição
+- **Sistema AUTO_CLOSE** com estratégia híbrida para proteção automática de risco
+- **Loss Management** especializado para cenários de alta volatilidade
 - Logs estruturados (arquivo e console) e *shutdown* gracioso
 - **PerformanceTracker** com métricas como *win rate*, *drawdown*, *Sharpe/Sortino*, *profit factor*
 - Arquivo `.env` com configuração declarativa
@@ -142,41 +145,52 @@ Parâmetros essenciais:
 # API / Segurança
 MAIN_PUBLIC_KEY= # Inserir seu endereco da carteira SOL
 AGENT_PRIVATE_KEY_B58= # Inserir a chave privada gerada durante a criação da API
-REST_URL=https://api.pacifica.fi/api/v1
-WS_URL=wss://ws.pacifica.fi/ws
+API_ADDRESS=https://api.pacifica.fi/api/v1
+WS_BASE_URL=wss://ws.pacifica.fi/ws
 
-# Ativo e alavancagem
-SYMBOL=BTC
+# Ativo e alavancagem  
+SYMBOL=SOL
 LEVERAGE=10
-ORDER_SIZE_USD=100
 
-# Estratégia (pure_grid | market_making)
-STRATEGY_TYPE=market_making
+# Estratégia (pure_grid | market_making | multi_asset)
+STRATEGY_TYPE=multi_asset
+
+# Multi-Asset Trading
+SYMBOLS=BTC,ETH,SOL,AVAX  # ou AUTO para todos os símbolos
+POSITION_SIZE_USD=20
+MAX_CONCURRENT_TRADES=3
+PRICE_CHANGE_THRESHOLD=0.3
+
+# TP/SL Avançado
+AUTO_CLOSE_ENABLED=true
+STOP_LOSS_PERCENT=2.0
+TAKE_PROFIT_PERCENT=1.5
+USE_API_TP_SL=true
+TRAILING_STOP_ENABLED=false
+TRAILING_STOP_PERCENT=0.5
+MAX_POSITION_TIME_MINUTES=60
 
 # Grid (básico)
-GRID_LEVELS=20
-GRID_SPACING_PERCENT=0.5
-GRID_DISTRIBUTION=symmetric  # symmetric|asymmetric
+GRID_LEVELS=8
+GRID_SPACING_PERCENT=0.2
+GRID_DISTRIBUTION=symmetric
+GRID_MODE=maker
 
-# Market-Making Grid
-GRID_SHIFT_THRESHOLD_PERCENT=1.0
-REBALANCE_INTERVAL_SECONDS=60
-
-# Pure Grid (usar quando STRATEGY_TYPE=pure_grid)
-RANGE_MIN=90000
-RANGE_MAX=110000
-RANGE_EXIT=true
-
-# Risco
+# Risco e Auto-Close
 MARGIN_SAFETY_PERCENT=20
 MAX_OPEN_ORDERS=20
 MAX_POSITION_SIZE_USD=1000
-AUTO_REDUCE_ON_LOW_MARGIN=true
+
+# Sistema AUTO_CLOSE (Proteção Automática)
+AUTO_CLOSE_ON_MAX_POSITION=true
+AUTO_CLOSE_STRATEGY=hybrid  # hybrid|cancel_orders|force_sell|stop_buy
+AUTO_CLOSE_PERCENTAGE=20
 
 # Operação
 CHECK_BALANCE_BEFORE_ORDER=true
 CLEAN_ORDERS_ON_START=false
 LOG_LEVEL=INFO
+REBALANCE_INTERVAL_SECONDS=60
 ```
 
 > **Dica**: Comece conservador (menos níveis, maior espaçamento, ordem menor) e aumente aos poucos.
@@ -185,16 +199,143 @@ LOG_LEVEL=INFO
 
 <https://www.youtube.com/watch?v=cKypCQwXctc>
 
+## 🎯 Estratégias Disponíveis
+
+### Multi-Asset Trading (Recomendada)
+Trading simultâneo em múltiplos ativos com gerenciamento individual de risco:
+
+```ini
+STRATEGY_TYPE=multi_asset
+SYMBOLS=BTC,ETH,SOL,AVAX     # Símbolos específicos
+# ou SYMBOLS=AUTO            # Busca todos disponíveis
+
+POSITION_SIZE_USD=20         # Tamanho individual por ativo  
+MAX_CONCURRENT_TRADES=3      # Máximo de posições simultâneas
+PRICE_CHANGE_THRESHOLD=0.3   # % mínima para entrada
+```
+
+**Vantagens:**
+- Diversificação automática de risco
+- Gerenciamento independente por símbolo  
+- AUTO_CLOSE individual por posição
+- Stop Loss e Take Profit configuráveis
+
+### Pure Grid (Clássica)
+Grid tradicional com range fixo de preços:
+
+```ini
+STRATEGY_TYPE=pure_grid
+RANGE_MIN=48000             # Preço mínimo do range
+RANGE_MAX=52000             # Preço máximo do range
+GRID_LEVELS=20              # Número de níveis
+```
+
+### Market Making Grid (Dinâmica)
+Grid que se adapta ao movimento do preço:
+
+```ini  
+STRATEGY_TYPE=market_making
+GRID_SHIFT_THRESHOLD_PERCENT=1.0  # % para rebalanceamento
+REBALANCE_INTERVAL_SECONDS=60     # Intervalo de verificação
+```
+
 ## 📊 Métricas e logs
 
 - Logs são salvos em `logs/` com timestamp (ex.: `grid_bot_YYYYMMDD_HHMMSS.log`)
 - Relatório de performance (win rate, drawdown, Sharpe etc.) é atualizado ao longo da sessão
 
-## 🧪 Troubleshooting (rápido)
+## 🛡️ Sistema AUTO_CLOSE (Proteção Automática)
 
-- **Bot não inicia**: verifique `.env` e `PRIVATE_KEY`; teste `pacifica_auth.py`
-- **Ordens não executam**: cheque margem disponível, grid dentro do range e *REST_URL*
-- **Margem crítica**: aumente `MARGIN_SAFETY_PERCENT`, reduza `ORDER_SIZE_USD` ou `GRID_LEVELS`
+O bot inclui um sistema de **proteção automática** que monitora o tamanho da posição e **executa ordens reais** de emergência quando necessário:
+
+> ⚠️ **IMPORTANTE**: AUTO_CLOSE executa **ordens reais** na API (não apenas logs)
+
+### ⚙️ Configuração AUTO_CLOSE
+
+```ini
+AUTO_CLOSE_ON_MAX_POSITION=true     # Ativa proteção automática
+AUTO_CLOSE_STRATEGY=hybrid          # Estratégia: hybrid|cancel_orders|force_sell|stop_buy
+AUTO_CLOSE_PERCENTAGE=20            # % da posição a vender em emergência
+MAX_POSITION_SIZE_USD=1000          # Limite máximo da posição em USD
+```
+
+### 🎯 Como Funciona
+
+1. **Monitoramento Contínuo**: Calcula `posição = margin_used × leverage`
+2. **Detecção**: Se posição > `MAX_POSITION_SIZE_USD`, ativa AUTO_CLOSE
+3. **Execução Real**: Cancela/cria ordens via API Pacifica
+4. **Estratégia HYBRID** (recomendada):
+   - **Step 1**: Cancela ordens SELL distantes (>2% do preço atual)
+   - **Step 2**: Se insuficiente, vende `AUTO_CLOSE_PERCENTAGE`% da posição
+
+### 📋 Estratégias Disponíveis
+
+- `hybrid`: Cancela ordens primeiro, depois vende parcialmente (recomendado)
+- `cancel_orders`: Apenas cancela ordens distantes  
+- `force_sell`: Vende percentual da posição imediatamente
+- `stop_buy`: **Loss Management** - cancela apenas ordens de compra
+
+### 🔴 Loss Management (stop_buy)
+
+Estratégia especializada para cenários de alta volatilidade:
+- Cancela **apenas ordens de COMPRA**
+- **Mantém posição atual** (não vende)
+- Evita acúmulo durante quedas de mercado
+- Útil quando se espera recuperação
+
+### 🧪 Validação do Sistema
+
+```bash
+# Testar se AUTO_CLOSE está funcionando
+python validate_auto_close.py
+
+# Simular cenário de emergência (sem executar)
+python test_auto_close_simulation.py
+```
+
+> 📖 **Documentação AUTO_CLOSE**:
+> - [Documentação Técnica Completa](docs/AUTO_CLOSE.md)
+> - [Guia de Migração](docs/AUTO_CLOSE_MIGRATION.md) 
+> - [Relatório de Validação](docs/AUTO_CLOSE_VALIDATION_REPORT.md)
+
+## 🧪 Troubleshooting e Validação
+
+### Scripts de Validação Automática
+
+```bash
+# Validar se AUTO_CLOSE está configurado corretamente
+python validate_auto_close.py
+
+# Simular cenário de emergência (sem executar ordens reais)
+python test_auto_close_simulation.py
+
+# Testar todas as estratégias individualmente  
+python test_final_validation.py
+```
+
+### Interpretação dos Resultados
+
+**✅ Sistema Funcionando:**
+```
+🎯 SCORE DE VALIDAÇÃO: 6/6  
+🎉 SISTEMA AUTO_CLOSE HYBRID TOTALMENTE FUNCIONAL!
+```
+
+**❌ Problemas Comuns:**
+
+| Erro | Causa Provável | Solução |
+|------|----------------|---------|
+| Score < 6/6 | Configuração .env incorreta | Verificar variáveis AUTO_CLOSE |
+| API Error 401 | Chave privada inválida | Regenerar AGENT_PRIVATE_KEY_B58 |
+| "Estratégia desconhecida" | Nome incorreto | Usar: hybrid, cancel_orders, force_sell, stop_buy |
+| "Posição não calculada" | Sem posições ativas | Normal se não estiver tradando |
+
+### Troubleshooting Rápido
+
+- **Bot não inicia**: Verifique `.env` - MAIN_PUBLIC_KEY e AGENT_PRIVATE_KEY_B58
+- **Ordens não executam**: Cheque margem disponível e configuração de símbolos
+- **AUTO_CLOSE não ativa**: Verifique se AUTO_CLOSE_ON_MAX_POSITION=true
+- **Multi-asset não funciona**: Confirme SYMBOLS válidos e STRATEGY_TYPE=multi_asset
 
 ## 🛡️ Boas práticas de segurança
 

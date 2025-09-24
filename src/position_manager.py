@@ -22,7 +22,8 @@ class PositionManager:
         
         # 🆕 Configurações de Auto-Close
         self.auto_close_on_limit = os.getenv('AUTO_CLOSE_ON_MAX_POSITION', 'true').lower() == 'true'
-        self.auto_close_strategy = os.getenv('AUTO_CLOSE_STRATEGY', 'hybrid')  # cancel_distant_orders, force_partial_sell, hybrid
+        # Estratégias: cancel_distant_orders, force_partial_sell, stop_buy_orders, hybrid
+        self.auto_close_strategy = os.getenv('AUTO_CLOSE_STRATEGY', 'hybrid')  
         self.auto_close_percentage = float(os.getenv('AUTO_CLOSE_PERCENTAGE', '20'))  # Percentual da posição a vender
         
         # Estado interno
@@ -490,6 +491,67 @@ class PositionManager:
             'total_pnl': total_pnl
         }
     
+    def apply_loss_management(self, symbol: str = None) -> Dict:
+        """
+        🔴 FUNÇÃO PÚBLICA: Aplica gestão de loss cancelando ordens de compra
+        
+        Use esta função quando:
+        - Posição está em loss significativo
+        - Não quer acumular mais do ativo
+        - Quer manter apenas ordens de venda para reduzir exposição
+        
+        Args:
+            symbol: Símbolo a aplicar (padrão: SOL)
+            
+        Returns:
+            Dict com resultado da operação
+        """
+        
+        try:
+            if not symbol:
+                symbol = os.getenv('SYMBOL', 'SOL')
+            
+            # Obter informações antes
+            buy_orders_before = len([o for o in self.open_orders.values() 
+                                   if o['side'] in ['buy', 'bid'] and o['symbol'] == symbol])
+            sell_orders_before = len([o for o in self.open_orders.values() 
+                                    if o['side'] in ['sell', 'ask'] and o['symbol'] == symbol])
+            
+            self.logger.info(f"🔴 INICIANDO LOSS MANAGEMENT para {symbol}")
+            self.logger.info(f"📊 Estado atual: {buy_orders_before} compras, {sell_orders_before} vendas")
+            
+            # Aplicar cancelamento de compras
+            cancelled_count = self.cancel_buy_orders_only(symbol)
+            
+            # Obter informações depois
+            buy_orders_after = len([o for o in self.open_orders.values() 
+                                  if o['side'] in ['buy', 'bid'] and o['symbol'] == symbol])
+            sell_orders_after = len([o for o in self.open_orders.values() 
+                                   if o['side'] in ['sell', 'ask'] and o['symbol'] == symbol])
+            
+            result = {
+                'success': True,
+                'symbol': symbol,
+                'cancelled_buy_orders': cancelled_count,
+                'remaining_buy_orders': buy_orders_after,
+                'remaining_sell_orders': sell_orders_after,
+                'message': f"Canceladas {cancelled_count} ordens de compra. Mantidas {sell_orders_after} ordens de venda."
+            }
+            
+            self.logger.info(f"✅ LOSS MANAGEMENT concluído: {result['message']}")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Erro no loss management: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'symbol': symbol,
+                'cancelled_buy_orders': 0
+            }
+    
     def should_stop_trading(self) -> Tuple[bool, str]:
         """Verifica se deve parar de operar (condições de emergência)"""
         
@@ -572,22 +634,46 @@ class PositionManager:
         freed_total = 0.0
         
         try:
-            if self.auto_close_strategy == 'cancel_distant_orders':
+            # 🆕 ALIASES para compatibilidade com documentação
+            strategy = self.auto_close_strategy
+            
+            # Mapeamento de aliases da documentação para nomes internos
+            strategy_aliases = {
+                'cancel_orders': 'cancel_distant_orders',
+                'force_sell': 'force_partial_sell', 
+                'stop_buy': 'stop_buy_orders'
+            }
+            
+            # Usar alias se existir, senão usar nome original
+            internal_strategy = strategy_aliases.get(strategy, strategy)
+            
+            if internal_strategy == 'cancel_distant_orders':
                 # Estratégia 1: Apenas cancelar ordens distantes
                 freed_total = self._cancel_distant_sell_orders()
                 
-            elif self.auto_close_strategy == 'force_partial_sell':
+            elif internal_strategy == 'force_partial_sell':
                 # Estratégia 2: Venda forçada de parte da posição
                 freed_total = self._force_partial_sell()
                 
-            elif self.auto_close_strategy == 'hybrid':
-                # Estratégia 3: Híbrida - tentar cancelar primeiro, depois vender
+            elif internal_strategy == 'stop_buy_orders':
+                # 🆕 Estratégia 3: LOSS MANAGEMENT - Cancelar ordens de compra apenas
+                self.logger.info(f"🔴 LOSS MANAGEMENT ativado - cancelando ordens de compra")
+                cancelled_count = self.cancel_buy_orders_only()
+                # Não liberamos margem diretamente, mas evitamos acúmulo
+                freed_total = 0.0  # Não conta como margem liberada
+                
+            elif internal_strategy == 'hybrid':
+                # Estratégia 4: Híbrida - tentar cancelar primeiro, depois vender
                 freed_total = self._cancel_distant_sell_orders()
                 
                 if freed_total < target_amount:
                     self.logger.info(f"🔄 Ainda precisa de ${target_amount - freed_total:.2f} - vendendo posição parcial")
                     additional_freed = self._force_partial_sell()
                     freed_total += additional_freed
+            
+            else:
+                self.logger.warning(f"⚠️ Estratégia AUTO_CLOSE desconhecida: {strategy}")
+                return 0.0
             
             return freed_total
             
@@ -627,8 +713,8 @@ class PositionManager:
             for order_id, order_data in orders_to_cancel:
                 try:
                     # Cancelar na API
-                    result = self.auth.cancel_order(str(order_id))
-                    if result and isinstance(result, dict) and result.get('success'):
+                    result = self.auth.cancel_order(str(order_id), symbol)
+                    if result:  # cancel_order retorna True/False
                         self.remove_order(order_id)
                         cancelled_count += 1
                         self.logger.info(f"🗑️ Cancelada ordem distante: SELL @ ${order_data['price']:.2f}")
@@ -644,6 +730,66 @@ class PositionManager:
         except Exception as e:
             self.logger.error(f"❌ Erro ao cancelar ordens distantes: {e}")
             return 0.0
+
+    def cancel_buy_orders_only(self, symbol: str = None) -> int:
+        """
+        🔴 LOSS MANAGEMENT: Cancela apenas ordens de COMPRA para evitar acumular mais posição
+        Mantém ordens de VENDA para reduzir exposição
+        
+        Args:
+            symbol: Símbolo (padrão: SOL do .env)
+            
+        Returns:
+            int: Número de ordens canceladas
+        """
+        
+        try:
+            if not symbol:
+                symbol = os.getenv('SYMBOL', 'SOL')
+            
+            current_price = self._get_current_price(symbol)
+            
+            if current_price <= 0:
+                self.logger.warning("⚠️ Não foi possível obter preço atual para cancelar ordens de compra")
+                return 0
+            
+            orders_to_cancel = []
+            cancelled_count = 0
+            
+            # Identificar APENAS ordens de COMPRA (buy/bid)
+            for order_id, order_data in self.open_orders.items():
+                if (order_data['side'] in ['buy', 'bid'] and 
+                    order_data['symbol'] == symbol):
+                    
+                    order_price = order_data['price']
+                    orders_to_cancel.append((order_id, order_data))
+            
+            # Cancelar ordens de compra identificadas
+            self.logger.info(f"🔴 LOSS MANAGEMENT: Cancelando {len(orders_to_cancel)} ordens de COMPRA para evitar acúmulo")
+            
+            for order_id, order_data in orders_to_cancel:
+                try:
+                    # Cancelar na API com símbolo
+                    result = self.auth.cancel_order(str(order_id), symbol)
+                    if result:  # cancel_order retorna True/False
+                        self.remove_order(order_id)
+                        cancelled_count += 1
+                        self.logger.info(f"🗑️ Cancelada compra: BUY @ ${order_data['price']:.2f}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Erro ao cancelar ordem de compra {order_id}: {e}")
+            
+            if cancelled_count > 0:
+                self.logger.info(f"✅ LOSS MANAGEMENT: {cancelled_count} ordens de COMPRA canceladas")
+                self.logger.info(f"🟢 Ordens de VENDA mantidas para reduzir exposição")
+            else:
+                self.logger.info(f"ℹ️ Nenhuma ordem de compra encontrada para cancelar")
+            
+            return cancelled_count
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao cancelar ordens de compra: {e}")
+            return 0
 
     def _force_partial_sell(self) -> float:
         """Força venda de parte da posição para liberar espaço"""
