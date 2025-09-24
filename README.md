@@ -1,7 +1,8 @@
 # Pacifica Trading Bot
 
-Bot de **grid trading** e **scalping** para a corretora **Pacifica** com quatro abordagens: **Pure Grid** (clássica) e **Market-Making Grid** (dinâmica), **multi_asset** (scalping basico compara 3 preços (atual + 2 anteriores) , **multi_asset_enhanced** (SMA, RSI, Momentum, Volatility, Confirmation)
-Inclui gerenciamento de risco, métricas de performance e logs detalhados.
+Bot de **grid trading** e **scalping multi-asset** para a corretora **Pacifica** com **4 estratégias avançadas**: **Pure Grid** (clássica), **Market-Making Grid** (dinâmica), **Multi-Asset Básico** (scalping threshold) e **🧠 Multi-Asset Enhanced** (algoritmo inteligente com 5 indicadores técnicos).
+
+Inclui gerenciamento de risco, métricas de performance, logs específicos por estratégia, sistema AUTO_CLOSE e validação automática.
 
 > **⚠️ ATENÇÃO: RISCO ELEVADO**
 
@@ -21,9 +22,37 @@ Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 
 ---
 
-## ✨ Principais recursos
+## 🚀 Principais Funcionalidades
 
-- Estratégias: **Pure Grid**, **Market Making Grid** e **Multi-Asset**
+### 📊 4 Estratégias de Trading Avançadas
+- **Pure Grid (pure_grid)**: Grid trading clássico com ordens de compra/venda distribuídas em níveis de preço fixos
+- **Market-Making Grid (market_making)**: Grid dinâmico que se adapta à volatilidade e spread do mercado  
+- **Multi-Asset Básico (multi_asset)**: Scalping threshold com comparação de 3 preços (atual + 2 anteriores)
+- **🧠 Multi-Asset Enhanced (multi_asset_enhanced)**: Algoritmo inteligente com 5 indicadores técnicos:
+  - **Momentum** (30 pontos): Análise de força do movimento
+  - **Trend** (25 pontos): Direção da tendência SMA
+  - **RSI** (20 pontos): Índice de força relativa
+  - **Volatility** (15 pontos): Análise de volatilidade ATR
+  - **Confirmation** (10 pontos): Confirmação de sinal
+
+### 🎯 Sistema de Gerenciamento de Risco
+- **Take Profit (TP)** e **Stop Loss (SL)** configuráveis por estratégia
+- **Sistema AUTO_CLOSE híbrido**: Combina tempo de vida + condições de mercado
+- **Validação automática** de saldos e posições abertas
+- **Controle de alavancagem** por ativo
+
+### 📈 Métricas e Monitoramento
+- **Performance tracking** em tempo real com ROI, Sharpe Ratio e drawdown
+- **Logs específicos por estratégia** com emojis e terminologia adequada
+- **Sistema de notificação** de operações e eventos críticos
+- **Relatórios detalhados** de trades e resultados
+
+### ⚙️ Configuração Simplificada
+- **STRATEGY_TYPE único**: Seleção simples entre as 4 estratégias
+- **Configuração .env** com exemplos para cada estratégia
+- **Templates prontos** para diferentes cenários de trading
+
+### 🛠️ Recursos Técnicos
 - Rebalanceamento automático e deslocamento de grid por limiar
 - **Multi-Asset Trading** com gerenciamento individual de risco por símbolo
 - Gestão de margem, limite de ordens e tamanho máximo de posição
@@ -35,15 +64,21 @@ Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 
 ## 🧱 Arquitetura (alto nível)
 
+### 🏗️ Estrutura Principal
 ```
-grid_bot.py            # Orquestração do bot e logging
-pacifica_auth.py       # Cliente de API (REST/WebSocket) da Pacifica
-grid_calculator.py     # Cálculo de níveis do grid e tamanhos
-grid_strategy.py       # Estratégia Pure Grid / Market-Making Grid
-position_manager.py    # Saldo, margem, ordens e posições
-performance_tracker.py # Métricas e relatórios
-.env.example           # Modelo de configuração
+grid_bot.py                          # Orquestração principal e seleção de estratégia
+src/
+├── pacifica_auth.py                 # Cliente de API (REST/WebSocket) da Pacifica
+├── grid_calculator.py               # Cálculo de níveis do grid e tamanhos
+├── grid_strategy.py                 # Estratégia Pure Grid / Market-Making Grid
+├── multi_asset_strategy.py          # Estratégia Multi-Asset Básico
+├── multi_asset_enhanced_strategy.py # 🧠 Estratégia Enhanced com 5 indicadores
+├── enhanced_signal_detector.py      # Detector de sinais com algoritmo avançado
+├── strategy_logger.py               # Sistema de logs específicos por estratégia
+├── position_manager.py              # Saldo, margem, ordens e posições
+└── performance_tracker.py           # Métricas e relatórios de performance
 ```
+
 
 ## 🚀 Instalação
 
@@ -153,35 +188,47 @@ Para encerrar com segurança: `Ctrl + C` (o bot finaliza e imprime um resumo).
 
 ## ⚙️ Configuração (.env)
 
-Parâmetros essenciais:
+### 🎯 Seleção de Estratégia Simplificada
+
+O bot agora usa um **sistema simplificado** com uma única variável `STRATEGY_TYPE`:
 
 ```ini
-# API / Segurança
-MAIN_PUBLIC_KEY= # Inserir seu endereco da carteira SOL
-AGENT_PRIVATE_KEY_B58= # Inserir a chave privada gerada durante a criação da API
+# ✅ ESTRATÉGIA (Escolha UMA das 4 opções)
+STRATEGY_TYPE=pure_grid           # Grid trading clássico
+# STRATEGY_TYPE=market_making     # Grid dinâmico adaptativo
+# STRATEGY_TYPE=multi_asset       # Scalping multi-asset básico
+# STRATEGY_TYPE=multi_asset_enhanced  # 🧠 Enhanced com 5 indicadores
+```
+
+### 📋 Configuração Base
+
+```ini
+# 🔐 API / Segurança
+MAIN_PUBLIC_KEY=                    # Seu endereço da carteira SOL
+AGENT_PRIVATE_KEY_B58=              # Chave privada gerada durante criação da API
 API_ADDRESS=https://api.pacifica.fi/api/v1
 WS_BASE_URL=wss://ws.pacifica.fi/ws
 
-# Ativo e alavancagem  
-SYMBOL=SOL
-LEVERAGE=10
+# 💰 Ativo e Alavancagem  
+SYMBOL=SOL                          # Ativo principal (Pure Grid/Market Making)
+LEVERAGE=10                         # Alavancagem padrão
 
-# Estratégia (pure_grid | market_making | multi_asset)
-STRATEGY_TYPE=multi_asset
+# 🎯 Estratégia Selecionada
+STRATEGY_TYPE=multi_asset_enhanced  # Escolha sua estratégia
 
-# Multi-Asset Trading
-SYMBOLS=BTC,ETH,SOL,AVAX  # ou AUTO para todos os símbolos
-POSITION_SIZE_USD=20
-MAX_CONCURRENT_TRADES=3
-PRICE_CHANGE_THRESHOLD=0.3
+# 🌐 Multi-Asset Trading (para multi_asset e multi_asset_enhanced)
+SYMBOLS=BTC,ETH,SOL,AVAX           # ou AUTO para todos os símbolos
+POSITION_SIZE_USD=20               # Tamanho da posição em USD
+MAX_CONCURRENT_TRADES=3            # Máximo de trades simultâneos
+PRICE_CHANGE_THRESHOLD=0.3         # Threshold de mudança de preço (%)
 
-# TP/SL Avançado
-AUTO_CLOSE_ENABLED=true
-STOP_LOSS_PERCENT=2.0
-TAKE_PROFIT_PERCENT=1.5
-USE_API_TP_SL=true
-TRAILING_STOP_ENABLED=false
-TRAILING_STOP_PERCENT=0.5
+# 🛡️ Take Profit / Stop Loss
+AUTO_CLOSE_ENABLED=true            # Habilitar sistema AUTO_CLOSE
+STOP_LOSS_PERCENT=2.0             # Stop Loss em %
+TAKE_PROFIT_PERCENT=1.5           # Take Profit em %
+USE_API_TP_SL=true                # Usar TP/SL via API (recomendado)
+TRAILING_STOP_ENABLED=false       # Trailing stop
+TRAILING_STOP_PERCENT=0.5         # Trailing stop %
 MAX_POSITION_TIME_MINUTES=60
 
 # Grid (básico)
@@ -215,8 +262,33 @@ REBALANCE_INTERVAL_SECONDS=60
 
 ## 🎯 Estratégias Disponíveis
 
-### Multi-Asset Trading (Recomendada)
-Trading simultâneo em múltiplos ativos com gerenciamento individual de risco:
+### 🧠 Multi-Asset Enhanced (Recomendada)
+**Algoritmo inteligente** com 5 indicadores técnicos e sistema de scoring 0-100:
+
+```ini
+STRATEGY_TYPE=multi_asset_enhanced
+SYMBOLS=BTC,ETH,SOL,AVAX           # Símbolos para análise
+POSITION_SIZE_USD=20               # Tamanho por posição
+MAX_CONCURRENT_TRADES=3            # Trades simultâneos
+ENHANCED_MIN_SCORE=60              # Score mínimo (0-100)
+ENHANCED_CONFIDENCE_THRESHOLD=0.7  # Confiança mínima
+```
+
+**Indicadores e Pesos:**
+- 🚀 **Momentum** (30pts): Força do movimento de preço
+- 📈 **Trend** (25pts): Direção da tendência (SMA 20/50)
+- ⚡ **RSI** (20pts): Sobrecompra/sobrevenda
+- 🌊 **Volatility** (15pts): Análise ATR para timing
+- ✅ **Confirmation** (10pts): Confirmação do sinal
+
+**Vantagens:**
+- Análise técnica avançada com múltiplos indicadores
+- Sistema de scoring inteligente (0-100)
+- Adaptação automática às condições de mercado
+- Redução significativa de falsos sinais
+
+### 🌐 Multi-Asset Básico
+Trading simultâneo com análise threshold simples:
 
 ```ini
 STRATEGY_TYPE=multi_asset
@@ -232,9 +304,9 @@ PRICE_CHANGE_THRESHOLD=0.3   # % mínima para entrada
 - Diversificação automática de risco
 - Gerenciamento independente por símbolo  
 - AUTO_CLOSE individual por posição
-- Stop Loss e Take Profit configuráveis
+- Configuração simples e rápida
 
-### Pure Grid (Clássica)
+### ⚡ Pure Grid (Clássica)
 Grid tradicional com range fixo de preços:
 
 ```ini
@@ -244,7 +316,7 @@ RANGE_MAX=52000             # Preço máximo do range
 GRID_LEVELS=20              # Número de níveis
 ```
 
-### Market Making Grid (Dinâmica)
+### 🔄 Market Making Grid (Dinâmica)
 Grid que se adapta ao movimento do preço:
 
 ```ini  
@@ -253,10 +325,42 @@ GRID_SHIFT_THRESHOLD_PERCENT=1.0  # % para rebalanceamento
 REBALANCE_INTERVAL_SECONDS=60     # Intervalo de verificação
 ```
 
-## 📊 Métricas e logs
+## � Sistema de Logs Específicos por Estratégia
 
-- Logs são salvos em `logs/` com timestamp (ex.: `grid_bot_YYYYMMDD_HHMMSS.log`)
-- Relatório de performance (win rate, drawdown, Sharpe etc.) é atualizado ao longo da sessão
+O bot possui um **sistema avançado de logs** que adapta mensagens, emojis e terminologia de acordo com a estratégia selecionada:
+
+### 🎨 Personalização por Estratégia
+
+**Pure Grid** 📊
+```
+📊 [GRID] Configurando grid: 20 níveis entre $48000-$52000
+📊 [GRID] Ordem de compra colocada no nível $49500
+```
+
+**Market Making** 🔄  
+```
+🔄 [MARKET_MAKING] Grid rebalanceado: novo centro $51200
+🔄 [MARKET_MAKING] Spread adaptado à volatilidade: 0.8%
+```
+
+**Multi-Asset Básico** 🌐
+```
+🌐 [MULTI_ASSET] Analisando 4 ativos: BTC, ETH, SOL, AVAX
+🌐 [MULTI_ASSET] SOL: mudança de 2.3% detectada - Executando entrada
+```
+
+**Multi-Asset Enhanced** 🧠
+```
+🧠 [ENHANCED] Score BTC: 75/100 (Momentum:25, Trend:20, RSI:15, Vol:10, Conf:5)
+🧠 [ENHANCED] Sinal COMPRA confirmado - Confiança: 82%
+```
+
+### �📊 Métricas e Logs
+
+- **Logs específicos**: Salvos em `logs/` com timestamp (ex.: `grid_bot_YYYYMMDD_HHMMSS.log`)
+- **Relatórios de performance**: Win rate, drawdown, Sharpe Ratio atualizados em tempo real
+- **Filtros automáticos**: Mensagens relevantes para cada estratégia
+- **Emojis identificadores**: Facilita identificação visual nos logs
 
 ## 🛡️ Sistema AUTO_CLOSE (Proteção Automática)
 
@@ -297,35 +401,8 @@ Estratégia especializada para cenários de alta volatilidade:
 - Evita acúmulo durante quedas de mercado
 - Útil quando se espera recuperação
 
-### 🧪 Validação do Sistema
-
-```bash
-# Testar se AUTO_CLOSE está funcionando
-python validate_auto_close.py
-
-# Simular cenário de emergência (sem executar)
-python test_auto_close_simulation.py
-```
-
-> 📖 **Documentação AUTO_CLOSE**:
-> - [Documentação Técnica Completa](docs/AUTO_CLOSE.md)
-> - [Guia de Migração](docs/AUTO_CLOSE_MIGRATION.md) 
-> - [Relatório de Validação](docs/AUTO_CLOSE_VALIDATION_REPORT.md)
 
 ## 🧪 Troubleshooting e Validação
-
-### Scripts de Validação Automática
-
-```bash
-# Validar se AUTO_CLOSE está configurado corretamente
-python validate_auto_close.py
-
-# Simular cenário de emergência (sem executar ordens reais)
-python test_auto_close_simulation.py
-
-# Testar todas as estratégias individualmente  
-python test_final_validation.py
-```
 
 ### Interpretação dos Resultados
 
@@ -348,8 +425,40 @@ python test_final_validation.py
 
 - **Bot não inicia**: Verifique `.env` - MAIN_PUBLIC_KEY e AGENT_PRIVATE_KEY_B58
 - **Ordens não executam**: Cheque margem disponível e configuração de símbolos
-- **AUTO_CLOSE não ativa**: Verifique se AUTO_CLOSE_ON_MAX_POSITION=true
-- **Multi-asset não funciona**: Confirme SYMBOLS válidos e STRATEGY_TYPE=multi_asset
+- **AUTO_CLOSE não ativa**: Verifique se AUTO_CLOSE_ENABLED=true
+- **Multi-asset básico não funciona**: Confirme SYMBOLS válidos e STRATEGY_TYPE=multi_asset
+- **Enhanced Strategy com score baixo**: Ajuste ENHANCED_MIN_SCORE (padrão: 60)
+- **Poucos sinais Enhanced**: Diminua ENHANCED_CONFIDENCE_THRESHOLD (padrão: 0.7)
+- **Logs não aparecem**: Verifique se strategy_logger.py está no diretório src/
+- **Performance metrics erro**: Execute python test_performance_fix.py
+
+### 🔍 Diagnóstico Avançado
+
+**Verificar Strategy Type:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+print(f'STRATEGY_TYPE: {os.getenv(\"STRATEGY_TYPE\", \"NÃO DEFINIDO\")}')"
+```
+
+**Testar Enhanced Strategy:**
+```bash
+python test_enhanced_strategy.py
+```
+
+**Validar Configuração Completa:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+required = ['MAIN_PUBLIC_KEY', 'AGENT_PRIVATE_KEY_B58', 'STRATEGY_TYPE']
+for key in required:
+    value = os.getenv(key)
+    print(f'{key}: {\"✅ OK\" if value else \"❌ FALTANDO\"}')"
+```
 
 ## 🛡️ Boas práticas de segurança
 
