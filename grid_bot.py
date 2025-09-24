@@ -18,6 +18,7 @@ from src.grid_calculator import GridCalculator
 from src.position_manager import PositionManager
 from src.grid_strategy import GridStrategy
 from src.multi_asset_strategy import MultiAssetStrategy
+from src.multi_asset_enhanced_strategy import MultiAssetEnhancedStrategy
 from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger, get_strategy_specific_messages
 
@@ -26,15 +27,21 @@ class GridTradingBot:
         # Carregar configurações
         load_dotenv()
         
-        # Determinar tipo de estratégia primeiro
+        # Determinar tipo de estratégia - APENAS UMA VARIÁVEL: STRATEGY_TYPE
         strategy_type_env = os.getenv('STRATEGY_TYPE', 'market_making').lower()
         
-        # Se STRATEGY_TYPE for 'multi_asset', usar multi_asset, senão usar grid
+        # Mapear todas as estratégias via STRATEGY_TYPE
         if strategy_type_env == 'multi_asset':
             self.strategy_type = 'multi_asset'
-        else:
-            # market_making, pure_grid, ou qualquer outro valor = grid trading
+        elif strategy_type_env == 'multi_asset_enhanced':
+            self.strategy_type = 'multi_asset_enhanced'
+        elif strategy_type_env in ['pure_grid', 'market_making']:
             self.strategy_type = 'grid'
+            self.grid_type = strategy_type_env  # Salvar tipo específico do grid
+        else:
+            # Fallback para market_making se valor inválido
+            self.strategy_type = 'grid'
+            self.grid_type = 'market_making'
         
         # Setup logging
         self.setup_logging()
@@ -72,10 +79,17 @@ class GridTradingBot:
         self.logger.info("=" * 80, force=True)
         
         if self.strategy_type == 'grid':
-            grid_type = os.getenv('STRATEGY_TYPE', 'market_making').upper()
+            grid_type = getattr(self, 'grid_type', 'market_making').upper()
             self.logger.info(f"Estratégia: GRID TRADING ({grid_type})", force=True)
             self.logger.info(f"Símbolo: {self.symbol}", force=True)
-        else:
+        elif self.strategy_type == 'multi_asset_enhanced':
+            self.logger.info(f"Estratégia: 🧠 ENHANCED MULTI-ASSET", force=True)
+            symbols = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
+            quality = os.getenv('ENHANCED_MIN_SIGNAL_QUALITY', '65')
+            confidence = os.getenv('ENHANCED_MIN_CONFIDENCE', '75')
+            self.logger.info(f"Símbolos: {symbols}", force=True)
+            self.logger.info(f"Algoritmo: Quality≥{quality}, Confidence≥{confidence}", force=True)
+        else:  # multi_asset
             self.logger.info(f"Estratégia: MULTI-ASSET SCALPING", force=True)
             symbols = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
             self.logger.info(f"Símbolos: {symbols}", force=True)
@@ -150,6 +164,9 @@ class GridTradingBot:
             if self.strategy_type == 'multi_asset':
                 self.logger.info("🎯 Inicializando estratégia Multi-Asset Scalping...")
                 self.strategy = MultiAssetStrategy(self.auth, self.calculator, self.position_mgr)
+            elif self.strategy_type == 'multi_asset_enhanced':
+                self.logger.info("🧠 Inicializando estratégia Enhanced Multi-Asset...")
+                self.strategy = MultiAssetEnhancedStrategy(self.auth, self.calculator, self.position_mgr)
             else:
                 self.logger.info("📊 Inicializando estratégia Grid Trading...")
                 self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
@@ -455,6 +472,11 @@ class GridTradingBot:
         
         if self.strategy and hasattr(self.strategy, 'performance_tracker'):
             self.strategy.print_performance_summary()
+            
+            # 🆕 ESTATÍSTICAS ESPECÍFICAS DA VERSÃO ENHANCED
+            if self.strategy_type == 'multi_asset_enhanced' and hasattr(self.strategy, 'get_enhanced_statistics'):
+                self.strategy.log_performance_summary()
+                
         else:
             self.logger.warning("⚠️ Performance tracker não disponível")
     
