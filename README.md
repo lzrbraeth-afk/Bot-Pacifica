@@ -1,9 +1,23 @@
-# Pacifica Grid Trading Bot
+# Pacifica Trading Bot
 
-Bot de **grid trading** para a corretora **Pacifica** com duas abordagens: **Pure Grid** (clássica) e **Market-Making Grid** (dinâmica). 
+Bot de **grid trading** e **scalping** para a corretora **Pacifica** com quatro abordagens: **Pure Grid** (clássica) e **Market-Making Grid** (dinâmica), **multi_asset** (scalping basico compara 3 preços (atual + 2 anteriores) , **multi_asset_enhanced** (SMA, RSI, Momentum, Volatility, Confirmation)
 Inclui gerenciamento de risco, métricas de performance e logs detalhados.
 
-> ⚠️ **Risco**: Trading alavancado envolve alto risco. Este projeto é fornecido *no estado em que se encontra*, sem garantias. Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
+> **⚠️ ATENÇÃO: RISCO ELEVADO**
+
+O trading de contratos perpétuos com alavancagem envolve **altos riscos financeiros**, podendo resultar na perda total do capital investido. Este bot é fornecido **"no estado em que se encontra"**, sem garantias de desempenho, precisão ou lucratividade.
+
+### Recomendações Importantes
+- **Teste extensivamente**: Antes de usar o bot em um ambiente real, realize testes completos com valores baixos em uma conta de demonstração ou com capital que você está disposto a perder.
+- **Use com cautela**: Bots automatizados podem amplificar erros ou reagir de forma inesperada em mercados voláteis.
+- **Eduque-se**: Compreenda completamente os riscos do trading alavancado antes de utilizar este software.
+- **Gerencie riscos**: Nunca invista mais do que você pode perder. Configure limites rigorosos de perda e monitore o bot regularmente.
+
+**O desenvolvedor não se responsabiliza por perdas financeiras ou danos decorrentes do uso deste bot. Use por sua conta e risco.**
+
+Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
+
+
 
 ---
 
