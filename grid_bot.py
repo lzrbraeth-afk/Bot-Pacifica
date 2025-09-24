@@ -19,23 +19,14 @@ from src.position_manager import PositionManager
 from src.grid_strategy import GridStrategy
 from src.multi_asset_strategy import MultiAssetStrategy
 from src.performance_tracker import PerformanceTracker
+from src.strategy_logger import create_strategy_logger, get_strategy_specific_messages
 
 class GridTradingBot:
     def __init__(self):
         # Carregar configurações
         load_dotenv()
         
-        # Setup logging
-        self.setup_logging()
-        self.logger = logging.getLogger('PacificaBot.Main')
-        
-        # Estado do bot
-        self.running = False
-        self.start_time = None
-        
-        # Configurações
-        self.symbol = os.getenv('SYMBOL', 'BTC')
-        # Determinar tipo de estratégia principal
+        # Determinar tipo de estratégia primeiro
         strategy_type_env = os.getenv('STRATEGY_TYPE', 'market_making').lower()
         
         # Se STRATEGY_TYPE for 'multi_asset', usar multi_asset, senão usar grid
@@ -45,22 +36,52 @@ class GridTradingBot:
             # market_making, pure_grid, ou qualquer outro valor = grid trading
             self.strategy_type = 'grid'
         
+        # Setup logging
+        self.setup_logging()
+        
+        # Criar logger específico da estratégia
+        self.logger = create_strategy_logger('PacificaBot.Main', self.strategy_type)
+        
+        # Estado do bot
+        self.running = False
+        self.start_time = None
+        
+        # Configurações
+        self.symbol = os.getenv('SYMBOL', 'BTC')
         self.rebalance_interval = int(os.getenv('REBALANCE_INTERVAL_SECONDS', '60'))
         self.check_balance = os.getenv('CHECK_BALANCE_BEFORE_ORDER', 'true').lower() == 'true'
         
-        self.logger.info("=" * 80)
-        self.logger.info("🤖 PACIFICA TRADING BOT")
-        self.logger.info("=" * 80)
+        # Headers específicos por estratégia
+        self.show_strategy_header()
+        
+        # Inicializar componentes
+        self.auth = None
+        self.calculator = None
+        self.position_mgr = None
+        self.strategy = None
+        
+        # Setup signal handlers para shutdown gracioso
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+    
+    def show_strategy_header(self):
+        """Mostrar cabeçalho específico da estratégia"""
+        
+        self.logger.info("=" * 80, force=True)
+        self.logger.info("🤖 PACIFICA TRADING BOT", force=True)
+        self.logger.info("=" * 80, force=True)
+        
         if self.strategy_type == 'grid':
             grid_type = os.getenv('STRATEGY_TYPE', 'market_making').upper()
-            self.logger.info(f"Estratégia: GRID TRADING ({grid_type})")
-            self.logger.info(f"Símbolo: {self.symbol}")
+            self.logger.info(f"Estratégia: GRID TRADING ({grid_type})", force=True)
+            self.logger.info(f"Símbolo: {self.symbol}", force=True)
         else:
-            self.logger.info(f"Estratégia: MULTI-ASSET SCALPING")
+            self.logger.info(f"Estratégia: MULTI-ASSET SCALPING", force=True)
             symbols = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
-            self.logger.info(f"Símbolos: {symbols}")
-        self.logger.info(f"Intervalo de Rebalanceamento: {self.rebalance_interval}s")
-        self.logger.info("=" * 80)
+            self.logger.info(f"Símbolos: {symbols}", force=True)
+            
+        self.logger.info(f"Intervalo de Rebalanceamento: {self.rebalance_interval}s", force=True)
+        self.logger.info("=" * 80, force=True)
         
         # Inicializar componentes
         self.auth = None
@@ -248,32 +269,40 @@ class GridTradingBot:
                 self.logger.error("❌ Falha ao verificar saldo")
                 return
         
-        # Inicializar estratégia
-        strategy_name = "Multi-Asset" if self.strategy_type == 'multi_asset' else "Grid"
-        self.logger.info(f"🎯 Inicializando estratégia {strategy_name}...")
+        # Inicializar estratégia com mensagens específicas
+        messages = get_strategy_specific_messages(self.strategy_type)
+        self.logger.strategy_info(messages['initialization'])
         
         grid_initialized = self.strategy.initialize_grid(current_price)
         if not grid_initialized:
-            self.logger.warning(f"⚠️ Não foi possível inicializar {strategy_name} agora (margem insuficiente)")
+            if self.strategy_type == 'multi_asset':
+                self.logger.warning("⚠️ Não foi possível inicializar Multi-Asset agora")
+            else:
+                self.logger.warning(f"⚠️ Não foi possível inicializar Grid agora (margem insuficiente)")
             self.logger.info("🔄 Bot continuará monitorando e tentará novamente...")
         
         # Verificar se estratégia foi inicializada
         grid_status = self.strategy.get_grid_status()
+        messages = get_strategy_specific_messages(self.strategy_type)
+        
         if self.strategy_type == 'grid':
             if grid_status['active_orders'] > 0:
-                self.logger.info(f"♻️ Grid retomado com {grid_status['active_orders']} ordens existentes")
+                self.logger.strategy_info(f"Retomado com {grid_status['active_orders']} ordens existentes")
             elif grid_initialized:
-                self.logger.info(f"🆕 Novo grid criado com {grid_status['active_orders']} ordens")
+                self.logger.strategy_info(f"Novo grid criado com {grid_status['active_orders']} ordens")
             else:
-                self.logger.info("📊 Aguardando condições para criar grid...")
+                self.logger.strategy_info("Aguardando condições para criar grid...")
         else:
-            self.logger.info("🆕 Estratégia Multi-Asset inicializada e pronta")
+            if grid_initialized:
+                self.logger.strategy_info(messages['ready'])
+            else:
+                self.logger.strategy_info("Aguardando condições de mercado...")
         
         # 🔧 CORREÇÃO: Mover para FORA do if/else
         self.running = True
         self.start_time = datetime.now()
         
-        self.logger.info("✅ Bot operando!")
+        self.logger.info("✅ Bot operando!", force=True)
         self.logger.info("=" * 80)
         
         # Loop principal
@@ -299,13 +328,14 @@ class GridTradingBot:
                         current_price = new_price
                     last_price_check = current_time
                 
-                # Log de heartbeat
+                # Log de heartbeat específico da estratégia
                 if iteration % 10 == 0:
                     uptime = datetime.now() - self.start_time
                     if self.strategy_type == 'grid':
-                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Preço: ${current_price:,.2f}")
+                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Preço: ${current_price:,.2f}", force=True)
                     else:
-                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Multi-Asset Ativo")
+                        active_positions = len(getattr(self.strategy, 'active_positions', []))
+                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Posições: {active_positions}", force=True)
                 
                 # Verificar margem e posição
                 if self.check_balance and iteration % 5 == 0:

@@ -7,11 +7,17 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from src.performance_tracker import PerformanceTracker, Trade, GridExecution
+from src.strategy_logger import create_strategy_logger
 import uuid
 
 class GridStrategy:
     def __init__(self, auth_client, calculator, position_manager):
-        self.logger = logging.getLogger('PacificaBot.GridStrategy')
+        # Determinar o tipo específico de grid strategy
+        strategy_type = os.getenv('STRATEGY_TYPE', 'market_making').lower()
+        if strategy_type not in ['pure_grid', 'market_making']:
+            strategy_type = 'market_making'
+            
+        self.logger = create_strategy_logger('PacificaBot.GridStrategy', strategy_type)
         
         self.auth = auth_client
         self.calculator = calculator

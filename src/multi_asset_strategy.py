@@ -9,11 +9,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from src.performance_tracker import PerformanceTracker
+from src.strategy_logger import create_strategy_logger
 
 class MultiAssetStrategy:
     def __init__(self, auth_client, calculator, position_manager):
         """Inicializa estratégia multi-asset integrada ao bot principal"""
-        self.logger = logging.getLogger('PacificaBot.MultiAssetStrategy')
+        self.logger = create_strategy_logger('PacificaBot.MultiAssetStrategy', 'multi_asset')
         
         self.auth = auth_client
         self.calculator = calculator  # Pode ser usado para cálculos auxiliares
@@ -230,13 +231,43 @@ class MultiAssetStrategy:
             # Determinar lado da ordem
             order_side = 'bid' if side == 'LONG' else 'ask'
             
-            # Executar ordem
+            # Preparar TP/SL se habilitado
+            take_profit_config = None
+            stop_loss_config = None
+            
+            if self.auto_close_enabled and self.use_api_tp_sl:
+                if side == 'LONG':
+                    tp_stop_price = round(price * (1 + self.take_profit_percent / 100), 4)
+                    tp_limit_price = round(tp_stop_price * 0.999, 4)
+                    sl_stop_price = round(price * (1 - self.stop_loss_percent / 100), 4)
+                    sl_limit_price = round(sl_stop_price * 1.001, 4)
+                else:  # SHORT
+                    tp_stop_price = round(price * (1 - self.take_profit_percent / 100), 4)
+                    tp_limit_price = round(tp_stop_price * 1.001, 4)
+                    sl_stop_price = round(price * (1 + self.stop_loss_percent / 100), 4)
+                    sl_limit_price = round(sl_stop_price * 0.999, 4)
+                
+                take_profit_config = {
+                    "stop_price": tp_stop_price,
+                    "limit_price": tp_limit_price
+                }
+                
+                stop_loss_config = {
+                    "stop_price": sl_stop_price,
+                    "limit_price": sl_limit_price
+                }
+                
+                self.logger.info(f"🎯 TP/SL configurado: TP@${tp_stop_price:.4f}, SL@${sl_stop_price:.4f}")
+            
+            # Executar ordem com TP/SL integrado
             result = self.auth.create_order(
                 symbol=symbol,
                 side=order_side,
                 amount=str(quantity),
                 price=str(price),
-                order_type='GTC'
+                order_type='GTC',
+                take_profit=take_profit_config,
+                stop_loss=stop_loss_config
             )
             
             if result and result.get('success'):
@@ -257,9 +288,7 @@ class MultiAssetStrategy:
                 
                 self.logger.info(f"✅ Posição aberta: {symbol} {side} {quantity} @ ${price:.4f}")
                 
-                # Configurar TP/SL se habilitado
-                if self.auto_close_enabled and self.use_api_tp_sl:
-                    self._setup_tp_sl(position_id, symbol, side, price, quantity)
+                # TP/SL já configurado na ordem principal se habilitado
                 
             else:
                 self.logger.error(f"❌ Falha ao abrir posição: {result}")
@@ -267,43 +296,15 @@ class MultiAssetStrategy:
         except Exception as e:
             self.logger.error(f"❌ Erro ao executar sinal: {e}")
     
-    def _setup_tp_sl(self, position_id: str, symbol: str, side: str, entry_price: float, quantity: float):
-        """Configurar TP/SL via API"""
-        try:
-            if side == 'LONG':
-                tp_price = entry_price * (1 + self.take_profit_percent / 100)
-                sl_price = entry_price * (1 - self.stop_loss_percent / 100)
-            else:  # SHORT
-                tp_price = entry_price * (1 - self.take_profit_percent / 100)
-                sl_price = entry_price * (1 + self.stop_loss_percent / 100)
-            
-            # Criar ordem de Take Profit
-            tp_result = self.auth.create_order(
-                symbol=symbol,
-                side='ask' if side == 'LONG' else 'bid',
-                amount=str(quantity),
-                price=str(tp_price),
-                order_type='TAKE_PROFIT',
-                reduce_only=True
-            )
-            
-            # Criar ordem de Stop Loss
-            sl_result = self.auth.create_order(
-                symbol=symbol,
-                side='ask' if side == 'LONG' else 'bid',
-                amount=str(quantity),
-                price=str(sl_price),
-                order_type='STOP_LOSS',
-                reduce_only=True
-            )
-            
-            if tp_result and tp_result.get('success'):
-                self.logger.info(f"✅ TP configurado: ${tp_price:.4f}")
-            if sl_result and sl_result.get('success'):
-                self.logger.info(f"✅ SL configurado: ${sl_price:.4f}")
-                
-        except Exception as e:
-            self.logger.error(f"❌ Erro ao configurar TP/SL: {e}")
+    def _setup_tp_sl_deprecated(self, position_id: str, symbol: str, side: str, entry_price: float, quantity: float):
+        """
+        MÉTODO DEPRECIADO - TP/SL agora é configurado diretamente na ordem principal
+        Configurar TP/SL via API - VERSÃO ANTIGA (criava ordens separadas)
+        """
+        # Este método não é mais usado - TP/SL agora é incluído na ordem principal
+        # conforme o formato esperado pela API: take_profit e stop_loss na mesma requisição
+        self.logger.debug("⚠️ _setup_tp_sl_deprecated chamado - usando versão integrada na ordem principal")
+        pass
     
     def _check_all_tp_sl(self):
         """Verificar TP/SL de todas as posições (se não usando API nativa)"""
