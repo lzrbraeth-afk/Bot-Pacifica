@@ -21,7 +21,7 @@ class StrategyLogger:
     def setup_filters(self):
         """Configurar filtros específicos por estratégia"""
         
-        # Palavras/frases que devem ser filtradas para multi_asset
+        # Palavras/frases que devem ser filtradas para multi_asset e multi_asset_enhanced
         self.multi_asset_filters = [
             'grid', 'Grid', 'GRID',
             'níveis', 'níveis', 'levels',
@@ -38,6 +38,16 @@ class StrategyLogger:
             'levels': 'positions',
             'rebalanceamento': 'análise de mercado',
             'rebalancing': 'market analysis'
+        }
+        
+        # Substituições específicas para multi_asset_enhanced
+        self.enhanced_replacements = {
+            'Grid': 'Enhanced Multi-Asset',
+            'grid': 'algoritmo inteligente',
+            'níveis': 'sinais detectados',
+            'levels': 'detected signals',
+            'rebalanceamento': 'análise técnica avançada',
+            'rebalancing': 'advanced technical analysis'
         }
         
         # Palavras que devem ser filtradas para grid strategies
@@ -59,17 +69,17 @@ class StrategyLogger:
         if any(word in message.lower() for word in init_keywords):
             return True
         
-        if self.strategy_type == 'multi_asset':
-            # Para multi_asset, filtrar mensagens relacionadas ao grid tradicional
+        if self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+            # Para multi_asset e enhanced, filtrar mensagens relacionadas ao grid tradicional
             for filter_word in self.multi_asset_filters:
                 if filter_word.lower() in message.lower():
-                    return False  # Filtrar mensagem
+                    return False  # Filtrar (não mostrar)
                     
         elif self.strategy_type in ['pure_grid', 'market_making']:
-            # Para grid strategies, filtrar mensagens relacionadas ao multi-asset
+            # Para grid strategies, filtrar mensagens de multi-asset
             for filter_word in self.grid_filters:
                 if filter_word.lower() in message.lower():
-                    return False  # Filtrar mensagem
+                    return False  # Filtrar (não mostrar)
                     
         return True  # Não filtrar
         
@@ -79,8 +89,12 @@ class StrategyLogger:
         adapted_message = message
         
         if self.strategy_type == 'multi_asset':
-            # Substituir termos específicos do grid
+            # Substituir termos específicos do grid para multi_asset básico
             for old_term, new_term in self.multi_asset_replacements.items():
+                adapted_message = adapted_message.replace(old_term, new_term)
+        elif self.strategy_type == 'multi_asset_enhanced':
+            # Substituir termos específicos para enhanced strategy
+            for old_term, new_term in self.enhanced_replacements.items():
                 adapted_message = adapted_message.replace(old_term, new_term)
                 
         return adapted_message
@@ -89,7 +103,8 @@ class StrategyLogger:
         """Obter prefixo específico da estratégia"""
         
         prefixes = {
-            'multi_asset': '🔄',
+            'multi_asset': '🌐',
+            'multi_asset_enhanced': '🧠',
             'pure_grid': '📊',
             'market_making': '🎯'
         }
@@ -126,6 +141,28 @@ class StrategyLogger:
         adapted_message = self._adapt_message(message)
         self.base_logger.error(adapted_message)
     
+    # Métodos específicos para Enhanced Strategy
+    def enhanced_signal(self, symbol: str, score: int, confidence: float, action: str):
+        """Log específico para sinais Enhanced"""
+        if self.strategy_type == 'multi_asset_enhanced':
+            message = f"🧠 {symbol} - Score: {score}/100, Conf: {confidence:.1%} → {action.upper()}"
+            self.base_logger.info(message)
+    
+    def enhanced_analysis(self, symbol: str, indicators: dict):
+        """Log análise detalhada dos indicadores"""
+        if self.strategy_type == 'multi_asset_enhanced':
+            details = []
+            for indicator, value in indicators.items():
+                details.append(f"{indicator}: {value}")
+            message = f"🔍 {symbol} - {', '.join(details)}"
+            self.base_logger.debug(message)
+    
+    def strategy_info(self, message: str):
+        """Info específico da estratégia com emoji correto"""
+        prefix = self._get_strategy_prefix()
+        adapted_message = self._adapt_message(f"{prefix} {message}")
+        self.base_logger.info(adapted_message)
+    
     def strategy_info(self, message: str):
         """Log específico da estratégia com prefixo"""
         
@@ -151,12 +188,22 @@ def get_strategy_specific_messages(strategy_type: str) -> Dict[str, str]:
     
     messages = {
         'multi_asset': {
-            'initialization': '🚀 Inicializando estratégia Multi-Asset Scalping...',
+            'initialization': '🌐 Inicializando estratégia Multi-Asset Scalping...',
             'ready': '✅ Estratégia Multi-Asset pronta para trading',
             'monitoring': '👀 Monitorando oportunidades em múltiplos ativos',
             'position_opened': '📈 Nova posição aberta',
             'position_closed': '💰 Posição fechada com',
             'no_opportunities': '⏳ Aguardando oportunidades de mercado...'
+        },
+        'multi_asset_enhanced': {
+            'initialization': '🧠 Inicializando Enhanced Multi-Asset Strategy...',
+            'ready': '✅ Algoritmo inteligente com 5 indicadores ativo',
+            'monitoring': '🔍 Analisando mercado com algoritmo avançado',
+            'signal_detected': '⚡ Sinal detectado - Score:',
+            'position_opened': '🚀 Posição Enhanced aberta',
+            'position_closed': '💎 Posição Enhanced fechada com',
+            'no_opportunities': '🤔 Aguardando sinais de alta qualidade...',
+            'analyzing': '📊 Analisando 5 indicadores técnicos...'
         },
         'pure_grid': {
             'initialization': '📊 Inicializando estratégia Pure Grid...',

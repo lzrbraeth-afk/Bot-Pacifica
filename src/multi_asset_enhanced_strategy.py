@@ -15,7 +15,7 @@ from src.enhanced_signal_detector import EnhancedSignalDetector
 class MultiAssetEnhancedStrategy:
     def __init__(self, auth_client, calculator, position_manager):
         """Inicializa estratégia multi-asset com algoritmo de sinais melhorado"""
-        self.logger = create_strategy_logger('PacificaBot.MultiAssetEnhanced', 'multi_asset')
+        self.logger = create_strategy_logger('PacificaBot.MultiAssetEnhanced', 'multi_asset_enhanced')
         
         self.auth = auth_client
         self.calculator = calculator
@@ -262,11 +262,17 @@ class MultiAssetEnhancedStrategy:
             quality_score = signal['quality_score']
             confidence = signal['confidence']
             
-            # Log melhorado com detalhes técnicos
-            self.logger.strategy_info(f"EXECUTANDO {side} {symbol} @ ${current_price:.4f}")
-            self.logger.info(f"   🎯 Quality: {quality_score}/100 | Confidence: {confidence}/100")
-            self.logger.info(f"   📈 Momentum: {signal['momentum']:.2f}% | Trend: {signal['trend']}")
-            self.logger.info(f"   📊 RSI: {signal['rsi']:.1f} | Volatility: {signal['volatility']:.2f}%")
+            # Log melhorado usando métodos específicos Enhanced
+            self.logger.enhanced_signal(symbol, quality_score, confidence/100, side)
+            
+            # Detalhes técnicos usando enhanced_analysis
+            indicators = {
+                'Momentum': f"{signal['momentum']:.2f}%",
+                'Trend': signal['trend'],
+                'RSI': f"{signal['rsi']:.1f}",
+                'Volatility': f"{signal['volatility']:.2f}%"
+            }
+            self.logger.enhanced_analysis(symbol, indicators)
             
             # Calcular quantidade ajustada pela confiança do sinal
             base_quantity = self.position_size_usd / current_price
