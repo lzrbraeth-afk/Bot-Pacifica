@@ -17,6 +17,7 @@ from src.pacifica_auth import PacificaAuth
 from src.grid_calculator import GridCalculator
 from src.position_manager import PositionManager
 from src.grid_strategy import GridStrategy
+from src.multi_asset_strategy import MultiAssetStrategy
 from src.performance_tracker import PerformanceTracker
 
 class GridTradingBot:
@@ -34,13 +35,30 @@ class GridTradingBot:
         
         # Configurações
         self.symbol = os.getenv('SYMBOL', 'BTC')
+        # Determinar tipo de estratégia principal
+        strategy_type_env = os.getenv('STRATEGY_TYPE', 'market_making').lower()
+        
+        # Se STRATEGY_TYPE for 'multi_asset', usar multi_asset, senão usar grid
+        if strategy_type_env == 'multi_asset':
+            self.strategy_type = 'multi_asset'
+        else:
+            # market_making, pure_grid, ou qualquer outro valor = grid trading
+            self.strategy_type = 'grid'
+        
         self.rebalance_interval = int(os.getenv('REBALANCE_INTERVAL_SECONDS', '60'))
         self.check_balance = os.getenv('CHECK_BALANCE_BEFORE_ORDER', 'true').lower() == 'true'
         
         self.logger.info("=" * 80)
-        self.logger.info("🤖 PACIFICA GRID TRADING BOT")
+        self.logger.info("🤖 PACIFICA TRADING BOT")
         self.logger.info("=" * 80)
-        self.logger.info(f"Símbolo: {self.symbol}")
+        if self.strategy_type == 'grid':
+            grid_type = os.getenv('STRATEGY_TYPE', 'market_making').upper()
+            self.logger.info(f"Estratégia: GRID TRADING ({grid_type})")
+            self.logger.info(f"Símbolo: {self.symbol}")
+        else:
+            self.logger.info(f"Estratégia: MULTI-ASSET SCALPING")
+            symbols = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
+            self.logger.info(f"Símbolos: {symbols}")
         self.logger.info(f"Intervalo de Rebalanceamento: {self.rebalance_interval}s")
         self.logger.info("=" * 80)
         
@@ -107,8 +125,13 @@ class GridTradingBot:
             # Inicializar position manager
             self.position_mgr = PositionManager(self.auth)
             
-            # Inicializar strategy
-            self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
+            # Inicializar strategy baseada no tipo configurado
+            if self.strategy_type == 'multi_asset':
+                self.logger.info("🎯 Inicializando estratégia Multi-Asset Scalping...")
+                self.strategy = MultiAssetStrategy(self.auth, self.calculator, self.position_mgr)
+            else:
+                self.logger.info("📊 Inicializando estratégia Grid Trading...")
+                self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
             
             self.logger.info("✅ Componentes inicializados")
             return True
@@ -142,24 +165,48 @@ class GridTradingBot:
             # Usar método real da API
             prices = self.auth.get_prices()
             
-            if prices and isinstance(prices, dict):
-                # API retorna {"success": true, "data": [...]}
-                if prices.get('success') and 'data' in prices:
-                    data = prices['data']
-                    
-                    if isinstance(data, list):
-                        for item in data:
-                            if item.get('symbol') == self.symbol:
-                                # Preço está em 'mark' ou 'mid'
-                                price = item.get('mark') or item.get('mid')
-                                if price:
-                                    return float(price)
+            if not prices:
+                self.logger.warning("⚠️ API retornou dados vazios para preços")
+                return 0
             
-            self.logger.warning("⚠️ Não foi possível obter preço da API")
+            if not isinstance(prices, dict):
+                self.logger.warning(f"⚠️ API retornou formato inválido: {type(prices)}")
+                return 0
+                
+            # API retorna {"success": true, "data": [...]}
+            if not prices.get('success'):
+                self.logger.warning(f"⚠️ API retornou erro: {prices}")
+                return 0
+                
+            data = prices.get('data')
+            if not data:
+                self.logger.warning("⚠️ API não retornou dados de preços")
+                return 0
+                
+            if not isinstance(data, list):
+                self.logger.warning(f"⚠️ Dados de preços em formato inválido: {type(data)}")
+                return 0
+            
+            # Procurar pelo símbolo específico
+            for item in data:
+                if item.get('symbol') == self.symbol:
+                    # Preço está em 'mark' ou 'mid'
+                    price = item.get('mark') or item.get('mid')
+                    if price:
+                        price_float = float(price)
+                        if price_float > 0:
+                            return price_float
+                        else:
+                            self.logger.warning(f"⚠️ Preço inválido recebido para {self.symbol}: {price}")
+            
+            self.logger.warning(f"⚠️ Símbolo {self.symbol} não encontrado nos dados da API")
+            self.logger.debug(f"Símbolos disponíveis: {[item.get('symbol') for item in data[:5]]}")
             return 0
-        
+            
         except Exception as e:
             self.logger.error(f"❌ Erro ao obter preço: {e}")
+            import traceback
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
             return 0
     
     def run(self):
@@ -172,20 +219,27 @@ class GridTradingBot:
             self.logger.error("❌ Falha na inicialização - abortando")
             return
         
-        # Inicializando teste de symbol info
-        self.logger.info(f"🔍 Testando market info para {self.symbol}...")
-        test_info = self.auth.get_symbol_info(self.symbol)
-        if test_info:
-            self.logger.info(f"✅ tick_size={test_info.get('tick_size')}, lot_size={test_info.get('lot_size')}")
+        # Inicializando teste de symbol info (apenas para estratégia grid)
+        if self.strategy_type == 'grid':
+            self.logger.info(f"🔍 Testando market info para {self.symbol}...")
+            test_info = self.auth.get_symbol_info(self.symbol)
+            if test_info:
+                self.logger.info(f"✅ tick_size={test_info.get('tick_size')}, lot_size={test_info.get('lot_size')}")
+        else:
+            self.logger.info("🔍 Testando conexão com múltiplos símbolos...")
 
         
-        # Obter preço inicial
-        current_price = self.get_current_price()
-        if current_price == 0:
-            self.logger.error("❌ Não foi possível obter preço inicial")
-            return
-        
-        self.logger.info(f"💰 Preço inicial {self.symbol}: ${current_price:,.2f}")
+        # Obter preço inicial (apenas para estratégia grid)
+        if self.strategy_type == 'grid':
+            current_price = self.get_current_price()
+            if current_price == 0:
+                self.logger.error("❌ Não foi possível obter preço inicial")
+                return
+            
+            self.logger.info(f"💰 Preço inicial {self.symbol}: ${current_price:,.2f}")
+        else:
+            current_price = 0  # Multi-asset gerencia seus próprios preços
+            self.logger.info("💰 Estratégia Multi-Asset: preços gerenciados internamente")
         
         # Verificar saldo se configurado
         if self.check_balance:
@@ -194,18 +248,22 @@ class GridTradingBot:
                 self.logger.error("❌ Falha ao verificar saldo")
                 return
         
-        # Inicializar grid
-        self.logger.info("🎯 Inicializando grid...")
+        # Inicializar estratégia
+        strategy_name = "Multi-Asset" if self.strategy_type == 'multi_asset' else "Grid"
+        self.logger.info(f"🎯 Inicializando estratégia {strategy_name}...")
         if not self.strategy.initialize_grid(current_price):
-            self.logger.error("❌ Falha ao inicializar grid")
+            self.logger.error(f"❌ Falha ao inicializar estratégia {strategy_name}")
             return
         
-        # Verificar se grid foi criado ou retomado
+        # Verificar se estratégia foi inicializada
         grid_status = self.strategy.get_grid_status()
-        if grid_status['active_orders'] > 0:
-            self.logger.info(f"♻️ Grid retomado com {grid_status['active_orders']} ordens existentes")
+        if self.strategy_type == 'grid':
+            if grid_status['active_orders'] > 0:
+                self.logger.info(f"♻️ Grid retomado com {grid_status['active_orders']} ordens existentes")
+            else:
+                self.logger.info(f"🆕 Novo grid criado com {grid_status['active_orders']} ordens")
         else:
-            self.logger.info(f"🆕 Novo grid criado com {grid_status['active_orders']} ordens")
+            self.logger.info("🆕 Estratégia Multi-Asset inicializada e pronta")
         
         # 🔧 CORREÇÃO: Mover para FORA do if/else
         self.running = True
@@ -218,15 +276,20 @@ class GridTradingBot:
         iteration = 0
         last_rebalance = time.time()
         last_price_check = time.time()
-        current_price = self.get_current_price()  # 🔧 Já pegar o preço aqui
+        
+        # Inicializar current_price baseado na estratégia
+        if self.strategy_type == 'grid':
+            current_price = self.get_current_price()  # Grid usa preço único
+        else:
+            current_price = 0  # Multi-asset não usa preço único
         
         while self.running:
             try:
                 iteration += 1
                 current_time = time.time()
 
-                # 🔧 Obter preço apenas a cada x segundos (configurável)
-                if current_time - last_price_check >= 30:
+                # 🔧 Obter preço apenas para estratégia grid
+                if self.strategy_type == 'grid' and current_time - last_price_check >= 30:
                     new_price = self.get_current_price()
                     if new_price > 0:
                         current_price = new_price
@@ -235,7 +298,10 @@ class GridTradingBot:
                 # Log de heartbeat
                 if iteration % 10 == 0:
                     uptime = datetime.now() - self.start_time
-                    self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Preço: ${current_price:,.2f}")
+                    if self.strategy_type == 'grid':
+                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Preço: ${current_price:,.2f}")
+                    else:
+                        self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Multi-Asset Ativo")
                 
                 # Verificar margem
                 if self.check_balance and iteration % 5 == 0:
@@ -256,9 +322,13 @@ class GridTradingBot:
                 #     self.stop()
                 #     break
                 
-                # Rebalancear grid se necessário
+                # Rebalancear estratégia se necessário
                 if current_time - last_rebalance >= self.rebalance_interval:
-                    self.logger.info(f"🔄 Verificando rebalanceamento em ${current_price:,.2f}")
+                    if self.strategy_type == 'grid':
+                        self.logger.info(f"🔄 Verificando rebalanceamento em ${current_price:,.2f}")
+                    else:
+                        self.logger.info("🔄 Verificando sinais Multi-Asset")
+                    
                     try:
                         self.strategy.check_and_rebalance(current_price)
                     except Exception as e:
@@ -296,11 +366,16 @@ class GridTradingBot:
         self.logger.info("📊 STATUS DO BOT")
         self.logger.info("=" * 80)
         
-        # Status do grid
+        # Status do grid/estratégia
         grid_status = self.strategy.get_grid_status()
-        self.logger.info(f"Grid Ativo: {grid_status['active']}")
-        self.logger.info(f"Preço Central: ${grid_status['center_price']:,.2f}")
-        self.logger.info(f"Ordens Ativas: {grid_status['active_orders']}")
+        strategy_name = "Multi-Asset" if self.strategy_type == 'multi_asset' else "Grid"
+        self.logger.info(f"{strategy_name} Ativo: {grid_status['active']}")
+        
+        if self.strategy_type == 'grid':
+            self.logger.info(f"Preço Central: ${grid_status['center_price']:,.2f}")
+            self.logger.info(f"Ordens Ativas: {grid_status['active_orders']}")
+        else:
+            self.logger.info(f"Posições Ativas: {grid_status['active_orders']}")  # Para multi-asset, são posições
         
         # 🆕 ADICIONAR: Métricas de performance
         try:
@@ -333,13 +408,6 @@ class GridTradingBot:
         
         if self.strategy and hasattr(self.strategy, 'performance_tracker'):
             self.strategy.print_performance_summary()
-            
-            # Exportar trades para CSV
-            try:
-                csv_file = self.strategy.performance_tracker.export_trades_csv()
-                self.logger.info(f"📄 Trades exportados para: {csv_file}")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Erro ao exportar trades: {e}")
         else:
             self.logger.warning("⚠️ Performance tracker não disponível")
     

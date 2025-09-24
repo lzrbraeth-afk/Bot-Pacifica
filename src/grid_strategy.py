@@ -252,10 +252,20 @@ class GridStrategy:
         if not self.grid_active:
             return False
 
+        # 🔧 VERIFICAR PREÇO VÁLIDO
+        if price <= 0:
+            self.logger.error(f"❌ Preço inválido recebido para ordem: ${price} - cancelando ordem")
+            return False
+
         try:
             # Calcular quantidade
             if quantity is None:
                 quantity = self.calculator.calculate_quantity(price)
+            
+            # 🔧 VERIFICAR SE QUANTIDADE É VÁLIDA
+            if quantity <= 0:
+                self.logger.error(f"❌ Quantidade inválida calculada: {quantity} para preço ${price}")
+                return False
             
             order_value = price * quantity
             self.logger.info(f"Ordem de teste: {price} - {quantity} - {order_value}")
@@ -434,6 +444,11 @@ class GridStrategy:
         """Rebalanceia o grid adicionando ordens faltantes COM CORREÇÃO"""
         
         try:
+            # 🔧 VERIFICAR SE PREÇO ATUAL É VÁLIDO PARA CÁLCULOS
+            if current_price <= 0:
+                self.logger.warning(f"⚠️ Preço inválido para rebalanceamento: {current_price} - pulando")
+                return
+            
             self.logger.info(f"🔄 Iniciando rebalanceamento do grid...")
             
             # 1. Buscar ordens abertas atuais
@@ -504,13 +519,25 @@ class GridStrategy:
             if buy_needed > 0:
                 self.logger.info(f"➕ Criando {buy_needed} ordens BUY...")
                 
+                # 🔧 VERIFICAR SE SPACING É VÁLIDO
+                spacing = getattr(self.calculator, 'spacing_percent', 0.5)
+                if spacing <= 0:
+                    self.logger.error(f"❌ Spacing inválido: {spacing}% - cancelando rebalanceamento")
+                    return
+                
                 buy_count = 0
                 level = 1
                 while buy_count < buy_needed:
                     # Calcular preço do nível
-                    price_offset = (self.calculator.spacing_percent / 100) * level
+                    price_offset = (spacing / 100) * level
                     price = current_price * (1 - price_offset)
                     price = self.calculator.round_price(price)
+                    
+                    # 🔧 VERIFICAR SE PREÇO CALCULADO É VÁLIDO
+                    if price <= 0:
+                        self.logger.error(f"❌ Preço BUY inválido calculado: {price} (level {level})")
+                        level += 1
+                        continue
                     
                     # Verificar se já existe ordem nesse preço
                     if price not in existing_buy_prices and price not in self.placed_orders:
@@ -530,13 +557,25 @@ class GridStrategy:
             if sell_needed > 0:
                 self.logger.info(f"➕ Criando {sell_needed} ordens SELL...")
                 
+                # 🔧 VERIFICAR SE SPACING É VÁLIDO (usar mesmo valor que BUY)
+                spacing = getattr(self.calculator, 'spacing_percent', 0.5)
+                if spacing <= 0:
+                    self.logger.error(f"❌ Spacing inválido: {spacing}% - cancelando rebalanceamento")
+                    return
+                
                 sell_count = 0
                 level = 1
                 while sell_count < sell_needed:
                     # Calcular preço do nível
-                    price_offset = (self.calculator.spacing_percent / 100) * level
+                    price_offset = (spacing / 100) * level
                     price = current_price * (1 + price_offset)
                     price = self.calculator.round_price(price)
+                    
+                    # 🔧 VERIFICAR SE PREÇO CALCULADO É VÁLIDO
+                    if price <= 0:
+                        self.logger.error(f"❌ Preço SELL inválido calculado: {price} (level {level})")
+                        level += 1
+                        continue
                     
                     # Verificar se já existe ordem nesse preço
                     if price not in existing_sell_prices and price not in self.placed_orders:

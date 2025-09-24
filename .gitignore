@@ -13,12 +13,14 @@ __pycache__/
 .venv/
 venv/
 ENV/
+config_example.env
 
 # Logs & data
 logs/
 *.log
 *.csv
 *.json
+tests
 
 # OS
 .DS_Store

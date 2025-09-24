@@ -53,10 +53,18 @@ class GridExecution:
     commission: float = 0.0
 
 class PerformanceTracker:
-    def __init__(self, symbol: str = "BTC"):
+    def __init__(self, symbol: str = "BTC", symbols: List[str] = None):
         self.logger = logging.getLogger('PacificaBot.PerformanceTracker')
         
-        self.symbol = symbol
+        # Suporte para símbolos múltiplos (multi-asset) ou único (grid)
+        if symbols:
+            self.symbol = "MULTI"  # Nome para estratégia multi-asset
+            self.symbols = symbols
+            self.is_multi_asset = True
+        else:
+            self.symbol = symbol
+            self.symbols = [symbol]
+            self.is_multi_asset = False
         self.trades: List[Trade] = []
         self.grid_executions: List[GridExecution] = []
         self.equity_curve: List[Tuple[datetime, float]] = []

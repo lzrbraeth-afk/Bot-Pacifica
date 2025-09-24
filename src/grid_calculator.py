@@ -134,11 +134,22 @@ class GridCalculator:
         if len(prices) < 2:
             return 0.01  # Volatilidade padrão baixa
         
+        # 🔧 FILTRAR PREÇOS INVÁLIDOS ANTES DE CALCULAR VOLATILIDADE
+        valid_prices = [p for p in prices if p > 0]
+        
+        if len(valid_prices) < 2:
+            self.logger.warning("⚠️ Preços válidos insuficientes para calcular volatilidade")
+            return 0.01
+        
         # Calcular retornos logarítmicos
         returns = []
-        for i in range(1, len(prices)):
-            if prices[i-1] > 0:  # Evitar divisão por zero
-                return_pct = (prices[i] - prices[i-1]) / prices[i-1]
+        for i in range(1, len(valid_prices)):
+            prev_price = valid_prices[i-1]
+            curr_price = valid_prices[i]
+            
+            # 🔧 VERIFICAÇÃO ADICIONAL DE SEGURANÇA
+            if prev_price > 0 and curr_price > 0:
+                return_pct = (curr_price - prev_price) / prev_price
                 returns.append(return_pct)
         
         if not returns:
@@ -160,6 +171,11 @@ class GridCalculator:
         if not self.adaptive_mode:
             return self.spacing_percent
         
+        # 🔧 VERIFICAR PREÇO VÁLIDO
+        if current_price <= 0:
+            self.logger.warning(f"⚠️ Preço inválido para spacing adaptativo: {current_price}")
+            return self.spacing_percent
+        
         # Adicionar preço atual ao histórico
         self.price_history.append(current_price)
         
@@ -175,6 +191,11 @@ class GridCalculator:
         # Definir volatilidade de referência (média do que consideramos "normal")
         reference_volatility = 0.005  # 0.5% - ajustar baseado no ativo
         
+        # 🔧 VERIFICAÇÃO ADICIONAL DE SEGURANÇA  
+        if reference_volatility <= 0:
+            self.logger.error("❌ Volatilidade de referência inválida!")
+            return self.spacing_percent
+        
         # Calcular multiplicador baseado na volatilidade
         volatility_ratio = current_volatility / reference_volatility
         
@@ -186,6 +207,11 @@ class GridCalculator:
         
         # Calcular novo espaçamento
         adaptive_spacing = self.spacing_percent * multiplier
+        
+        # 🔧 GARANTIR QUE SPACING NUNCA SEJA ZERO OU NEGATIVO
+        if adaptive_spacing <= 0:
+            self.logger.warning(f"⚠️ Spacing adaptativo inválido: {adaptive_spacing} - usando base")
+            adaptive_spacing = self.spacing_percent
         
         self.logger.info(f"📊 Grid adaptativo: volatilidade={current_volatility:.4f}, "
                         f"multiplicador={multiplier:.2f}, spacing={adaptive_spacing:.3f}%")
@@ -210,6 +236,11 @@ class GridCalculator:
         
         if order_size_usd is None:
             order_size_usd = self.order_size_usd
+        
+        # 🔧 VERIFICAR PREÇO VÁLIDO
+        if price <= 0:
+            self.logger.error(f"❌ Preço inválido para cálculo de quantidade: ${price}")
+            return 0.0
         
         # Calcular quantidade bruta
         quantity = order_size_usd / price
