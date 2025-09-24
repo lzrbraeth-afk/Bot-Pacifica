@@ -20,6 +20,11 @@ class PositionManager:
         self.leverage = int(os.getenv('LEVERAGE', '10'))
         self.auto_reduce = os.getenv('AUTO_REDUCE_ON_LOW_MARGIN', 'true').lower() == 'true'
         
+        # 🆕 Configurações de Auto-Close
+        self.auto_close_on_limit = os.getenv('AUTO_CLOSE_ON_MAX_POSITION', 'true').lower() == 'true'
+        self.auto_close_strategy = os.getenv('AUTO_CLOSE_STRATEGY', 'hybrid')  # cancel_distant_orders, force_partial_sell, hybrid
+        self.auto_close_percentage = float(os.getenv('AUTO_CLOSE_PERCENTAGE', '20'))  # Percentual da posição a vender
+        
         # Estado interno
         self.open_orders = {}  # {order_id: order_data}
         self.positions = {}    # {symbol: position_data}
@@ -28,6 +33,8 @@ class PositionManager:
         self.margin_available = 0
         
         self.logger.info(f"PositionManager inicializado - Safety: {self.margin_safety_percent}%, Max Position: ${self.max_position_size}")
+        if self.auto_close_on_limit:
+            self.logger.info(f"🔧 Auto-close ATIVADO: {self.auto_close_strategy}, {self.auto_close_percentage}%")
     
     def update_account_state(self) -> bool:
         """Atualiza estado da conta (saldo, margem, posições) COM CORREÇÃO"""
@@ -58,6 +65,35 @@ class PositionManager:
                 
                 # Atualizar contadores internos baseado no estado real da API
                 self._sync_internal_state_with_api()
+                
+                # 🆕 Verificar auto-close baseado no valor da posição atual
+                self._check_position_size_and_auto_close()
+                
+                # 🆕 Simular posição baseada na margem usada para auto-close
+                # Se temos margem usada > 0, deve haver posições
+                if self.margin_used > 0:
+                    symbol = os.getenv('SYMBOL', 'SOL')
+                    
+                    # Estimar quantidade da posição baseada na margem usada
+                    # Assumir que toda margem usada é de uma posição long no símbolo principal
+                    estimated_position_value = self.margin_used * self.leverage
+                    current_price = self._get_current_price(symbol)
+                    
+                    if current_price > 0:
+                        estimated_quantity = estimated_position_value / current_price
+                        
+                        # Atualizar posição simulada
+                        self.positions[symbol] = {
+                            'symbol': symbol,
+                            'side': 'long',  # Assumir long baseado na margem positiva
+                            'quantity': estimated_quantity,
+                            'entry_price': current_price,  # Aproximação
+                            'value': estimated_position_value,
+                            'pnl': 0,  # Não temos PnL real
+                            'simulated': True  # Marcar como simulado
+                        }
+                        
+                        self.logger.debug(f"📊 Posição simulada: {symbol} = {estimated_quantity:.6f} (${estimated_position_value:.2f})")
                 
                 return True
             else:
@@ -149,9 +185,12 @@ class PositionManager:
                 order_data['value'] = order_value
                 order_data['margin'] = margin
         
-        # Atualizar margem usada
-        self.margin_used = total_margin
-        self.margin_available = self.account_balance - self.margin_used
+        # ⚠️ NÃO sobrescrever margin_used da API - ela inclui posições + ordens
+        # self.margin_used já foi atualizada pela API em update_account_state()
+        # total_margin aqui são apenas as ordens, não as posições abertas
+        
+        # Manter margem disponível como está da API
+        # self.margin_available já foi atualizada pela API em update_account_state()
         
         self.logger.debug(f"💰 Margem recalculada: ${total_margin:.2f}")
 
@@ -470,3 +509,230 @@ class PositionManager:
             return True, f"⛔ PERDA EXCESSIVA: ${total_pnl:.2f}"
         
         return False, "OK"
+    
+    def _get_current_price(self, symbol: str) -> float:
+        """Obtém preço atual do símbolo"""
+        try:
+            price_data = self.auth.get_prices()
+            if price_data and 'data' in price_data:
+                for item in price_data['data']:
+                    item_symbol = item.get('symbol', '')
+                    
+                    if item_symbol == symbol:
+                        # Usar 'mark' como preço principal
+                        price = float(item.get('mark', 0))
+                        self.logger.debug(f"✅ Preço {symbol}: ${price}")
+                        return price
+                        
+                self.logger.warning(f"⚠️ Símbolo {symbol} não encontrado nos preços")
+                return 0
+            else:
+                self.logger.warning("⚠️ Dados de preço não encontrados na resposta")
+                return 0
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao obter preço {symbol}: {e}")
+            return 0
+
+    def _check_position_size_and_auto_close(self):
+        """🆕 Verifica se a posição atual excede o limite e ativa auto-close"""
+        
+        if not self.auto_close_on_limit:
+            return  # Auto-close desabilitado
+        
+        try:
+            # Calcular valor total das posições usando margem usada como proxy
+            # A margem usada reflete o valor notional das posições atuais
+            position_value_usd = self.margin_used * self.leverage
+            
+            self.logger.info(f"💡 Debug cálculo posição: margin_used=${self.margin_used} * leverage={self.leverage} = ${position_value_usd}")
+            self.logger.info(f"🔍 Verificando tamanho da posição: ${position_value_usd:.2f} vs limite ${self.max_position_size:.2f}")
+            
+            if position_value_usd > self.max_position_size:
+                self.logger.warning(f"⚠️ Posição excede limite: ${position_value_usd:.2f} > ${self.max_position_size:.2f}")
+                self.logger.info("🔧 Auto-close ativado - reduzindo posição...")
+                
+                # Calcular quanto precisa ser fechado
+                excess_amount = position_value_usd - self.max_position_size
+                self.logger.info(f"🎯 Tentando liberar espaço para ordem de ${excess_amount:.2f}")
+                
+                # Executar auto-close baseado na estratégia
+                freed_amount = self._auto_close_positions(excess_amount)
+                
+                if freed_amount > 0:
+                    self.logger.info(f"✅ Auto-close liberou ${freed_amount:.2f}")
+                else:
+                    self.logger.warning("⚠️ Não foi possível reduzir a posição automaticamente")
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Erro na verificação auto-close: {e}")
+
+    def _auto_close_positions(self, target_amount: float) -> float:
+        """🆕 Executa auto-close baseado na estratégia configurada"""
+        
+        freed_total = 0.0
+        
+        try:
+            if self.auto_close_strategy == 'cancel_distant_orders':
+                # Estratégia 1: Apenas cancelar ordens distantes
+                freed_total = self._cancel_distant_sell_orders()
+                
+            elif self.auto_close_strategy == 'force_partial_sell':
+                # Estratégia 2: Venda forçada de parte da posição
+                freed_total = self._force_partial_sell()
+                
+            elif self.auto_close_strategy == 'hybrid':
+                # Estratégia 3: Híbrida - tentar cancelar primeiro, depois vender
+                freed_total = self._cancel_distant_sell_orders()
+                
+                if freed_total < target_amount:
+                    self.logger.info(f"🔄 Ainda precisa de ${target_amount - freed_total:.2f} - vendendo posição parcial")
+                    additional_freed = self._force_partial_sell()
+                    freed_total += additional_freed
+            
+            return freed_total
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro no auto-close: {e}")
+            return 0.0
+
+    def _cancel_distant_sell_orders(self) -> float:
+        """Cancela ordens sell muito distantes do preço atual"""
+        
+        try:
+            symbol = os.getenv('SYMBOL', 'SOL')
+            current_price = self._get_current_price(symbol)
+            
+            if current_price <= 0:
+                self.logger.warning("⚠️ Não foi possível obter preço atual para cancelar ordens")
+                return 0.0
+            
+            orders_to_cancel = []
+            total_freed = 0
+            
+            # Identificar ordens sell > 2% acima do preço atual
+            for order_id, order_data in self.open_orders.items():
+                if (order_data['side'] == 'sell' and 
+                    order_data['symbol'] == symbol):
+                    
+                    order_price = order_data['price']
+                    distance_percent = ((order_price - current_price) / current_price) * 100
+                    
+                    # Cancelar sells > 2% acima do preço aproximado
+                    if distance_percent > 2.0:
+                        orders_to_cancel.append((order_id, order_data))
+                        total_freed += order_data.get('value', 0)
+            
+            # Cancelar ordens identificadas
+            cancelled_count = 0
+            for order_id, order_data in orders_to_cancel:
+                try:
+                    # Cancelar na API
+                    result = self.auth.cancel_order(str(order_id))
+                    if result and isinstance(result, dict) and result.get('success'):
+                        self.remove_order(order_id)
+                        cancelled_count += 1
+                        self.logger.info(f"🗑️ Cancelada ordem distante: SELL @ ${order_data['price']:.2f}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Erro ao cancelar ordem {order_id}: {e}")
+            
+            if cancelled_count > 0:
+                self.logger.info(f"🗑️ {cancelled_count} ordens distantes canceladas - ${total_freed:.2f} liberado")
+            
+            return total_freed
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao cancelar ordens distantes: {e}")
+            return 0.0
+
+    def _force_partial_sell(self) -> float:
+        """Força venda de parte da posição para liberar espaço"""
+        
+        try:
+            symbol = os.getenv('SYMBOL', 'SOL')
+            
+            if symbol not in self.positions:
+                self.logger.warning(f"⚠️ Nenhuma posição em {symbol} para vender")
+                return 0.0
+            
+            pos = self.positions[symbol]
+            current_qty = pos.get('quantity', 0)
+            
+            if current_qty <= 0:
+                self.logger.warning(f"⚠️ Posição {symbol} já zerada ou short")
+                return 0.0
+            
+            # Calcular quantidade a vender (percentual configurado)
+            sell_percentage = self.auto_close_percentage / 100
+            qty_to_sell = current_qty * sell_percentage
+            
+            if qty_to_sell < 0.001:  # Quantidade muito pequena
+                self.logger.warning(f"⚠️ Quantidade a vender muito pequena: {qty_to_sell}")
+                return 0.0
+            
+            # Obter preço atual do mercado (mais preciso que estimativas)
+            current_price = self._get_current_price(symbol)
+            if current_price <= 0:
+                current_price = pos.get('entry_price', 0)
+            
+            if current_price <= 0:
+                self.logger.warning(f"⚠️ Não foi possível obter preço para {symbol}")
+                return 0.0
+            
+            freed_value = qty_to_sell * current_price
+            
+            # Log da operação
+            self.logger.info(f"💰 Vendendo {self.auto_close_percentage}% da posição: {qty_to_sell:.6f} {symbol}")
+            self.logger.info(f"💰 Preço atual: ${current_price:.2f} - Valor a liberar: ${freed_value:.2f}")
+            
+            # 🔥 EXECUÇÃO REAL DA VENDA (ativada)
+            try:
+                # Criar ordem para venda imediata  
+                # Usar preço ligeiramente abaixo do mercado para garantir execução
+                market_price = current_price * 0.999  # -0.1% do preço atual
+                
+                # 🔧 ARREDONDAR PREÇO PARA TICK_SIZE usando função do auth
+                tick_size = self.auth._get_tick_size(symbol)
+                market_price = self.auth._round_to_tick_size(market_price, tick_size)
+                
+                # 🔧 ARREDONDAR QUANTIDADE PARA LOT_SIZE  
+                lot_size = 0.01  # SOL lot_size
+                qty_to_sell = round(qty_to_sell / lot_size) * lot_size
+                qty_to_sell = round(qty_to_sell, 2)  # Máximo 2 casas decimais
+                
+                self.logger.info(f"📄 Criando ordem: ask {qty_to_sell} {symbol} @ ${market_price}")
+                
+                result = self.auth.create_order(
+                    symbol=symbol,
+                    side='ask',  # 'ask' para venda na API da Pacifica
+                    amount=str(qty_to_sell),
+                    price=str(market_price),
+                    order_type="GTC",
+                    reduce_only=True  # Para reduzir posição existente
+                )
+                
+                if result and result.get('success'):
+                    order_id = result.get('order_id', 'N/A')
+                    self.logger.info(f"✅ Ordem de venda parcial criada!")
+                    self.logger.info(f"✅ ID: {order_id} - Preço: ${market_price:.2f}")
+                else:
+                    error_msg = result.get('error', 'Erro desconhecido') if result else 'Resposta nula'
+                    self.logger.error(f"❌ Falha na ordem: {error_msg}")
+                    return 0.0
+                        
+            except Exception as e:
+                self.logger.error(f"❌ Erro ao executar venda: {e}")
+                return 0.0
+            
+            # Atualizar posição internamente
+            pos['quantity'] -= qty_to_sell
+            if pos['quantity'] < 0.001:
+                pos['quantity'] = 0  # Zerar se muito pequeno
+            
+            self.logger.info(f"📊 Nova posição {symbol}: {pos['quantity']:.6f}")
+            
+            return freed_value
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro na venda parcial: {e}")
+            return 0.0

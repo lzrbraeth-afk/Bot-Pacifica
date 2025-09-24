@@ -251,17 +251,21 @@ class GridTradingBot:
         # Inicializar estratégia
         strategy_name = "Multi-Asset" if self.strategy_type == 'multi_asset' else "Grid"
         self.logger.info(f"🎯 Inicializando estratégia {strategy_name}...")
-        if not self.strategy.initialize_grid(current_price):
-            self.logger.error(f"❌ Falha ao inicializar estratégia {strategy_name}")
-            return
+        
+        grid_initialized = self.strategy.initialize_grid(current_price)
+        if not grid_initialized:
+            self.logger.warning(f"⚠️ Não foi possível inicializar {strategy_name} agora (margem insuficiente)")
+            self.logger.info("🔄 Bot continuará monitorando e tentará novamente...")
         
         # Verificar se estratégia foi inicializada
         grid_status = self.strategy.get_grid_status()
         if self.strategy_type == 'grid':
             if grid_status['active_orders'] > 0:
                 self.logger.info(f"♻️ Grid retomado com {grid_status['active_orders']} ordens existentes")
-            else:
+            elif grid_initialized:
                 self.logger.info(f"🆕 Novo grid criado com {grid_status['active_orders']} ordens")
+            else:
+                self.logger.info("📊 Aguardando condições para criar grid...")
         else:
             self.logger.info("🆕 Estratégia Multi-Asset inicializada e pronta")
         
@@ -303,8 +307,11 @@ class GridTradingBot:
                     else:
                         self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Multi-Asset Ativo")
                 
-                # Verificar margem
+                # Verificar margem e posição
                 if self.check_balance and iteration % 5 == 0:
+                    # Atualizar estado da conta e verificar auto-close
+                    self.position_mgr.update_account_state()
+                    
                     # is_safe, msg = self.position_mgr.check_margin_safety()
                     # if not is_safe:
                     #     self.logger.warning(f"⚠️ {msg}")
@@ -331,6 +338,16 @@ class GridTradingBot:
                     
                     try:
                         self.strategy.check_and_rebalance(current_price)
+                        
+                        # 🆕 Se não há ordens ativas, tentar recriar grid
+                        grid_status = self.strategy.get_grid_status()
+                        if grid_status['active_orders'] == 0:
+                            self.logger.info("🔄 Sem ordens ativas - tentando recriar grid...")
+                            if self.strategy.initialize_grid(current_price):
+                                self.logger.info("✅ Grid recriado com sucesso!")
+                            else:
+                                self.logger.info("⚠️ Ainda sem margem suficiente - continuando monitoramento...")
+                        
                     except Exception as e:
                         self.logger.warning(f"⚠️ Erro no rebalanceamento: {e}")
                         # Não para o bot - apenas continua
