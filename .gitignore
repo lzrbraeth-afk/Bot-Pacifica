@@ -21,6 +21,7 @@ logs/
 *.csv
 *.json
 tests
+update
 
 # OS
 .DS_Store

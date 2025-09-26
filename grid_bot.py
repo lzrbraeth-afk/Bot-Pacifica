@@ -186,7 +186,7 @@ class GridTradingBot:
             if open_orders:
                 self.logger.info(f"🚫 Cancelando {len(open_orders)} ordens antigas...")
                 
-                for order in main_orders:
+                for order in open_orders:
                     order_id = order.get('order_id')
                     if order_id:
                         self.auth.cancel_order(str(order_id))
@@ -271,8 +271,18 @@ class GridTradingBot:
         if self.strategy_type == 'grid':
             current_price = self.get_current_price()
             if current_price == 0:
-                self.logger.error("❌ Não foi possível obter preço inicial")
-                return
+                self.logger.warning("⚠️ Preço inicial não obtido - tentando recuperar...")
+                # Fazer retry com delays
+                for attempt in range(3):
+                    time.sleep(2)  # Aguardar 2 segundos
+                    current_price = self.get_current_price()
+                    if current_price > 0:
+                        self.logger.info(f"✅ Preço recuperado na tentativa {attempt + 1}")
+                        break
+                
+                if current_price == 0:
+                    self.logger.error("❌ Não foi possível obter preço inicial após 3 tentativas")
+                    return
             
             self.logger.info(f"💰 Preço inicial {self.symbol}: ${current_price:,.2f}")
         else:
@@ -338,11 +348,13 @@ class GridTradingBot:
                 iteration += 1
                 current_time = time.time()
 
-                # 🔧 Obter preço apenas para estratégia grid
+                # 🔧 Obter preço apenas para estratégia grid com tratamento robusto
                 if self.strategy_type == 'grid' and current_time - last_price_check >= 30:
                     new_price = self.get_current_price()
                     if new_price > 0:
                         current_price = new_price
+                    else:
+                        self.logger.warning("⚠️ Falha ao atualizar preço - mantendo preço anterior")
                     last_price_check = current_time
                 
                 # Log de heartbeat específico da estratégia

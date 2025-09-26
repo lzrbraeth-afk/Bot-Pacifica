@@ -108,9 +108,12 @@ class PositionManager:
             return False
     
     def _sync_internal_state_with_api(self):
-        """ Sincroniza estado interno com API real"""
+        """ Sincroniza estado interno com API real - FILTRANDO POR SÍMBOLO"""
         
         try:
+            # Obter símbolo configurado
+            current_symbol = os.getenv('SYMBOL', 'BTC')
+            
             # Obter ordens abertas REAIS da API
             real_open_orders = self.auth.get_open_orders()
             
@@ -118,11 +121,21 @@ class PositionManager:
                 self.logger.warning("⚠️ Não foi possível obter ordens da API para sincronização")
                 return
             
-            # 🔧 FILTRAR APENAS ORDENS PRINCIPAIS (não TP/SL)
+            # 🔧 FILTRAR POR SÍMBOLO PRIMEIRO, DEPOIS POR TIPO
+            symbol_filtered_orders = []
+            other_symbol_orders = []
+            
+            for order in real_open_orders:
+                if order.get('symbol') == current_symbol:
+                    symbol_filtered_orders.append(order)
+                else:
+                    other_symbol_orders.append(order)
+            
+            # 🔧 FILTRAR APENAS ORDENS PRINCIPAIS (não TP/SL) DO SÍMBOLO ATUAL
             main_orders = []
             tp_sl_orders = []
             
-            for order in real_open_orders:
+            for order in symbol_filtered_orders:
                 order_type = order.get('type', '')
                 order_subtype = order.get('subType', '')
                 
@@ -135,7 +148,7 @@ class PositionManager:
                 else:
                     main_orders.append(order)
             
-            # Atualizar contadores SOMENTE com ordens principais
+            # Atualizar contadores SOMENTE com ordens principais DO SÍMBOLO ATUAL
             self.open_orders.clear()
             
             for order in main_orders:
@@ -153,14 +166,18 @@ class PositionManager:
             
             # Log da sincronização
             total_api_orders = len(real_open_orders)
+            total_symbol_orders = len(symbol_filtered_orders)
+            other_symbols_orders = len(other_symbol_orders)
             main_count = len(main_orders)
             tp_sl_count = len(tp_sl_orders)
             
             self.logger.info(f"🔄 Sincronização concluída:")
             self.logger.info(f"   Total API: {total_api_orders} ordens")
-            self.logger.info(f"   Principais: {main_count} ordens")
-            self.logger.info(f"   TP/SL: {tp_sl_count} ordens")
-            self.logger.info(f"   Contadas para limite: {main_count}")
+            self.logger.info(f"   {current_symbol}: {total_symbol_orders} ordens")
+            self.logger.info(f"   Outros símbolos: {other_symbols_orders} ordens (IGNORADAS)")
+            self.logger.info(f"   {current_symbol} principais: {main_count} ordens")
+            self.logger.info(f"   {current_symbol} TP/SL: {tp_sl_count} ordens")
+            self.logger.info(f"   Contadas para limite MAX_OPEN_ORDERS: {main_count}")
             
             # Atualizar margem se necessário
             self._recalculate_margin_from_orders()
@@ -797,6 +814,10 @@ class PositionManager:
         try:
             symbol = os.getenv('SYMBOL', 'SOL')
             
+            # 🔧 SINCRONIZAR COM API ANTES DE TENTAR VENDA
+            self.logger.info("🔄 Sincronizando posições com API antes da venda...")
+            self._sync_internal_state_with_api()
+            
             if symbol not in self.positions:
                 self.logger.warning(f"⚠️ Nenhuma posição em {symbol} para vender")
                 return 0.0
@@ -808,9 +829,35 @@ class PositionManager:
                 self.logger.warning(f"⚠️ Posição {symbol} já zerada ou short")
                 return 0.0
             
+            # 🔧 VERIFICAR SE REALMENTE EXISTE POSIÇÃO NA API
+            self.logger.info(f"🔍 Verificando posição real na API para {symbol}...")
+            api_positions = self.auth.get_positions()
+            api_has_position = False
+            api_quantity = 0.0
+            
+            if api_positions and isinstance(api_positions, list):
+                for api_pos in api_positions:
+                    if api_pos.get('symbol') == symbol:
+                        api_qty = float(api_pos.get('quantity', 0))
+                        if api_qty > 0:  # Apenas posições longas
+                            api_has_position = True
+                            api_quantity = api_qty
+                            break
+            
+            if not api_has_position or api_quantity <= 0:
+                self.logger.warning(f"⚠️ API não confirma posição positiva em {symbol} (qty: {api_quantity})")
+                self.logger.warning(f"⚠️ Removendo posição interna inconsistente")
+                # Limpar posição interna inconsistente
+                if symbol in self.positions:
+                    del self.positions[symbol]
+                return 0.0
+            
+            # 🔧 USAR QUANTIDADE REAL DA API PARA CÁLCULOS
+            self.logger.info(f"✅ Posição confirmada na API: {api_quantity} {symbol}")
+            
             # Calcular quantidade a vender (percentual configurado)
             sell_percentage = self.auto_close_percentage / 100
-            qty_to_sell = current_qty * sell_percentage
+            qty_to_sell = api_quantity * sell_percentage  # Usar quantidade da API
             
             if qty_to_sell < 0.001:  # Quantidade muito pequena
                 self.logger.warning(f"⚠️ Quantidade a vender muito pequena: {qty_to_sell}")
@@ -819,6 +866,8 @@ class PositionManager:
             # Obter preço atual do mercado (mais preciso que estimativas)
             current_price = self._get_current_price(symbol)
             if current_price <= 0:
+                # Tentar usar preço da posição interna como fallback
+                pos = self.positions.get(symbol, {})
                 current_price = pos.get('entry_price', 0)
             
             if current_price <= 0:
@@ -848,6 +897,22 @@ class PositionManager:
                 
                 self.logger.info(f"📄 Criando ordem: ask {qty_to_sell} {symbol} @ ${market_price}")
                 
+                # 🔧 VERIFICAÇÃO FINAL ANTES DE ENVIAR ORDEM
+                # Dupla verificação para evitar erro "No position found for reduce-only order"
+                final_check = self.auth.get_positions()
+                has_final_position = False
+                if final_check and isinstance(final_check, list):
+                    for pos_check in final_check:
+                        if (pos_check.get('symbol') == symbol and 
+                            float(pos_check.get('quantity', 0)) >= qty_to_sell):
+                            has_final_position = True
+                            break
+                
+                if not has_final_position:
+                    self.logger.warning(f"⚠️ ABORTAR: Posição insuficiente na verificação final")
+                    self.logger.warning(f"⚠️ Necessário: {qty_to_sell}, mas posição pode ter mudado")
+                    return 0.0
+                
                 result = self.auth.create_order(
                     symbol=symbol,
                     side='ask',  # 'ask' para venda na API da Pacifica
@@ -863,8 +928,29 @@ class PositionManager:
                     self.logger.info(f"✅ ID: {order_id} - Preço: ${market_price:.2f}")
                 else:
                     error_msg = result.get('error', 'Erro desconhecido') if result else 'Resposta nula'
-                    self.logger.error(f"❌ Falha na ordem: {error_msg}")
-                    return 0.0
+                    self.logger.error(f"❌ Falha na ordem reduce_only: {error_msg}")
+                    
+                    # 🔧 FALLBACK: Tentar sem reduce_only se o erro for de posição não encontrada
+                    if "No position found" in str(error_msg):
+                        self.logger.warning(f"🔄 Tentando ordem sem reduce_only como fallback...")
+                        fallback_result = self.auth.create_order(
+                            symbol=symbol,
+                            side='ask',
+                            amount=str(qty_to_sell),
+                            price=str(market_price),
+                            order_type="GTC",
+                            reduce_only=False  # Sem reduce_only
+                        )
+                        
+                        if fallback_result and fallback_result.get('success'):
+                            order_id = fallback_result.get('order_id', 'N/A')
+                            self.logger.info(f"✅ Ordem fallback criada: {order_id}")
+                        else:
+                            fallback_error = fallback_result.get('error', 'Erro desconhecido') if fallback_result else 'Resposta nula'
+                            self.logger.error(f"❌ Fallback também falhou: {fallback_error}")
+                            return 0.0
+                    else:
+                        return 0.0
                         
             except Exception as e:
                 self.logger.error(f"❌ Erro ao executar venda: {e}")

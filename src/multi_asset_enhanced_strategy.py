@@ -171,10 +171,12 @@ class MultiAssetEnhancedStrategy:
                     # Adicionar novo preço
                     self.price_history[symbol].append(current_price)
                     
-                    # 🆕 MANTER HISTÓRICO EXPANDIDO (50 períodos para análise técnica)
-                    max_history = max(50, self.enhanced_min_history + 10)
-                    if len(self.price_history[symbol]) > max_history:
-                        self.price_history[symbol].pop(0)
+                    # 🔧 NOVA ADIÇÃO: Limitar tamanho do histórico para evitar memory leak
+                    MAX_HISTORY_SIZE = 100  # Manter apenas 100 últimos preços
+                    if len(self.price_history[symbol]) > MAX_HISTORY_SIZE:
+                        # Remove 50% quando atinge limite (otimização de performance)
+                        self.price_history[symbol] = self.price_history[symbol][-50:]
+                        self.logger.debug(f"🧹 Histórico {symbol} limitado a 50 entradas para evitar memory leak")
                         
         except Exception as e:
             self.logger.error(f"❌ Erro ao atualizar histórico de preços: {e}")

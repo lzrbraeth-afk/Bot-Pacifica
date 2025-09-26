@@ -4,6 +4,7 @@ Grid Strategy - Implementação da estratégia de Grid Trading
 import os
 import time
 import logging
+import threading
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from src.performance_tracker import PerformanceTracker, Trade, GridExecution
@@ -34,6 +35,10 @@ class GridStrategy:
         self.active_grid = {'buy_levels': [], 'sell_levels': []}
         self.placed_orders = {}  # {price: order_id}
         self.grid_active = False
+        
+        # Thread safety - Locks para evitar race conditions
+        self._order_lock = threading.Lock()
+        self._position_lock = threading.Lock()
        
         # Sistema de métricas
         self.performance_tracker = PerformanceTracker(self.symbol)
@@ -116,8 +121,9 @@ class GridStrategy:
 
             self.grid_center = current_price
             
-            # LIMPAR ORDENS ANTERIORES
-            self.placed_orders.clear()
+            # LIMPAR ORDENS ANTERIORES COM PROTEÇÃO
+            with self._order_lock:
+                self.placed_orders.clear()
 
             # Colocar ordens iniciais
             # Durante a inicialização precisamos permitir que _place_single_order
@@ -263,85 +269,114 @@ class GridStrategy:
             self.logger.error(f"❌ Preço inválido recebido para ordem: ${price} - cancelando ordem")
             return False
 
-        try:
-            # Calcular quantidade
-            if quantity is None:
-                quantity = self.calculator.calculate_quantity(price)
-            
-            # 🔧 VERIFICAR SE QUANTIDADE É VÁLIDA
-            if quantity <= 0:
-                self.logger.error(f"❌ Quantidade inválida calculada: {quantity} para preço ${price}")
+        # 🔒 LOCK PARA EVITAR RACE CONDITIONS
+        with self._order_lock:
+            # Verificar se ordem já existe (race condition fix)
+            key = self._price_key(price)
+            if key in self.placed_orders:
+                self.logger.debug(f"🔄 Ordem já existe em ${price} - pulando")
                 return False
-            
-            order_value = price * quantity
-            self.logger.info(f"Ordem de teste: {price} - {quantity} - {order_value}")
-            # Verificar se pode colocar ordem
-            can_place, reason = self.position_mgr.can_place_order(order_value)
-            if not can_place:
-                if "Máximo de ordens atingido" in reason:
-                    self.logger.info(f"📊 {reason} - aguardando execução de ordens existentes")
-                    return False
-                else:  # ← ADICIONAR else AQUI
-                    self.logger.warning(f"⚠️ Não pode colocar ordem: {reason}")
-                    return False
 
-            # Preparar ordem
-            order_data = self.calculator.format_order_for_api(price, quantity, side, self.symbol)
-            
-            # Enviar ordem
-            self.logger.debug(f"📤 Enviando ordem: {side} {quantity} {self.symbol} @ ${price}")
-            
-            result = self.auth.create_order(
-                symbol=order_data['symbol'],
-                side=order_data['side'],
-                amount=order_data['amount'],
-                price=order_data['price'],
-                order_type=order_data['tif'],
-                reduce_only=order_data['reduce_only']
-            )
-            
-            if result and 'success' in result and result['success']:
-                if 'data' in result and 'order_id' in result['data']:
-                    order_id = result['data']['order_id']
+            try:
+                # Calcular quantidade
+                if quantity is None:
+                    quantity = self.calculator.calculate_quantity(price)
                 
-                # Registrar ordem (usar preço normalizado como chave)
-                key = self._price_key(price)
-                self.placed_orders[key] = order_id
-                self.position_mgr.add_order(order_id, {
-                    'price': price,
-                    'quantity': quantity,
-                    'side': side,
-                    'symbol': self.symbol
-                })
+                # 🔧 VERIFICAR SE QUANTIDADE É VÁLIDA
+                if quantity <= 0:
+                    self.logger.error(f"❌ Quantidade inválida calculada: {quantity} para preço ${price}")
+                    return False
                 
-                # Registrar no performance tracker
-                grid_execution = GridExecution(
-                    order_id=order_id,
-                    symbol=self.symbol,
-                    side=side,
-                    price=price,
-                    quantity=quantity,
-                    timestamp=datetime.now(),
-                    executed=False
+                order_value = price * quantity
+                self.logger.info(f"Ordem de teste: {price} - {quantity} - {order_value}")
+                # Verificar se pode colocar ordem
+                can_place, reason = self.position_mgr.can_place_order(order_value)
+                if not can_place:
+                    if "Máximo de ordens atingido" in reason:
+                        self.logger.info(f"📊 {reason} - aguardando execução de ordens existentes")
+                        return False
+                    else:  # ← ADICIONAR else AQUI
+                        self.logger.warning(f"⚠️ Não pode colocar ordem: {reason}")
+                        return False
+
+                # Preparar ordem
+                order_data = self.calculator.format_order_for_api(price, quantity, side, self.symbol)
+                
+                # Enviar ordem
+                self.logger.debug(f"📤 Enviando ordem: {side} {quantity} {self.symbol} @ ${price}")
+                
+                result = self.auth.create_order(
+                    symbol=order_data['symbol'],
+                    side=order_data['side'],
+                    amount=order_data['amount'],
+                    price=order_data['price'],
+                    order_type=order_data['tif'],
+                    reduce_only=order_data['reduce_only']
                 )
-                self.performance_tracker.record_grid_execution(grid_execution)
-
-                self.logger.info(f"✅ Ordem colocada: {order_id} - {side} @ ${price}")
-                return True
-            else:
-                self.logger.error(f"❌ Falha ao criar ordem em ${price}")
-                return False
                 
-        except Exception as e:
-            self.logger.error(f"❌ Erro ao colocar ordem em ${price}: {e}")
-            return False
+                if result and 'success' in result and result['success']:
+                    if 'data' in result and 'order_id' in result['data']:
+                        order_id = result['data']['order_id']
+                    
+                    # Atomicamente adicionar ao tracking
+                    self.placed_orders[key] = order_id
+                    self.position_mgr.add_order(order_id, {
+                        'price': price,
+                        'quantity': quantity,
+                        'side': side,
+                        'symbol': self.symbol
+                    })
+                    
+                    # Registrar no performance tracker
+                    grid_execution = GridExecution(
+                        order_id=order_id,
+                        symbol=self.symbol,
+                        side=side,
+                        price=price,
+                        quantity=quantity,
+                        timestamp=datetime.now(),
+                        executed=False
+                    )
+                    self.performance_tracker.record_grid_execution(grid_execution)
+
+                    self.logger.info(f"✅ Ordem colocada: {order_id} - {side} @ ${price}")
+                    return True
+                else:
+                    self.logger.error(f"❌ Falha ao criar ordem em ${price}")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Erro ao colocar ordem em ${price}: {e}")
+                return False
     
     def check_and_rebalance(self, current_price: float) -> None:
-        """Verifica se precisa rebalancear o grid"""
+        """Verifica se precisa rebalancear o grid com tratamento robusto de preço"""
         
         if not self.grid_active:
             self.logger.warning("⚠️ Grid não está ativo")
             return
+
+        # 🔧 VERIFICAÇÃO MELHORADA DE PREÇO INVÁLIDO COM RECUPERAÇÃO
+        if current_price <= 0:
+            self.logger.warning(f"Preço inválido: {current_price} - tentando recuperar...")
+            
+            # Tentar obter preço da API com retry
+            recovery_price = self._get_current_price_with_retry()
+            if recovery_price > 0:
+                current_price = recovery_price
+                self.logger.info(f"✅ Preço recuperado: ${current_price:.2f}")
+            else:
+                # Usar último preço válido conhecido
+                last_valid = getattr(self, '_last_valid_price', 0)
+                if last_valid > 0:
+                    current_price = last_valid
+                    self.logger.warning(f"⚠️ Usando último preço válido: ${current_price:.2f}")
+                else:
+                    self.logger.error("❌ Não foi possível recuperar preço - abortando rebalanceamento")
+                    return
+        
+        # Armazenar preço válido para recuperação futura
+        self._last_valid_price = current_price
         
         # Para Pure Grid - verificar se saiu do range
         if self.strategy_type == 'pure_grid' and self.range_exit:
@@ -408,15 +443,20 @@ class GridStrategy:
             
             # Verificar quais ordens foram executadas
             filled_orders = []
-            for price, order_id in list(self.placed_orders.items()):
-                if str(order_id) not in open_order_ids:
-                    filled_orders.append((price, order_id))
-                    self.logger.info(f"🎯 Ordem EXECUTADA detectada: {order_id} @ ${price}")
+            # 🔒 LOCK PARA PROTEÇÃO DE RACE CONDITION
+            with self._order_lock:
+                for price, order_id in list(self.placed_orders.items()):
+                    if str(order_id) not in open_order_ids:
+                        filled_orders.append((price, order_id))
+                        self.logger.info(f"🎯 Ordem EXECUTADA detectada: {order_id} @ ${price}")
+                
+                # Processar cada ordem executada
+                for fill_price, order_id in filled_orders:
+                    # Remover do tracking atomicamente
+                    del self.placed_orders[fill_price]
             
-            # Processar cada ordem executada
+            # Processar as ordens fora do lock para evitar deadlock
             for fill_price, order_id in filled_orders:
-                # Remover do tracking
-                del self.placed_orders[fill_price]
                 order_data = self.position_mgr.remove_order(str(order_id))
                 
                 if order_data:
@@ -447,13 +487,30 @@ class GridStrategy:
             self.logger.debug(traceback.format_exc())
 
     def rebalance_grid_orders(self, current_price: float) -> None:
-        """Rebalanceia o grid adicionando ordens faltantes COM CORREÇÃO"""
+        """Rebalanceia o grid adicionando ordens faltantes COM CORREÇÃO ROBUSTA"""
         
         try:
-            # 🔧 VERIFICAR SE PREÇO ATUAL É VÁLIDO PARA CÁLCULOS
+            # 🔧 VERIFICAÇÃO MELHORADA DE PREÇO INVÁLIDO COM RECUPERAÇÃO
             if current_price <= 0:
-                self.logger.warning(f"⚠️ Preço inválido para rebalanceamento: {current_price} - pulando")
-                return
+                self.logger.warning(f"Preço inválido: {current_price} - tentando recuperar...")
+                
+                # Tentar obter preço da API com retry
+                recovery_price = self._get_current_price_with_retry()
+                if recovery_price > 0:
+                    current_price = recovery_price
+                    self.logger.info(f"✅ Preço recuperado: ${current_price:.2f}")
+                else:
+                    # Usar último preço válido conhecido
+                    last_valid = getattr(self, '_last_valid_price', 0)
+                    if last_valid > 0:
+                        current_price = last_valid
+                        self.logger.warning(f"⚠️ Usando último preço válido: ${current_price:.2f}")
+                    else:
+                        self.logger.error("❌ Não foi possível recuperar preço - abortando rebalanceamento")
+                        return
+            
+            # Armazenar preço válido para recuperação futura
+            self._last_valid_price = current_price
             
             self.logger.info(f"🔄 Iniciando rebalanceamento do grid...")
             
@@ -927,10 +984,43 @@ class GridStrategy:
 
     def _remove_placed_by_order_id(self, order_id: str) -> None:
         """Utility to remove any placed_orders entry that references order_id"""
-        for p, oid in list(self.placed_orders.items()):
-            if str(oid) == str(order_id):
-                try:
-                    del self.placed_orders[p]
-                    self.logger.debug(f"🔄 Removido placed_orders entry {p} -> {order_id}")
-                except KeyError:
-                    pass
+        with self._order_lock:
+            for p, oid in list(self.placed_orders.items()):
+                if str(oid) == str(order_id):
+                    try:
+                        del self.placed_orders[p]
+                        self.logger.debug(f"🔄 Removido placed_orders entry {p} -> {order_id}")
+                    except KeyError:
+                        pass
+
+    def _get_current_price_with_retry(self, max_retries: int = 3) -> float:
+        """Obter preço com retry automático para maior robustez"""
+        
+        for attempt in range(max_retries):
+            try:
+                self.logger.debug(f"🔄 Tentativa {attempt + 1}/{max_retries} para obter preço de {self.symbol}")
+                prices = self.auth.get_prices()
+                
+                if prices and prices.get('success') and 'data' in prices:
+                    for item in prices['data']:
+                        if item.get('symbol') == self.symbol:
+                            price = item.get('mark') or item.get('mid')
+                            if price:
+                                price_float = float(price)
+                                if price_float > 0:
+                                    self.logger.debug(f"✅ Preço obtido com sucesso: ${price_float:.2f}")
+                                    return price_float
+                
+                self.logger.debug(f"⚠️ Tentativa {attempt + 1} - preço não encontrado ou inválido")
+                
+                # Aguardar antes do próximo retry (exceto na última tentativa)
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    
+            except Exception as e:
+                self.logger.debug(f"⚠️ Tentativa {attempt + 1} falhou: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        self.logger.warning(f"❌ Falha ao obter preço após {max_retries} tentativas")
+        return 0.0

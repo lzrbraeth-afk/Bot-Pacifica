@@ -171,15 +171,18 @@ class MultiAssetStrategy:
             self.logger.error(f"Erro ao atualizar preços: {e}")
     
     def _update_price_history(self, symbol: str, price: float):
-        """Atualizar histórico de preços"""
+        """Atualizar histórico de preços com limitação de memória"""
         if symbol not in self.price_history:
             self.price_history[symbol] = []
         
         self.price_history[symbol].append(price)
         
-        # Manter apenas últimos 10 preços
-        if len(self.price_history[symbol]) > 10:
-            self.price_history[symbol].pop(0)
+        # 🔧 NOVA ADIÇÃO: Limitar tamanho do histórico para evitar memory leak
+        MAX_HISTORY_SIZE = 100  # Manter apenas 100 últimos preços
+        if len(self.price_history[symbol]) > MAX_HISTORY_SIZE:
+            # Remove 50% quando atinge limite (otimização de performance)
+            self.price_history[symbol] = self.price_history[symbol][-50:]
+            self.logger.debug(f"🧹 Histórico {symbol} limitado a 50 entradas para evitar memory leak")
     
     def _check_signals_for_symbol(self, symbol: str, current_price: float):
         """Verificar sinais de trading para um símbolo"""

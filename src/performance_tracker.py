@@ -89,9 +89,16 @@ class PerformanceTracker:
         self.logger.info(f"PerformanceTracker iniciado para {symbol}")
     
     def record_trade(self, trade: Trade) -> None:
-        """Registra um trade completo"""
+        """Registra um trade completo com limitação de memória"""
         self.trades.append(trade)
         self.total_trades += 1
+        
+        # 🔧 NOVA ADIÇÃO: Limitar tamanho da lista de trades para evitar memory leak
+        MAX_TRADES_HISTORY = 1000  # Manter apenas 1000 últimos trades
+        if len(self.trades) > MAX_TRADES_HISTORY:
+            # Remove 50% quando atinge limite (otimização de performance)
+            self.trades = self.trades[-500:]
+            self.logger.debug(f"🧹 Lista de trades limitada a 500 entradas para evitar memory leak")
         
         if trade.pnl > 0:
             self.winning_trades += 1
@@ -106,6 +113,12 @@ class PerformanceTracker:
         self.current_balance += trade.pnl
         self.equity_curve.append((trade.exit_time, self.current_balance))
         
+        # 🔧 NOVA ADIÇÃO: Limitar tamanho da curva de equity
+        MAX_EQUITY_HISTORY = 1000  # Manter apenas 1000 últimos pontos
+        if len(self.equity_curve) > MAX_EQUITY_HISTORY:
+            self.equity_curve = self.equity_curve[-500:]
+            self.logger.debug(f"🧹 Curva de equity limitada a 500 entradas para evitar memory leak")
+        
         # Atualizar peak para drawdown
         if self.current_balance > self.peak_balance:
             self.peak_balance = self.current_balance
@@ -117,8 +130,15 @@ class PerformanceTracker:
             self._save_data()
     
     def record_grid_execution(self, execution: GridExecution) -> None:
-        """Registra execução de ordem do grid"""
+        """Registra execução de ordem do grid com limitação de memória"""
         self.grid_executions.append(execution)
+        
+        # 🔧 NOVA ADIÇÃO: Limitar tamanho da lista de execuções de grid
+        MAX_GRID_EXECUTIONS = 500  # Manter apenas 500 últimas execuções
+        if len(self.grid_executions) > MAX_GRID_EXECUTIONS:
+            # Remove 50% quando atinge limite (otimização de performance)
+            self.grid_executions = self.grid_executions[-250:]
+            self.logger.debug(f"🧹 Lista de grid executions limitada a 250 entradas para evitar memory leak")
         
         if execution.executed:
             self.logger.debug(f"🎯 Grid executado: {execution.side} @ ${execution.fill_price}")
@@ -136,6 +156,12 @@ class PerformanceTracker:
         
         # Adicionar à curva de equity
         self.equity_curve.append((datetime.now(), new_balance))
+        
+        # 🔧 NOVA ADIÇÃO: Limitar tamanho da curva de equity (caso update_balance seja chamado diretamente)
+        MAX_EQUITY_HISTORY = 1000  # Manter apenas 1000 últimos pontos
+        if len(self.equity_curve) > MAX_EQUITY_HISTORY:
+            self.equity_curve = self.equity_curve[-500:]
+            self.logger.debug(f"🧹 Curva de equity limitada a 500 entradas para evitar memory leak")
     
     def calculate_metrics(self, include_advanced=False):
         """Calcula todas as métricas de performance"""
