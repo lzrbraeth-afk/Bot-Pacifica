@@ -186,6 +186,35 @@ python grid_bot.py
 Para encerrar com segurança: `Ctrl + C` (o bot finaliza e imprime um resumo).
 
 
+# 🔄 Atualização do Bot Pacifica
+
+O processo de atualização foi simplificado para ser feito em poucos passos, tanto no **Windows** quanto no **Linux/Mac**.
+
+---
+
+## 🟦 Windows
+
+1. Na pasta do **Bot Pacifica**, clique duas vezes no arquivo **`update.bat`**.  
+2. Escolha a opção desejada:  
+   - `1` → **Nova instalação** (baixa tudo do zero).  
+   - `2` → **Atualização** (move seu `.env` para `.env.old`).  
+3. Após a atualização (opção 2):  
+   - Abra o arquivo `.env.old` → copie sua **API KEY** e demais dados.  
+   - Renomeie o novo arquivo **`.env.example`** para **`.env`**.  
+   - Cole dentro dele as informações copiadas.  
+
+✅ Seu bot está atualizado e configurado.
+
+---
+
+## 🟩 Linux/Mac
+
+1. No terminal, dentro da pasta do **Bot Pacifica**, rode:  
+   ```bash
+   chmod +x update.sh
+   ./update.sh
+```
+
 ## ⚙️ Configuração (.env)
 
 ### 🎯 Seleção de Estratégia Simplificada
