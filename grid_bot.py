@@ -17,6 +17,7 @@ from src.pacifica_auth import PacificaAuth
 from src.grid_calculator import GridCalculator
 from src.position_manager import PositionManager
 from src.grid_strategy import GridStrategy
+from src.dynamic_grid_strategy import DynamicGridStrategy
 from src.multi_asset_strategy import MultiAssetStrategy
 from src.multi_asset_enhanced_strategy import MultiAssetEnhancedStrategy
 from src.performance_tracker import PerformanceTracker
@@ -35,7 +36,7 @@ class GridTradingBot:
             self.strategy_type = 'multi_asset'
         elif strategy_type_env == 'multi_asset_enhanced':
             self.strategy_type = 'multi_asset_enhanced'
-        elif strategy_type_env in ['pure_grid', 'market_making']:
+        elif strategy_type_env in ['pure_grid', 'market_making', 'dynamic_grid']:
             self.strategy_type = 'grid'
             self.grid_type = strategy_type_env  # Salvar tipo específico do grid
         else:
@@ -80,7 +81,15 @@ class GridTradingBot:
         
         if self.strategy_type == 'grid':
             grid_type = getattr(self, 'grid_type', 'market_making').upper()
-            self.logger.info(f"Estratégia: GRID TRADING ({grid_type})", force=True)
+            if grid_type == 'DYNAMIC_GRID':
+                self.logger.info(f"Estratégia: 🎯 DYNAMIC GRID TRADING", force=True)
+                # Mostrar configurações específicas do Dynamic Grid
+                threshold = os.getenv('DYNAMIC_THRESHOLD_PERCENT', '1.0')
+                max_distance = os.getenv('MAX_ADJUSTMENT_DISTANCE_PERCENT', '5.0')
+                self.logger.info(f"Threshold de Ajuste: {threshold}%", force=True)
+                self.logger.info(f"Distância Máxima: {max_distance}%", force=True)
+            else:
+                self.logger.info(f"Estratégia: GRID TRADING ({grid_type})", force=True)
             self.logger.info(f"Símbolo: {self.symbol}", force=True)
         elif self.strategy_type == 'multi_asset_enhanced':
             self.logger.info(f"Estratégia: 🧠 ENHANCED MULTI-ASSET", force=True)
@@ -168,8 +177,13 @@ class GridTradingBot:
                 self.logger.info("🧠 Inicializando estratégia Enhanced Multi-Asset...")
                 self.strategy = MultiAssetEnhancedStrategy(self.auth, self.calculator, self.position_mgr)
             else:
-                self.logger.info("📊 Inicializando estratégia Grid Trading...")
-                self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
+                # Verificar se deve usar estratégia dinâmica
+                if hasattr(self, 'grid_type') and self.grid_type == 'dynamic_grid':
+                    self.logger.info("🎯 Inicializando estratégia Dynamic Grid Trading...")
+                    self.strategy = DynamicGridStrategy(self.auth, self.calculator, self.position_mgr)
+                else:
+                    self.logger.info("📊 Inicializando estratégia Grid Trading...")
+                    self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
             
             self.logger.info("✅ Componentes inicializados")
             return True
@@ -179,22 +193,84 @@ class GridTradingBot:
             return False
     
     def _clean_old_orders(self):
-        """Cancela todas as ordens abertas do símbolo"""
+        """Cancela todas as ordens abertas do símbolo com verificação robusta"""
         try:
-            open_orders = self.auth.get_open_orders(self.symbol)
+            self.logger.info(f"🔍 Verificando ordens existentes para {self.symbol}...")
             
-            if open_orders:
-                self.logger.info(f"🚫 Cancelando {len(open_orders)} ordens antigas...")
+            # Buscar todas as ordens abertas
+            all_open_orders = self.auth.get_open_orders()
+            
+            if not all_open_orders:
+                self.logger.info("ℹ️ Nenhuma ordem encontrada na conta")
+                return
+            
+            # Filtrar ordens do símbolo específico
+            symbol_orders = []
+            for order in all_open_orders:
+                if order.get('symbol') == self.symbol:
+                    symbol_orders.append(order)
+            
+            if not symbol_orders:
+                self.logger.info(f"ℹ️ Nenhuma ordem encontrada para {self.symbol}")
+                return
+            
+            self.logger.info(f"🚫 Cancelando {len(symbol_orders)} ordens de {self.symbol}...")
+            
+            cancelled_count = 0
+            failed_count = 0
+            
+            for order in symbol_orders:
+                order_id = order.get('order_id')
+                price = order.get('price', 'N/A')
+                side = order.get('side', 'N/A')
+                order_type = order.get('type', 'LIMIT')
                 
-                for order in open_orders:
-                    order_id = order.get('order_id')
-                    if order_id:
-                        self.auth.cancel_order(str(order_id))
-                        time.sleep(0.1)  # Pequeno delay entre cancelamentos
+                if order_id:
+                    try:
+                        self.logger.debug(f"   Cancelando: {side} @ {price} (ID: {order_id})")
+                        
+                        # Passar o símbolo para o cancelamento
+                        result = self.auth.cancel_order(str(order_id), self.symbol)
+                        
+                        if result and result.get('success'):
+                            cancelled_count += 1
+                            self.logger.debug(f"   ✅ Cancelada: {order_id}")
+                        else:
+                            failed_count += 1
+                            error_msg = result.get('error', 'Erro desconhecido') if result else 'Sem resposta'
+                            self.logger.warning(f"   ⚠️ Falha ao cancelar {order_id}: {error_msg}")
+                        
+                        time.sleep(0.15)  # Delay entre cancelamentos para evitar rate limit
+                        
+                    except Exception as cancel_error:
+                        failed_count += 1
+                        self.logger.error(f"   ❌ Erro ao cancelar {order_id}: {cancel_error}")
+                else:
+                    self.logger.warning(f"   ⚠️ Ordem sem ID válido: {order}")
+            
+            # Aguardar processamento dos cancelamentos
+            if cancelled_count > 0:
+                self.logger.info(f"⏳ Aguardando processamento dos cancelamentos...")
+                time.sleep(2.0)
                 
-                self.logger.info("✅ Ordens antigas canceladas")
+                # Verificar se realmente foram canceladas
+                remaining_orders = self.auth.get_open_orders(self.symbol)
+                remaining_count = len(remaining_orders) if remaining_orders else 0
+                
+                if remaining_count == 0:
+                    self.logger.info(f"✅ Todas as {cancelled_count} ordens foram canceladas com sucesso")
+                else:
+                    self.logger.warning(f"⚠️ Ainda restam {remaining_count} ordens após cancelamento")
+            
+            if failed_count > 0:
+                self.logger.warning(f"⚠️ {failed_count} ordens falharam no cancelamento")
+                
+            self.logger.info("🧹 Limpeza de ordens concluída")
+            
         except Exception as e:
-            self.logger.error(f"⚠️ Erro ao limpar ordens: {e}")
+            self.logger.error(f"❌ Erro ao limpar ordens: {e}")
+            import traceback
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
     
     def get_current_price(self) -> float:
         """Obtém preço atual do mercado"""

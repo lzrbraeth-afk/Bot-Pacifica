@@ -686,8 +686,9 @@ class GridStrategy:
         if key in self.placed_orders:
             self.logger.warning(f"⚠️ Já existe ordem em ${target_price} - cancelando antiga")
             old_order_id = self.placed_orders[key]
-            self.auth.cancel_order(str(old_order_id))
-            del self.placed_orders[key]
+            result = self.auth.cancel_order(str(old_order_id), self.symbol)
+            if result and result.get('success'):
+                del self.placed_orders[key]
             time.sleep(0.5)  # Aguardar cancelamento
         
         # Criar nova ordem com mesma quantidade
@@ -783,8 +784,8 @@ class GridStrategy:
             try:
                 # Tentar cancelar na API e garantir remoção do estado local
                 try:
-                    result = self.auth.cancel_order(str(order_id))
-                    if result and isinstance(result, dict) and result.get('success'):
+                    result = self.auth.cancel_order(str(order_id), self.symbol)
+                    if result and result.get('success'):
                         self.logger.debug(f"✅ Ordem cancelada na API: {order_id}")
                     else:
                         self.logger.warning(f"⚠️ API cancel returned for {order_id}: {result}")
@@ -930,12 +931,12 @@ class GridStrategy:
             cancelled_orders = 0
             for price, order_id in list(self.placed_orders.items()):
                 try:
-                    result = self.auth.cancel_order(str(order_id))
-                    if result and isinstance(result, dict) and result.get('success'):
+                    result = self.auth.cancel_order(str(order_id), self.symbol)
+                    if result and result.get('success'):
                         cancelled_orders += 1
                         self.logger.debug(f"✅ Ordem cancelada: {order_id} @ ${price}")
                     else:
-                        self.logger.warning(f"⚠️ Falha ao cancelar ordem {order_id} (API retornou: {result})")
+                        self.logger.warning(f"⚠️ Falha ao cancelar ordem {order_id} (API retornou: {result}")
                 except Exception as e:
                     self.logger.error(f"❌ Erro ao cancelar ordem {order_id}: {e}")
                 

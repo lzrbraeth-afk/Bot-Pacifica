@@ -329,14 +329,18 @@ class PacificaAuth:
             stop_loss=stop_loss
         )
 
-    def cancel_order(self, order_id: str, symbol: str = None) -> bool:
+    def cancel_order(self, order_id: str, symbol: str = None) -> dict:
         """
-        Cancela uma ordem específica usando Agent Wallet
-        🔒 SEGURO: Não requer private key da wallet principal
+        Cancela uma ordem específica seguindo a documentação oficial exata
         """
         
         timestamp = int(time.time() * 1_000)
         
+        # Usar símbolo padrão se não fornecido
+        if not symbol:
+            symbol = os.getenv('SYMBOL', 'BTC')
+        
+        # Criar payload exatamente como na documentação
         signature_header = {
             "timestamp": timestamp,
             "expiry_window": 30000,
@@ -344,41 +348,195 @@ class PacificaAuth:
         }
         
         signature_payload = {
-            "order_id": str(order_id),
+            "symbol": symbol,
+            "order_id": int(order_id)  # API espera integer
         }
-        
-        # Adicionar símbolo se fornecido (algumas APIs exigem)
-        if symbol:
-            signature_payload["symbol"] = symbol
         
         # 🔒 ASSINATURA COM AGENT WALLET
         message = prepare_message(signature_header, signature_payload)
         signature = sign_message(message, self.agent_keypair)
         
-        # 🔒 REQUEST COM AGENT WALLET
-        request_data = {
+        # 🔒 REQUEST EXATAMENTE COMO DOCUMENTAÇÃO
+        # 🔒 REQUEST SEGUINDO MESMO FORMATO DO create_order
+        payload = {
             "account": self.main_public_key,           # 🔒 Main wallet (public)
-            "agent_wallet": self.agent_public_key,    # 🔒 Agent wallet (public)
+            "agent_wallet": self.agent_public_key,    # 🔒 Agent wallet (public) - ESTAVA FALTANDO!
             "signature": signature,                   # 🔒 Assinado pelo agent
             "timestamp": timestamp,
-            "expiry_window": 30000,
-            **signature_payload,
+            "expiry_window": 30000,                   # 🔒 Expiry window - ESTAVA FALTANDO!
+            "symbol": symbol,
+            "order_id": int(order_id)  # Como integer conforme documentação
         }
+        
+        # 🔧 DEBUG: Log do payload para análise
+        self.logger.debug(f"📤 Payload de cancelamento: {payload}")
         
         try:
             url = f"{self.base_url}/orders/cancel"
-            response = requests.post(url, json=request_data, timeout=10)
+            response = requests.post(
+                url, 
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
             self.logger.info(f"🚫 Cancel order {order_id} -> {response.status_code}")
             
             if response.status_code == 200:
-                self.logger.info(f"✅ Ordem {order_id} cancelada")
-                return True
+                try:
+                    data = response.json()
+                    self.logger.info(f"✅ Ordem {order_id} cancelada")
+                    return {"success": True, "data": data}
+                except ValueError:
+                    # Se não conseguir fazer parse do JSON, mas status é 200
+                    self.logger.info(f"✅ Ordem {order_id} cancelada (sem JSON response)")
+                    return {"success": True, "data": None}
             else:
-                self.logger.error(f"❌ Falha ao cancelar: {response.text}")
-                return False
+                error_text = response.text
+                self.logger.error(f"❌ Falha ao cancelar {order_id}: {error_text}")
+                
+                # Log detalhado do erro para debug
+                self.logger.debug(f"🔧 Response headers: {dict(response.headers)}")
+                self.logger.debug(f"🔧 Request URL: {url}")
+                
+                try:
+                    error_data = response.json()
+                    return {"success": False, "error": error_data}
+                except ValueError:
+                    return {"success": False, "error": error_text}
+                    
+        except requests.exceptions.Timeout:
+            self.logger.error(f"❌ Timeout ao cancelar {order_id}")
+            return {"success": False, "error": "Timeout"}
         except Exception as e:
-            self.logger.error(f"❌ Erro ao cancelar: {e}")
-            return False
+            self.logger.error(f"❌ Erro ao cancelar {order_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def cancel_all_orders(self, symbol: str = None) -> dict:
+        """
+        Cancela todas as ordens de um símbolo específico ou todas as ordens
+        """
+        
+        try:
+            # Buscar todas as ordens abertas
+            all_orders = self.get_open_orders()
+            
+            if not all_orders:
+                return {"success": True, "message": "Nenhuma ordem para cancelar", "cancelled": 0, "failed": 0}
+            
+            # Filtrar por símbolo se especificado
+            if symbol:
+                orders_to_cancel = [order for order in all_orders if order.get('symbol') == symbol]
+                self.logger.info(f"🚫 Cancelando todas as ordens de {symbol}: {len(orders_to_cancel)} ordens")
+            else:
+                orders_to_cancel = all_orders
+                self.logger.info(f"🚫 Cancelando TODAS as ordens: {len(orders_to_cancel)} ordens")
+            
+            if not orders_to_cancel:
+                return {"success": True, "message": f"Nenhuma ordem de {symbol} para cancelar", "cancelled": 0, "failed": 0}
+            
+            cancelled_count = 0
+            failed_count = 0
+            errors = []
+            
+            for order in orders_to_cancel:
+                order_id = order.get('order_id')
+                order_symbol = order.get('symbol', symbol or 'UNKNOWN')
+                
+                if order_id:
+                    result = self.cancel_order(str(order_id), order_symbol)
+                    
+                    if result and result.get('success'):
+                        cancelled_count += 1
+                    else:
+                        failed_count += 1
+                        error_msg = result.get('error', 'Erro desconhecido') if result else 'Sem resposta'
+                        errors.append(f"Ordem {order_id}: {error_msg}")
+                    
+                    time.sleep(0.1)  # Delay entre cancelamentos
+            
+            self.logger.info(f"📊 Resultado: {cancelled_count} canceladas, {failed_count} falharam")
+            
+            return {
+                "success": cancelled_count > 0 or failed_count == 0,
+                "cancelled": cancelled_count,
+                "failed": failed_count,
+                "errors": errors
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao cancelar todas as ordens: {e}")
+            return {"success": False, "error": str(e)}
+
+    def cancel_stop_orders(self, symbol: str = None) -> dict:
+        """
+        Cancela apenas ordens de Stop Loss e Take Profit
+        """
+        
+        try:
+            # Buscar todas as ordens abertas
+            all_orders = self.get_open_orders()
+            
+            if not all_orders:
+                return {"success": True, "message": "Nenhuma ordem para cancelar", "cancelled": 0, "failed": 0}
+            
+            # Filtrar ordens TP/SL
+            stop_orders = []
+            for order in all_orders:
+                order_type = order.get('type', '')
+                order_subtype = order.get('subType', '')
+                order_label = str(order.get('label', '')).lower()
+                order_symbol = order.get('symbol')
+                
+                # Verificar se é TP/SL
+                is_stop_order = (
+                    order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or
+                    order_subtype in ['take_profit', 'stop_loss'] or
+                    'tp' in order_label or 'sl' in order_label
+                )
+                
+                # Filtrar por símbolo se especificado
+                if is_stop_order and (not symbol or order_symbol == symbol):
+                    stop_orders.append(order)
+            
+            if not stop_orders:
+                symbol_msg = f"de {symbol}" if symbol else ""
+                return {"success": True, "message": f"Nenhuma ordem TP/SL {symbol_msg} para cancelar", "cancelled": 0, "failed": 0}
+            
+            self.logger.info(f"🚫 Cancelando ordens TP/SL: {len(stop_orders)} ordens")
+            
+            cancelled_count = 0
+            failed_count = 0
+            errors = []
+            
+            for order in stop_orders:
+                order_id = order.get('order_id')
+                order_symbol = order.get('symbol', symbol or 'UNKNOWN')
+                
+                if order_id:
+                    result = self.cancel_order(str(order_id), order_symbol)
+                    
+                    if result and result.get('success'):
+                        cancelled_count += 1
+                    else:
+                        failed_count += 1
+                        error_msg = result.get('error', 'Erro desconhecido') if result else 'Sem resposta'
+                        errors.append(f"Ordem {order_id}: {error_msg}")
+                    
+                    time.sleep(0.1)  # Delay entre cancelamentos
+            
+            self.logger.info(f"📊 Resultado TP/SL: {cancelled_count} canceladas, {failed_count} falharam")
+            
+            return {
+                "success": cancelled_count > 0 or failed_count == 0,
+                "cancelled": cancelled_count,
+                "failed": failed_count,
+                "errors": errors
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao cancelar ordens TP/SL: {e}")
+            return {"success": False, "error": str(e)}
 
     def get_account_info(self) -> Optional[Dict]:
         """

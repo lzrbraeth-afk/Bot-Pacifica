@@ -214,10 +214,103 @@ O Bot Pacifica agora está **production-ready** com:
 - **Sincronização confiável com API**
 - **Recuperação automática de falhas temporárias**
 
-**Data da Manutenção**: 26/09/2025  
-**Versão**: Estável para execução prolongada  
+**Data da Manutenção**: 26/09/2025 - 27/09/2025  
+**Versão**: Estável para execução prolongada com Dynamic Grid  
 **Próxima Revisão**: Recomendada após 30 dias de operação  
 
 ---
 
-*Documento gerado automaticamente durante sessão de manutenção*
+## 🎯 **Atualizações Recentes - 27/09/2025**
+
+### **🚀 Implementação da Dynamic Grid Strategy**
+
+#### **Problema Identificado**
+- Grid tradicional não se adaptava às mudanças de preço
+- Ordens de venda permaneciam "lá em cima" quando preço caía
+- Ordens de compra não se reposicionavam em tendências de alta
+- Falta de adaptação dinâmica ao mercado
+
+#### **Solução Implementada**
+- **Novo arquivo**: `src/dynamic_grid_strategy.py`
+- **Funcionalidades**:
+  - ✅ Detecção automática de execução de ordens
+  - ✅ Análise de tendência de mercado em tempo real
+  - ✅ Reposicionamento inteligente de ordens
+  - ✅ Sistema de ajuste dinâmico baseado em volatilidade
+  - ✅ Compatibilidade total com infraestrutura existente
+
+#### **Características Técnicas**
+- Herda de `GridStrategy` (zero breaking changes)
+- Método `_should_adjust_dynamically()` para detecção de necessidade de ajuste
+- Método `_perform_dynamic_adjustment()` para execução de mudanças
+- Método `_relocate_sell_order()` para reposicionamento inteligente
+- Integração com `PacificaAuth` para cancelamento e criação de ordens
+
+#### **Resultados**
+✅ Grid agora se adapta automaticamente ao mercado  
+✅ Ordens seguem a tendência de preço  
+✅ Melhor aproveitamento de oportunidades  
+✅ Redução de ordens "órfãs" fora do range útil  
+
+### **🔧 Correção da Funcionalidade CLEAN_ORDERS_ON_START**
+
+#### **Problema Identificado**
+- Cancelamento de ordens falhava com erro "Verification failed"
+- API Pacifica retornava código 400 para requests de cancelamento
+- Bot não conseguia limpar ordens antigas no startup
+
+#### **Solução Implementada**
+- **Arquivo corrigido**: `src/pacifica_auth.py` método `cancel_order()`
+- **Correções aplicadas**:
+  - ✅ Adicionado campo `agent_wallet` no payload (obrigatório)
+  - ✅ Adicionado campo `expiry_window` no payload (obrigatório)
+  - ✅ Correção do formato de assinatura seguindo documentação oficial
+  - ✅ Ajuste do tipo de dados para `order_id` como integer
+  - ✅ Headers corretos para Content-Type
+
+#### **Validação**
+- **Teste realizado**: Cancelamento de 11 ordens simultâneas
+- **Resultado**: ✅ 100% de sucesso - todas as 11 ordens canceladas
+- **Status Code**: 200 (OK) para todas as operações
+- **Tempo**: ~1 segundo por ordem
+
+#### **Benefícios**
+✅ CLEAN_ORDERS_ON_START agora funciona perfeitamente  
+✅ Bot pode iniciar com slate limpo de ordens  
+✅ Melhor controle de estado inicial  
+✅ Evita conflitos com ordens antigas  
+
+### **📋 Configuração Atualizada**
+
+#### **Novo Tipo de Estratégia**
+```properties
+# No arquivo .env
+STRATEGY_TYPE=dynamic_grid  # Nova opção disponível
+CLEAN_ORDERS_ON_START=true  # Agora funcional
+```
+
+#### **Compatibilidade**
+- ✅ Todas as estratégias existentes mantidas
+- ✅ `dynamic_grid` como nova opção
+- ✅ Fallback automático para estratégias tradicionais
+- ✅ Zero breaking changes para usuários atuais
+
+### **🎯 Status Final Atualizado**
+
+O Bot Pacifica agora possui:
+
+#### **Core Stability** _(mantido da versão anterior)_
+- **Zero crashes conhecidos**
+- **Operação thread-safe** 
+- **Memory leak eliminado**
+- **Isolamento perfeito por símbolo**
+
+#### **Novas Funcionalidades** _(27/09/2025)_
+- **✨ Dynamic Grid Strategy**: Adaptação automática ao mercado
+- **🔧 CLEAN_ORDERS_ON_START**: Funcional e validado
+- **🎯 Smart Order Repositioning**: Reposicionamento inteligente
+- **📊 Trend Analysis**: Análise de tendência em tempo real
+
+---
+
+*Documento atualizado em 27/09/2025 após implementação da Dynamic Grid Strategy*

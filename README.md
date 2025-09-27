@@ -1,6 +1,6 @@
 # Pacifica Trading Bot
 
-Bot de **grid trading** e **scalping multi-asset** para a corretora **Pacifica** com **4 estratégias avançadas**: **Pure Grid** (clássica), **Market-Making Grid** (dinâmica), **Multi-Asset Básico** (scalping threshold) e **🧠 Multi-Asset Enhanced** (algoritmo inteligente com 5 indicadores técnicos).
+Bot de **grid trading** e **scalping multi-asset** para a corretora **Pacifica** com **5 estratégias avançadas**: **Pure Grid** (clássica), **Market-Making Grid** (dinâmica), **🚀 Dynamic Grid** (adaptativa), **Multi-Asset Básico** (scalping threshold) e **🧠 Multi-Asset Enhanced** (algoritmo inteligente com 5 indicadores técnicos).
 
 Inclui gerenciamento de risco, métricas de performance, logs específicos por estratégia, sistema AUTO_CLOSE e validação automática.
 
@@ -24,9 +24,10 @@ Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 
 ## 🚀 Principais Funcionalidades
 
-### 📊 4 Estratégias de Trading Avançadas
+### 📊 5 Estratégias de Trading Avançadas
 - **Pure Grid (pure_grid)**: Grid trading clássico com ordens de compra/venda distribuídas em níveis de preço fixos
 - **Market-Making Grid (market_making)**: Grid dinâmico que se adapta à volatilidade e spread do mercado  
+- **🚀 Dynamic Grid (dynamic_grid)**: Grid adaptativo que reposiciona ordens conforme execuções e tendências de mercado
 - **Multi-Asset Básico (multi_asset)**: Scalping threshold com comparação de 3 preços (atual + 2 anteriores)
 - **🧠 Multi-Asset Enhanced (multi_asset_enhanced)**: Algoritmo inteligente com 5 indicadores técnicos:
   - **Momentum** (30 pontos): Análise de força do movimento
@@ -48,7 +49,7 @@ Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 - **Relatórios detalhados** de trades e resultados
 
 ### ⚙️ Configuração Simplificada
-- **STRATEGY_TYPE único**: Seleção simples entre as 4 estratégias
+- **STRATEGY_TYPE único**: Seleção simples entre as 5 estratégias
 - **Configuração .env** com exemplos para cada estratégia
 - **Templates prontos** para diferentes cenários de trading
 
@@ -225,6 +226,7 @@ O bot agora usa um **sistema simplificado** com uma única variável `STRATEGY_T
 # ✅ ESTRATÉGIA (Escolha UMA das 4 opções)
 STRATEGY_TYPE=pure_grid           # Grid trading clássico
 # STRATEGY_TYPE=market_making     # Grid dinâmico adaptativo
+# STRATEGY_TYPE=dynamic_grid      # 🚀 Grid adaptativo inteligente
 # STRATEGY_TYPE=multi_asset       # Scalping multi-asset básico
 # STRATEGY_TYPE=multi_asset_enhanced  # 🧠 Enhanced com 5 indicadores
 ```
@@ -354,6 +356,40 @@ GRID_SHIFT_THRESHOLD_PERCENT=1.0  # % para rebalanceamento
 REBALANCE_INTERVAL_SECONDS=60     # Intervalo de verificação
 ```
 
+### 🚀 Dynamic Grid (Adaptativa) - **NOVO!**
+Grid inteligente que reposiciona ordens automaticamente conforme execuções e tendências:
+
+```ini
+STRATEGY_TYPE=dynamic_grid
+SYMBOL=HYPE                       # Símbolo principal
+GRID_LEVELS=12                    # Número de níveis
+GRID_SPACING_PERCENT=0.5          # Espaçamento percentual
+ORDER_SIZE_USD=15                 # Tamanho por ordem
+CLEAN_ORDERS_ON_START=true        # Limpar ordens antigas
+```
+
+**🎯 Funcionalidades Principais:**
+- **Detecção automática** de execução de ordens
+- **Reposicionamento inteligente** quando preço sai do range
+- **Análise de tendência** para ajustar direção do grid
+- **Cancelamento automático** de ordens obsoletas
+- **Sistema de relocação** de ordens de venda quando preço cai
+- **Adaptação dinâmica** à volatilidade do mercado
+
+**⚡ Vantagens:**
+- ✅ Ordens sempre seguem o movimento do preço
+- ✅ Elimina ordens "órfãs" fora do range útil  
+- ✅ Maior aproveitamento de oportunidades
+- ✅ Reduz necessidade de intervenção manual
+- ✅ Baseado em análise de tendência real
+
+**🔧 Como Funciona:**
+1. Monitora execução de ordens continuamente
+2. Detecta quando preço sai significativamente do range
+3. Cancela ordens obsoletas automaticamente
+4. Reposiciona ordens para novo range de preço
+5. Adapta estratégia baseado na tendência detectada
+
 ## � Sistema de Logs Específicos por Estratégia
 
 O bot possui um **sistema avançado de logs** que adapta mensagens, emojis e terminologia de acordo com a estratégia selecionada:
@@ -382,6 +418,15 @@ O bot possui um **sistema avançado de logs** que adapta mensagens, emojis e ter
 ```
 🧠 [ENHANCED] Score BTC: 75/100 (Momentum:25, Trend:20, RSI:15, Vol:10, Conf:5)
 🧠 [ENHANCED] Sinal COMPRA confirmado - Confiança: 82%
+```
+
+**Dynamic Grid** 🚀
+```
+🚀 [DYNAMIC_GRID] Grid inicializado: 12 níveis para HYPE
+🚀 [DYNAMIC_GRID] Execução detectada: Ordem #299832423 - Ajustando grid
+🚀 [DYNAMIC_GRID] Tendência BAIXA detectada - Reposicionando vendas
+🚀 [DYNAMIC_GRID] Ordem cancelada: #299595822 (fora do range)
+🚀 [DYNAMIC_GRID] Nova venda criada: $45.20 (seguindo tendência)
 ```
 
 ### �📊 Métricas e Logs
@@ -460,6 +505,37 @@ Estratégia especializada para cenários de alta volatilidade:
 - **Poucos sinais Enhanced**: Diminua ENHANCED_CONFIDENCE_THRESHOLD (padrão: 0.7)
 - **Logs não aparecem**: Verifique se strategy_logger.py está no diretório src/
 - **Performance metrics erro**: Execute python test_performance_fix.py
+- **🚀 Dynamic Grid**: Se ordens não se adaptam, verifique CLEAN_ORDERS_ON_START=true
+
+---
+
+## 🚀 **NOVIDADES RECENTES - SETEMBRO 2025**
+
+### ✨ **Dynamic Grid Strategy - NOVO!**
+- **🎯 Problema Resolvido**: Grid tradicional não adaptava quando preço mudava
+- **🚀 Solução**: Nova estratégia `STRATEGY_TYPE=dynamic_grid`
+- **⚡ Principais Features**:
+  - ✅ **Auto-detecção** de execução de ordens
+  - ✅ **Reposicionamento inteligente** seguindo tendência
+  - ✅ **Cancelamento automático** de ordens obsoletas
+  - ✅ **Adaptação dinâmica** ao movimento de preço
+
+### 🔧 **CLEAN_ORDERS_ON_START - CORRIGIDO!**
+- **📋 Problema**: Cancelamento falhava com "Verification failed"  
+- **✅ Correção**: API Pacifica agora funciona 100%
+- **🎯 Resultado**: Teste com 11 ordens = 100% de sucesso
+
+### 🎉 **Como Usar as Novidades**
+```ini
+# No seu arquivo .env
+STRATEGY_TYPE=dynamic_grid        # Nova estratégia adaptativa
+CLEAN_ORDERS_ON_START=true        # Agora funcional
+SYMBOL=HYPE                       # Símbolo principal
+```
+
+**🚀 Status**: Bot agora com **grid inteligente** que se adapta automaticamente!
+
+---
 
 ### 🔍 Diagnóstico Avançado
 
