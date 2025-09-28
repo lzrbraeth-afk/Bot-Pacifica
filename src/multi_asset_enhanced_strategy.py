@@ -70,9 +70,32 @@ class MultiAssetEnhancedStrategy:
             symbols=self.symbols if len(self.symbols) <= 5 else self.symbols[:5]
         )
         
+        # 🔧 CACHE PARA SYMBOL_INFO (precisa existir antes de _initialize_symbols)
+        self.symbol_info_cache = {}
+
+        # 🆕 INICIALIZAR ESTRUTURAS PARA CADA SÍMBOLO COM VALIDAÇÃO
+        self._initialize_symbols()
+        
         self.logger.strategy_info(f"Enhanced Multi-Asset inicializada com {len(self.symbols)} símbolos")
         self.logger.info(f"🧠 Algoritmo melhorado: Quality ≥ {self.enhanced_min_signal_quality}, Confidence ≥ {self.enhanced_min_confidence}")
         
+    def get_symbol_info_cached(self, symbol: str):
+        """Obtém symbol_info com cache para evitar requisições duplicadas"""
+        if symbol not in self.symbol_info_cache:
+            symbol_info = self.auth.get_symbol_info(symbol)
+            if symbol_info:
+                self.symbol_info_cache[symbol] = symbol_info
+            else:
+                return None
+        return self.symbol_info_cache[symbol]
+    
+    def _initialize_symbols(self):
+        """🆕 INICIALIZAR estruturas para cada símbolo com validação detalhada"""
+        for symbol in self.symbols:
+            self.price_history[symbol] = []
+            self.lot_sizes[symbol] = self.get_lot_size(symbol)  # Chama validação detalhada
+            self.symbol_positions[symbol] = 0    
+
     def _parse_symbols(self) -> List[str]:
         """Parse dos símbolos do .env"""
         symbols_str = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
@@ -90,13 +113,28 @@ class MultiAssetEnhancedStrategy:
             return ['BTC', 'ETH', 'SOL']
     
     def get_lot_size(self, symbol: str) -> float:
-        """Obtém lot size para o símbolo"""
+        """Obtém lot size para o símbolo com validação detalhada"""
+        try:
+            # Usar info com cache para evitar requisições duplicadas e logs repetidos
+            info = self.get_symbol_info_cached(symbol)
+            if info and 'lot_size' in info:
+                lot_size = float(info['lot_size'])
+                tick_size = float(info.get('tick_size', 0.01))
+                
+                # Não logar novamente aqui para evitar duplicidade; o log ocorre quando o cache é preenchido
+                return lot_size
+        except Exception as e:
+            self.logger.warning(f"Erro ao obter lot_size para {symbol}: {e}")
+        
+        # Fallback baseado no símbolo
         lot_sizes = {
             'BTC': 0.00001, 'ETH': 0.0001, 'SOL': 0.01, 'AVAX': 0.01,
             'DOGE': 1, 'ADA': 1, 'MATIC': 0.1, 'DOT': 0.1,
             'LINK': 0.1, 'UNI': 0.1, 'AAVE': 0.01, 'ATOM': 0.01
         }
-        return lot_sizes.get(symbol, 0.001)
+        fallback = lot_sizes.get(symbol, 0.001)
+        self.logger.warning(f"⚠️ {symbol}: usando fallback lot_size={fallback}")
+        return fallback
     
     def initialize_grid(self, current_price: float) -> bool:
         """Método compatível com o bot principal - inicializa estratégia"""
@@ -182,65 +220,124 @@ class MultiAssetEnhancedStrategy:
             self.logger.error(f"❌ Erro ao atualizar histórico de preços: {e}")
     
     def _analyze_market_signals(self):
-        """🆕 ANÁLISE DE SINAIS COM ALGORITMO MELHORADO"""
+        """🆕 ANÁLISE DE SINAIS COM ALGORITMO MELHORADO + HISTÓRICO DA API"""
         
-        for symbol in self.symbols:
+        self.logger.info(f"🔍 Enhanced: Analisando sinais em {len(self.symbols)} símbolos...")
+    
+        signals_found = 0
+        for i, symbol in enumerate(self.symbols):
             if symbol not in self.price_history:
                 continue
                 
             try:
+                # 🔧 DELAY ENTRE SÍMBOLOS PARA REDUZIR CARGA NA API
+                if i > 0:  # Não aplicar delay no primeiro símbolo
+                    delay = 0.6  # 600ms entre símbolos
+                    time.sleep(delay)
+                
                 current_price = self.price_history[symbol][-1]
+                price_history = self.price_history[symbol]
+                
+                # 🔥 VERIFICAR SE PRECISA DE HISTÓRICO DA API
+                if len(price_history) < self.enhanced_min_history:
+                    self.logger.debug(f"🔄 {symbol}: Histórico insuficiente ({len(price_history)} < {self.enhanced_min_history}), buscando na API...")
+                    
+                    # Buscar histórico da API
+                    api_history = self.auth.get_historical_data(
+                        symbol=symbol, 
+                        interval="1m", 
+                        periods=self.enhanced_min_history + 5  # Pegar alguns extras
+                    )
+                    
+                    if api_history and len(api_history) >= self.enhanced_min_history:
+                        self.logger.info(f"✅ {symbol}: Histórico obtido da API - {len(api_history)} preços")
+                        # Combinar histórico da API + cache atual
+                        combined_history = api_history[:-1] + price_history  # Remove último da API para evitar duplicata
+                        price_history = combined_history
+                    else:
+                        self.logger.warning(f"⚠️ {symbol}: Histórico insuficiente na API também, pulando análise")
+                        continue
                 
                 # 🧠 USAR DETECTOR MELHORADO
                 signal = self.signal_detector.detect_signal(
                     symbol=symbol,
-                    price_history=self.price_history[symbol],
+                    price_history=price_history,
                     current_price=current_price,
                     price_change_threshold=self.price_change_threshold
                 )
                 
                 if signal:
+                    signals_found += 1
                     self.signals_detected += 1
                     
+                    # 🎯 LOG MELHORADO COM INFORMAÇÕES DO SINAL
+                    quality_score = signal.get('quality_score', 0)
+                    confidence = signal.get('confidence', 0)
+                    side = signal.get('side', 'N/A')
+                    
+                    self.logger.info(f"⚡ {symbol}: Sinal {side} detectado - Qualidade: {quality_score:.1f}/100, Confiança: {confidence:.1f}/100")
+                    
+                    # Log dos indicadores
+                    momentum = signal.get('momentum', 0)
+                    trend = signal.get('trend', 'N/A')
+                    rsi = signal.get('rsi', 0)
+                    volatility = signal.get('volatility', 0)
+                    
+                    self.logger.debug(f"   📊 Indicadores: Momentum={momentum:.2f}%, Trend={trend}, RSI={rsi:.1f}, Vol={volatility:.2f}%")
+                    
                     # Verificar confiança mínima
-                    if signal['confidence'] >= self.enhanced_min_confidence:
+                    if confidence >= self.enhanced_min_confidence:
                         
                         # Verificar se pode executar
                         if self._can_execute_enhanced_signal(symbol, signal):
+                            self.logger.info(f"🚀 {symbol}: Executando sinal Enhanced...")
                             self._execute_enhanced_signal(symbol, signal)
                             self.signals_executed += 1
                         else:
                             self.signals_rejected_limits += 1
+                            self.logger.debug(f"🚫 {symbol}: Sinal rejeitado - Limites de execução")
                     else:
                         self.signals_rejected_quality += 1
-                        self.logger.debug(f"📊 {symbol}: Sinal rejeitado - Confidence {signal['confidence']} < {self.enhanced_min_confidence}")
+                        self.logger.debug(f"📊 {symbol}: Sinal rejeitado - Confiança {confidence:.1f} < {self.enhanced_min_confidence}")
                         
             except Exception as e:
                 self.logger.error(f"❌ Erro ao analisar {symbol}: {e}")
+                import traceback
+                self.logger.debug(f"📋 Stack trace: {traceback.format_exc()}")
+        
+        # 📊 LOG FINAL DA ANÁLISE COM ESTATÍSTICAS
+        if signals_found > 0:
+            execution_rate = (self.signals_executed / self.signals_detected * 100) if self.signals_detected > 0 else 0
+            self.logger.info(f"📊 Enhanced: {signals_found} sinais encontrados | Executados: {self.signals_executed} | Taxa: {execution_rate:.1f}%")
+        else:
+            self.logger.info(f"📊 Enhanced: Nenhum sinal encontrado nos {len(self.symbols)} símbolos analisados")
     
     def _can_execute_enhanced_signal(self, symbol: str, signal: Dict) -> bool:
         """Verifica se pode executar sinal com validações adicionais"""
         
         # 1. Verificações básicas (mesmo da versão original)
         if len(self.active_positions) >= self.max_concurrent_trades:
+            self.logger.info(f"📊 {symbol}: Rejeitado - limite de trades ({len(self.active_positions)} >= {self.max_concurrent_trades})")
             return False
         
         if not self.allow_multiple_per_symbol:
             if self.symbol_positions.get(symbol, 0) > 0:
+                self.logger.info(f"📊 {symbol}: Rejeitado - já tem posição ativa")
                 return False
         
         # 2. Verificar margem
         margin_needed = self.position_size_usd / self.leverage
-        can_place, _ = self.position_mgr.can_place_order(self.position_size_usd)
+        can_place, msg = self.position_mgr.can_place_order(self.position_size_usd)
         
         if not can_place:
+            self.logger.info(f"📊 {symbol}: Rejeitado - margem insuficiente ({msg})")
             return False
         
         # 3. 🆕 FILTROS ADICIONAIS PARA ALGORITMO MELHORADO
         
         # Filtro de volatilidade extrema
         if signal['volatility'] > self.enhanced_max_volatility:
-            self.logger.debug(f"📊 {symbol}: Rejeitado - volatilidade alta ({signal['volatility']:.2f}%)")
+            self.logger.info(f"📊 {symbol}: Rejeitado - volatilidade alta ({signal['volatility']:.2f}% > {self.enhanced_max_volatility}%)")
             return False
         
         # Filtro RSI se habilitado
@@ -250,24 +347,26 @@ class MultiAssetEnhancedStrategy:
             
             # Evitar comprar em overbought ou vender em oversold
             if (side == 'LONG' and rsi > 80) or (side == 'SHORT' and rsi < 20):
-                self.logger.debug(f"📊 {symbol}: Rejeitado - RSI extremo ({rsi:.1f})")
+                self.logger.info(f"📊 {symbol}: Rejeitado - RSI extremo ({rsi:.1f}) para {side}")
                 return False
         
+        # 🎯 LOG DE APROVAÇÃO
+        self.logger.info(f"📊 {symbol}: Sinal APROVADO - todas validações passaram")
         return True
     
     def _execute_enhanced_signal(self, symbol: str, signal: Dict):
-        """🆕 EXECUTA SINAL COM INFORMAÇÕES DETALHADAS"""
+        """EXECUTA SINAL COM CORREÇÕES DE TIPO E CACHE"""
         
         try:
             side = signal['side']
-            current_price = self.price_history[symbol][-1]
-            quality_score = signal['quality_score']
-            confidence = signal['confidence']
+            current_price = float(self.price_history[symbol][-1])
+            quality_score = float(signal['quality_score'])
+            confidence = float(signal['confidence'])
             
-            # Log melhorado usando métodos específicos Enhanced
+            # Log melhorado
             self.logger.enhanced_signal(symbol, quality_score, confidence/100, side)
             
-            # Detalhes técnicos usando enhanced_analysis
+            # Detalhes técnicos
             indicators = {
                 'Momentum': f"{signal['momentum']:.2f}%",
                 'Trend': signal['trend'],
@@ -276,12 +375,19 @@ class MultiAssetEnhancedStrategy:
             }
             self.logger.enhanced_analysis(symbol, indicators)
             
-            # Calcular quantidade ajustada pela confiança do sinal
+            # 🔧 USAR CACHE PARA SYMBOL_INFO
+            symbol_info = self.get_symbol_info_cached(symbol)
+            if not symbol_info:
+                self.logger.error(f"❌ Não foi possível obter informações do símbolo {symbol}")
+                return
+                
+            tick_size = float(symbol_info.get('tick_size', 0.01))
+            
+            # Calcular quantidade
             base_quantity = self.position_size_usd / current_price
             lot_size = self.get_lot_size(symbol)
             
-            # 🆕 AJUSTE DE TAMANHO POR CONFIANÇA
-            confidence_multiplier = min(1.2, confidence / 100 + 0.2)  # 0.2 a 1.2
+            confidence_multiplier = min(1.2, confidence / 100 + 0.2)
             adjusted_quantity = base_quantity * confidence_multiplier
             quantity = max(lot_size, round(adjusted_quantity / lot_size) * lot_size)
             
@@ -290,40 +396,49 @@ class MultiAssetEnhancedStrategy:
             # Determinar lado da ordem
             order_side = 'bid' if side == 'LONG' else 'ask'
             
-            # Preparar TP/SL se habilitado
+            # Arredondar preço principal
+            current_price_rounded = self.auth._round_to_tick_size(current_price, tick_size)
+            
+            # Preparar TP/SL com arredondamento
             take_profit_config = None
             stop_loss_config = None
             
             if self.auto_close_enabled and self.use_api_tp_sl:
                 if side == 'LONG':
-                    tp_stop_price = round(current_price * (1 + self.take_profit_percent / 100), 4)
-                    tp_limit_price = round(tp_stop_price * 0.999, 4)
-                    sl_stop_price = round(current_price * (1 - self.stop_loss_percent / 100), 4)
-                    sl_limit_price = round(sl_stop_price * 1.001, 4)
+                    tp_stop_price = current_price * (1 + self.take_profit_percent / 100)
+                    tp_limit_price = tp_stop_price * 0.999
+                    sl_stop_price = current_price * (1 - self.stop_loss_percent / 100)
+                    sl_limit_price = sl_stop_price * 1.001
                 else:  # SHORT
-                    tp_stop_price = round(current_price * (1 - self.take_profit_percent / 100), 4)
-                    tp_limit_price = round(tp_stop_price * 1.001, 4)
-                    sl_stop_price = round(current_price * (1 + self.stop_loss_percent / 100), 4)
-                    sl_limit_price = round(sl_stop_price * 0.999, 4)
+                    tp_stop_price = current_price * (1 - self.take_profit_percent / 100)
+                    tp_limit_price = tp_stop_price * 1.001
+                    sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
+                    sl_limit_price = sl_stop_price * 0.999
+                
+                # Arredondar todos os preços
+                tp_stop_price_rounded = self.auth._round_to_tick_size(tp_stop_price, tick_size)
+                tp_limit_price_rounded = self.auth._round_to_tick_size(tp_limit_price, tick_size)
+                sl_stop_price_rounded = self.auth._round_to_tick_size(sl_stop_price, tick_size)
+                sl_limit_price_rounded = self.auth._round_to_tick_size(sl_limit_price, tick_size)
                 
                 take_profit_config = {
-                    "stop_price": tp_stop_price,
-                    "limit_price": tp_limit_price
+                    "stop_price": tp_stop_price_rounded,
+                    "limit_price": tp_limit_price_rounded
                 }
                 
                 stop_loss_config = {
-                    "stop_price": sl_stop_price,
-                    "limit_price": sl_limit_price
+                    "stop_price": sl_stop_price_rounded,
+                    "limit_price": sl_limit_price_rounded
                 }
                 
-                self.logger.info(f"🎯 TP/SL: TP@${tp_stop_price:.4f}, SL@${sl_stop_price:.4f}")
+                self.logger.info(f"🎯 TP/SL: TP@${tp_stop_price_rounded}, SL@${sl_stop_price_rounded}")
             
-            # Executar ordem com TP/SL integrado
+            # Executar ordem
             result = self.auth.create_order(
                 symbol=symbol,
                 side=order_side,
                 amount=str(quantity),
-                price=str(current_price),
+                price=str(current_price_rounded),
                 order_type='GTC',
                 take_profit=take_profit_config,
                 stop_loss=stop_loss_config
@@ -333,15 +448,14 @@ class MultiAssetEnhancedStrategy:
                 order_id = result.get('data', {}).get('order_id')
                 position_id = f"{symbol}_{int(time.time())}"
                 
-                # Salvar posição com dados do sinal
+                # Salvar posição
                 self.active_positions[position_id] = {
                     'symbol': symbol,
                     'side': side,
                     'quantity': quantity,
-                    'price': current_price,
+                    'price': current_price_rounded,
                     'order_id': order_id,
                     'timestamp': datetime.now(),
-                    # 🆕 DADOS DO SINAL MELHORADO
                     'signal_quality': quality_score,
                     'signal_confidence': confidence,
                     'signal_momentum': signal['momentum'],
@@ -352,18 +466,43 @@ class MultiAssetEnhancedStrategy:
                 
                 self.symbol_positions[symbol] = self.symbol_positions.get(symbol, 0) + 1
                 
-                self.logger.strategy_info(f"✅ Posição Enhanced aberta: {symbol} {side} {quantity} @ ${current_price:.4f}")
+                self.logger.strategy_info(f"✅ Posição Enhanced aberta: {symbol} {side} {quantity} @ ${current_price_rounded:.4f}")
                 
             else:
                 self.logger.error(f"❌ Falha ao executar sinal Enhanced: {result}")
                 
         except Exception as e:
             self.logger.error(f"❌ Erro ao executar sinal Enhanced: {e}")
-    
+            import traceback
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")
+
     def _check_all_tp_sl(self):
         """Verificar TP/SL manual (mesmo da versão original)"""
         # Implementar verificação manual de TP/SL se necessário
         pass
+    
+    def check_and_rebalance(self, current_price: float):
+        """🆕 MÉTODO ESSENCIAL - Rebalancear estratégia Enhanced (compatível com bot principal)"""
+        self.logger.debug(f"🧠 Enhanced: Iniciando check_and_rebalance - {len(self.symbols)} símbolos para análise")
+        try:
+            # 1. Atualizar histórico de preços de todos os símbolos
+            self._update_price_history()
+            self.logger.debug(f"📈 Enhanced: Histórico atualizado para {len(self.price_history)} símbolos")
+            
+            # 2. Analisar sinais de mercado com algoritmo melhorado
+            self._analyze_market_signals()
+            
+            # 3. Verificar TP/SL manual se necessário
+            if not self.use_api_tp_sl:
+                self._check_all_tp_sl()
+                
+            # 4. Log periódico de performance
+            if hasattr(self, 'signals_detected') and self.signals_detected > 0:
+                execution_rate = (self.signals_executed / self.signals_detected) * 100
+                self.logger.debug(f"📊 Enhanced: {self.signals_executed}/{self.signals_detected} sinais executados ({execution_rate:.1f}%)")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro no rebalanceamento Enhanced: {e}")
     
     def get_grid_status(self) -> Dict:
         """Retornar status compatível com o bot principal"""

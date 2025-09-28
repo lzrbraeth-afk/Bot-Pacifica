@@ -835,6 +835,139 @@ class PacificaAuth:
             self.logger.error(f"❌ Erro na requisição de market info: {e}")
             return None
 
+    def get_historical_data(self, symbol: str, interval: str = "1m", 
+                       periods: int = 30, max_retries: int = 3) -> Optional[List[float]]:
+        """
+        Busca histórico de preços da API Pacifica com retry automático
+        
+        Args:
+            symbol: Símbolo (ex: BTC, ETH, SOL)
+            interval: Intervalo (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d)
+            periods: Quantidade de períodos (padrão: 30)
+            max_retries: Máximo de tentativas (padrão: 3)
+            
+        Returns:
+            Lista de preços de fechamento para o algoritmo Enhanced
+        """
+        
+        for attempt in range(max_retries):
+            try:
+                import time
+                from datetime import datetime, timedelta
+                
+                # Converter intervalo para minutos
+                interval_minutes = {
+                    '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+                    '1h': 60, '2h': 120, '4h': 240, '8h': 480, 
+                    '12h': 720, '1d': 1440
+                }
+                
+                minutes = interval_minutes.get(interval, 1)
+                start_time = int((datetime.now() - timedelta(minutes=periods * minutes)).timestamp() * 1000)
+                
+                # Endpoint público da Pacifica
+                url = f"{self.base_url}/kline"
+                params = {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'start_time': start_time
+                }
+                
+                response = requests.get(url, params=params, timeout=10)
+                
+                # Verificar diferentes códigos de erro
+                if response.status_code == 429:  # Rate limit exceeded
+                    retry_delay = 2 ** attempt  # Backoff exponencial: 2s, 4s, 8s
+                    self.logger.warning(f"⚠️ Rate limit {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                    if attempt < max_retries - 1:  # Não aguardar na última tentativa
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        self.logger.error(f"❌ Rate limit persistente para {symbol} após {max_retries} tentativas")
+                        return None
+                        
+                elif response.status_code == 500:  # Server error
+                    retry_delay = 1.5 * (attempt + 1)  # 1.5s, 3s, 4.5s
+                    self.logger.warning(f"⚠️ Server error {symbol} (500) - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        self.logger.error(f"❌ Server error persistente para {symbol} após {max_retries} tentativas")
+                        return None
+                        
+                elif response.status_code == 503:  # Service unavailable
+                    retry_delay = 2.0 * (attempt + 1)  # 2s, 4s, 6s
+                    self.logger.warning(f"⚠️ Service unavailable {symbol} (503) - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        return None
+                        
+                elif response.status_code == 200:
+                    # Sucesso - processar resposta
+                    self.logger.debug(f"📊 GET /kline {symbol} {interval} -> {response.status_code} (tentativa {attempt+1})")
+                    
+                    data = response.json()
+                    
+                    if data.get('success') and 'data' in data:
+                        klines = data['data']
+                        
+                        # Extrair preços de fechamento (campo 'c')
+                        prices = []
+                        for kline in klines:
+                            close_price = float(kline.get('c', 0))
+                            if close_price > 0:
+                                prices.append(close_price)
+                        
+                        if len(prices) >= periods * 0.8:  # Aceitar se tiver pelo menos 80% dos dados
+                            self.logger.debug(f"✅ Histórico obtido: {len(prices)} preços de {symbol}")
+                            return prices
+                        else:
+                            self.logger.warning(f"⚠️ Dados insuficientes para {symbol}: {len(prices)} < {periods}")
+                            return None
+                    else:
+                        self.logger.warning(f"⚠️ Resposta sem dados para {symbol}: {data}")
+                        if attempt < max_retries - 1:
+                            time.sleep(1.0)
+                            continue
+                        return None
+                else:
+                    # Outros códigos de erro
+                    self.logger.warning(f"⚠️ Erro HTTP {response.status_code} para {symbol}: {response.text[:200]}")
+                    if attempt < max_retries - 1:
+                        time.sleep(1.0)
+                        continue
+                    return None
+                    
+            except requests.exceptions.Timeout:
+                retry_delay = 1.0 * (attempt + 1)
+                self.logger.warning(f"⚠️ Timeout {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return None
+                
+            except requests.exceptions.ConnectionError:
+                retry_delay = 2.0 * (attempt + 1)
+                self.logger.warning(f"⚠️ Connection error {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return None
+                
+            except Exception as e:
+                self.logger.error(f"❌ Erro inesperado na requisição de histórico para {symbol}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1.0)
+                    continue
+                return None
+        
+        # Se chegou aqui, todas as tentativas falharam
+        self.logger.error(f"❌ Falha completa para {symbol} após {max_retries} tentativas")
+        return None
+
     # ============================================================================
     # FUNÇÕES AUXILIARES (MANTIDAS DO CÓDIGO ORIGINAL)
     # ============================================================================

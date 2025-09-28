@@ -101,11 +101,16 @@ class MultiAssetStrategy:
             self.symbol_positions[symbol] = 0
     
     def _get_lot_size(self, symbol: str) -> float:
-        """Obter lot_size para um símbolo"""
+        """Obter lot_size para um símbolo com validação detalhada"""
         try:
             info = self.auth.get_symbol_info(symbol)
             if info and 'lot_size' in info:
-                return float(info['lot_size'])
+                lot_size = float(info['lot_size'])
+                tick_size = float(info.get('tick_size', 0.01))
+                
+                # ✅ LOG DETALHADO DE VALIDAÇÃO (como esperado pelo usuário)
+                self.logger.info(f"✅ {symbol} encontrado: tick_size={tick_size}, lot_size={lot_size}")
+                return lot_size
         except Exception as e:
             self.logger.warning(f"Erro ao obter lot_size para {symbol}: {e}")
         
@@ -114,7 +119,9 @@ class MultiAssetStrategy:
             'BTC': 0.00001, 'ETH': 0.0001, 'SOL': 0.01,
             'BNB': 0.001, 'AVAX': 0.001, 'LTC': 0.001
         }
-        return lot_sizes.get(symbol, 0.001)
+        fallback = lot_sizes.get(symbol, 0.001)
+        self.logger.warning(f"⚠️ {symbol}: usando fallback lot_size={fallback}")
+        return fallback
     
     def initialize_grid(self, current_price: float) -> bool:
         """Método compatível com o bot principal - inicializa estratégia"""
@@ -145,14 +152,28 @@ class MultiAssetStrategy:
     
     def check_and_rebalance(self, current_price: float):
         """Rebalancear estratégia - método compatível"""
+        self.logger.debug(f"📊 MultiAsset: Iniciando check_and_rebalance - {len(self.symbols)} símbolos para análise")
+        
         # Atualizar preços e verificar sinais
         self._update_all_prices()
         
+        symbols_analyzed = 0
+        signals_found = 0
+        
         # Verificar sinais para todos os símbolos
         for symbol in self.symbols:
-            if symbol in self.price_history and len(self.price_history[symbol]) >= 3:
-                latest_price = self.price_history[symbol][-1]
-                self._check_signals_for_symbol(symbol, latest_price)
+            if symbol in self.price_history:
+                history_length = len(self.price_history[symbol])
+                if history_length >= 3:
+                    symbols_analyzed += 1
+                    latest_price = self.price_history[symbol][-1]
+                    signal_found = self._check_signals_for_symbol(symbol, latest_price)
+                    if signal_found:
+                        signals_found += 1
+                else:
+                    self.logger.debug(f"📊 {symbol}: {history_length} pontos de histórico (precisa 3+)")
+        
+        self.logger.info(f"📊 MultiAsset: Análise concluída - {symbols_analyzed}/{len(self.symbols)} símbolos analisados, {signals_found} sinais encontrados")
     
     def _update_all_prices(self):
         """Atualizar preços de todos os símbolos"""
@@ -160,12 +181,16 @@ class MultiAssetStrategy:
             prices = self.auth.get_prices()
             
             if prices and 'data' in prices:
+                prices_updated = 0
                 for item in prices['data']:
                     symbol = item.get('symbol')
                     price = item.get('mark') or item.get('mid')
                     
                     if symbol in self.symbols and price:
                         self._update_price_history(symbol, float(price))
+                        prices_updated += 1
+                        
+                self.logger.debug(f"📈 MultiAsset: {prices_updated} preços atualizados")
                         
         except Exception as e:
             self.logger.error(f"Erro ao atualizar preços: {e}")
@@ -187,7 +212,7 @@ class MultiAssetStrategy:
     def _check_signals_for_symbol(self, symbol: str, current_price: float):
         """Verificar sinais de trading para um símbolo"""
         if not self._can_open_position(symbol):
-            return
+            return False
         
         prices = self.price_history[symbol]
         if len(prices) >= 3:
@@ -196,7 +221,11 @@ class MultiAssetStrategy:
             
             if abs(price_change) >= self.price_change_threshold:
                 side = 'LONG' if price_change > 0 else 'SHORT'
+                self.logger.info(f"⚡ {symbol}: Sinal detectado - {side}, Variação: {price_change:.2f}%")
                 self._execute_signal(symbol, side, current_price, abs(price_change))
+                return True
+        
+        return False
     
     def _can_open_position(self, symbol: str) -> bool:
         """Verificar se pode abrir nova posição"""

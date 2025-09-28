@@ -360,3 +360,35 @@ class EnhancedSignalDetector:
                 'price_confirmation': self.price_confirmation_weight
             }
         }
+
+    def detect_signal_with_api_history(self, symbol: str, auth_client, 
+                                    current_price: float, price_change_threshold: float) -> Optional[Dict]:
+        """
+        🆕 VERSÃO MELHORADA: Usa histórico da API se não tiver dados suficientes
+        """
+        
+        # Verificar se temos histórico suficiente no cache
+        price_history = getattr(self, 'price_cache', {}).get(symbol, [])
+        
+        if len(price_history) < self.min_history_length:
+            self.logger.info(f"🔄 {symbol}: Buscando histórico da API ({len(price_history)} < {self.min_history_length})")
+            
+            # 🔥 BUSCAR HISTÓRICO DA API
+            api_history = auth_client.get_historical_data(
+                symbol=symbol, 
+                interval="1m", 
+                periods=self.min_history_length + 5  # Pegar alguns a mais
+            )
+            
+            if api_history and len(api_history) >= self.min_history_length:
+                self.logger.info(f"✅ {symbol}: Histórico obtido da API - {len(api_history)} preços")
+                
+                # Usar histórico da API + preço atual
+                combined_history = api_history + [current_price]
+                return self.detect_signal(symbol, combined_history, current_price, price_change_threshold)
+            else:
+                self.logger.warning(f"⚠️ {symbol}: Histórico insuficiente na API também")
+                return None
+        
+        # Se temos histórico suficiente, usar método normal
+        return self.detect_signal(symbol, price_history, current_price, price_change_threshold)
