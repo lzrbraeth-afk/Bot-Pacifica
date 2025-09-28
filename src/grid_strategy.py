@@ -820,6 +820,72 @@ class GridStrategy:
         self.logger.info("▶️ Resumindo grid")
         self.initialize_grid(current_price)
     
+    def reset_grid_completely(self, current_price: float) -> bool:
+        """✨ NOVA FUNCIONALIDADE: Reseta o grid completamente, apagando todas as ordens e recriando do zero"""
+        
+        try:
+            self.logger.info(f"🔄🔥 Iniciando reset completo do grid em ${current_price:,.2f}")
+            
+            # 1. Cancelar TODAS as ordens ativas
+            self.logger.info("🚫 Cancelando todas as ordens ativas...")
+            self.cancel_all_orders()
+            
+            # 2. Aguardar processamento dos cancelamentos com verificação robusta
+            self.logger.info("⏳ Aguardando cancelamentos na exchange...")
+            timeout = 10.0  # 10 segundos de timeout
+            poll_interval = 0.5
+            elapsed = 0.0
+            
+            while elapsed < timeout:
+                current_open = self.auth.get_open_orders(self.symbol)
+                if not current_open or len(current_open) == 0:
+                    self.logger.info("✅ Todas as ordens foram canceladas")
+                    break
+                    
+                remaining = len([o for o in current_open if o.get('symbol') == self.symbol])
+                self.logger.debug(f"⏳ Aguardando cancelamento de {remaining} ordens...")
+                
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                
+            if elapsed >= timeout:
+                remaining_orders = self.auth.get_open_orders(self.symbol)
+                if remaining_orders and len(remaining_orders) > 0:
+                    self.logger.warning(f"⚠️ Timeout: {len(remaining_orders)} ordens ainda ativas - prosseguindo mesmo assim")
+                else:
+                    self.logger.info("✅ Cancelamentos concluídos após timeout")
+            
+            # 3. Limpar completamente o estado interno
+            self.logger.info("🧹 Limpando estado interno...")
+            with self._order_lock:
+                self.placed_orders.clear()
+            
+            self.active_grid = {'buy_levels': [], 'sell_levels': []}
+            self.grid_active = False
+            self.grid_center = 0
+            
+            # 4. Aguardar um pouco mais para garantir que a exchange processou tudo
+            time.sleep(2.0)
+            
+            # 5. Recriar o grid completamente do zero
+            self.logger.info("🔧 Recriando grid completamente do zero...")
+            success = self.initialize_grid(current_price)
+            
+            if success:
+                grid_status = self.get_grid_status()
+                self.logger.info(f"✅ Reset completo finalizado com sucesso!")
+                self.logger.info(f"📊 Novo grid: {grid_status['active_orders']} ordens ativas")
+                return True
+            else:
+                self.logger.error("❌ Falha ao recriar grid após reset")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro durante reset completo do grid: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            return False
+    
     def get_grid_status(self) -> Dict:
         """Retorna status atual do grid"""
         

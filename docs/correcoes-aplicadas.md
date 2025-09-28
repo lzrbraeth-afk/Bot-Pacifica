@@ -6,13 +6,15 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **6 Problemas Críticos Resolvidos:**
+📋 **8 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
 4. **Filtro incorreto por símbolo** → Interferência entre ativos eliminada
 5. **Memory leak** → Consumo excessivo de memória limitado
 6. **Tratamento de preços inválidos** → Paralisação por falhas temporárias corrigida
+7. **Função get_positions() ausente** → Busca de posições implementada com endpoints múltiplos
+8. **Falta de reset periódico** → Sistema completo de renovação automática do grid
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -21,6 +23,8 @@ Este documento registra os principais problemas identificados e as correções a
 - ✅ **Memory Safe**: Uso controlado de memória para execução 24/7
 - ✅ **Robustez**: Recuperação automática de falhas temporárias
 - ✅ **API Sync**: Sincronização confiável com estado real da exchange
+- ✅ **Posições Tracking**: Busca inteligente de posições com múltiplos endpoints
+- ✅ **Grid Renewal**: Sistema automático de renovação periódica do grid
 
 ---
 
@@ -311,6 +315,107 @@ O Bot Pacifica agora possui:
 - **🎯 Smart Order Repositioning**: Reposicionamento inteligente
 - **📊 Trend Analysis**: Análise de tendência em tempo real
 
+#### **Melhorias de API** _(28/09/2025)_
+- **📊 get_positions()**: Função para buscar posições abertas implementada
+- **🔄 Reset Periódico do Grid**: Funcionalidade completa de reset automático
+- **🔍 Endpoint Discovery**: Detecção automática de endpoints funcionais
+
 ---
 
-*Documento atualizado em 27/09/2025 após implementação da Dynamic Grid Strategy*
+## 🔧 **Correção 7: Implementação da Função get_positions() - 28/09/2025**
+
+### **Problema**
+- Função `get_positions()` não existia na classe `PacificaAuth`
+- Necessária para funcionalidades avançadas do bot
+- Endpoint `/positions` retornava erro 404 (não encontrado)
+
+### **Diagnóstico**
+```log
+📊 POST /positions (auth) -> 404
+❌ Erro na busca de posições: 
+```
+
+### **Solução Implementada**
+
+#### **1. Implementação Inteligente da Função**
+- ✅ **Tentativa múltipla de endpoints**: Testa vários caminhos possíveis
+- ✅ **Fallback automático**: Se um endpoint falha, tenta o próximo
+- ✅ **Detecção de posições**: Identifica quando há posições via `positions_count`
+- ✅ **Autenticação segura**: Usa Agent Wallet quando necessário
+
+#### **2. Endpoints Testados Automaticamente**
+```python
+endpoints_to_try = [
+    "/account/positions",   # Primeiro teste
+    "/positions",          # ✅ Este funcionou!
+    "/user/positions",     # Backup
+    "/trading/positions"   # Alternativo
+]
+```
+
+#### **3. Estratégia de Descoberta**
+1. **Análise inicial**: Verifica `/account` para `positions_count`
+2. **Descoberta ativa**: Se count > 0, explora endpoints específicos
+3. **Autenticação**: Tenta público primeiro, depois autenticado
+4. **Filtragem**: Suporte a filtro por símbolo opcional
+
+### **Resultado**
+✅ **Função completamente funcional**
+```json
+{
+  "symbol": "HYPE",
+  "side": "bid", 
+  "amount": "6.01",
+  "entry_price": "43.390608",
+  "margin": "0",
+  "funding": "-0.024369",
+  "isolated": false,
+  "created_at": 1758995387259,
+  "updated_at": 1759067051909
+}
+```
+
+### **Uso da Função**
+```python
+# Buscar todas as posições
+positions = auth.get_positions()
+
+# Buscar posições de um símbolo específico
+hype_positions = auth.get_positions("HYPE")
+
+# Verificar resultado
+if positions:
+    print(f"Encontradas {len(positions)} posições")
+    for pos in positions:
+        print(f"Símbolo: {pos.get('symbol')}, Tamanho: {pos.get('amount')}")
+```
+
+### **Benefícios**
+- ✅ **Robustez**: Múltiplos endpoints de fallback
+- ✅ **Flexibilidade**: Funciona com ou sem filtro de símbolo
+- ✅ **Segurança**: Usa Agent Wallet para autenticação
+- ✅ **Compatibilidade**: Integração perfeita com código existente
+- ✅ **Logs detalhados**: Facilita debugging e monitoramento
+
+---
+
+## 🔄 **Correção 8: Reset Periódico do Grid - 28/09/2025**
+
+### **Nova Funcionalidade**
+Sistema de reset completo do grid em intervalos configuráveis
+
+### **Implementação**
+- ✅ **Configuração via .env**: `ENABLE_PERIODIC_GRID_RESET=true`
+- ✅ **Intervalo customizável**: `GRID_RESET_INTERVAL_MINUTES=60`
+- ✅ **Reset robusto**: Cancela todas ordens, aguarda processamento, recria grid
+- ✅ **Logs detalhados**: Progresso completo do reset
+
+### **Benefícios**
+- 🎯 **Grid sempre atualizado** no preço atual
+- 🧹 **Eliminação de ordens órfãs** distantes do mercado  
+- 💰 **Melhor eficiência** do capital disponível
+- 🔄 **Prevenção de inconsistências** acumuladas
+
+---
+
+*Documento atualizado em 28/09/2025 após implementação das funções get_positions() e Reset Periódico*

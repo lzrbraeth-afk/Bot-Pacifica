@@ -59,6 +59,10 @@ class GridTradingBot:
         self.rebalance_interval = int(os.getenv('REBALANCE_INTERVAL_SECONDS', '60'))
         self.check_balance = os.getenv('CHECK_BALANCE_BEFORE_ORDER', 'true').lower() == 'true'
         
+        # ✨ NOVA FUNCIONALIDADE: Reset periódico do grid
+        self.enable_periodic_reset = os.getenv('ENABLE_PERIODIC_GRID_RESET', 'false').lower() == 'true'
+        self.grid_reset_interval = int(os.getenv('GRID_RESET_INTERVAL_MINUTES', '60')) * 60  # Converter para segundos
+        
         # Headers específicos por estratégia
         self.show_strategy_header()
         
@@ -104,6 +108,14 @@ class GridTradingBot:
             self.logger.info(f"Símbolos: {symbols}", force=True)
             
         self.logger.info(f"Intervalo de Rebalanceamento: {self.rebalance_interval}s", force=True)
+        
+        # ✨ Mostrar configuração de reset periódico
+        if self.enable_periodic_reset:
+            reset_minutes = self.grid_reset_interval // 60
+            self.logger.info(f"🔄 Reset Periódico: A cada {reset_minutes} minutos", force=True)
+        else:
+            self.logger.info("🔄 Reset Periódico: Desabilitado", force=True)
+            
         self.logger.info("=" * 80, force=True)
         
         # Inicializar componentes
@@ -412,6 +424,7 @@ class GridTradingBot:
         iteration = 0
         last_rebalance = time.time()
         last_price_check = time.time()
+        last_grid_reset = time.time()  # ✨ NOVO: Controle do reset periódico
         
         # Inicializar current_price baseado na estratégia
         if self.strategy_type == 'grid':
@@ -487,6 +500,38 @@ class GridTradingBot:
                         self.logger.warning(f"⚠️ Erro no rebalanceamento: {e}")
                         # Não para o bot - apenas continua
                     last_rebalance = current_time 
+                
+                # ✨ NOVA FUNCIONALIDADE: Reset periódico do grid
+                if (self.enable_periodic_reset and 
+                    self.strategy_type == 'grid' and 
+                    current_time - last_grid_reset >= self.grid_reset_interval):
+                    
+                    try:
+                        reset_minutes = self.grid_reset_interval // 60
+                        self.logger.info(f"🔄🔥 RESET PERIÓDICO: Refazendo grid completo após {reset_minutes} minutos")
+                        
+                        # Fazer reset completo do grid
+                        if hasattr(self.strategy, 'reset_grid_completely'):
+                            success = self.strategy.reset_grid_completely(current_price)
+                            if success:
+                                self.logger.info("✅ Grid resetado e recriado com sucesso!")
+                            else:
+                                self.logger.warning("⚠️ Falha no reset - mantendo grid atual")
+                        else:
+                            # Fallback: usar método tradicional
+                            self.logger.info("🔄 Usando método tradicional de reset...")
+                            self.strategy.cancel_all_orders()
+                            time.sleep(2)  # Aguardar cancelamentos
+                            if self.strategy.initialize_grid(current_price):
+                                self.logger.info("✅ Grid resetado e recriado com sucesso!")
+                            else:
+                                self.logger.warning("⚠️ Falha no reset - tentando novamente no próximo ciclo")
+                        
+                    except Exception as e:
+                        self.logger.error(f"❌ Erro no reset periódico: {e}")
+                        # Continua operação normal mesmo com falha no reset
+                    
+                    last_grid_reset = current_time 
                         
                 # Status periódico
                 if iteration % 60 == 0:  # 🔧 A cada 60 iterações (1 minuto)

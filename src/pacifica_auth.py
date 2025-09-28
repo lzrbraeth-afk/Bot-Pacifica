@@ -897,6 +897,216 @@ class PacificaAuth:
     # ============================================================================
     # FUNCIONALIDADES AVANÇADAS (TP/SL PARA POSIÇÕES EXISTENTES)
     # ============================================================================
+    
+    def get_positions(self, symbol: str = None) -> Optional[List]:
+        """
+        Busca posições abertas da conta
+        Args:
+            symbol: Filtrar por símbolo específico (opcional)
+        Returns:
+            Lista de posições ou None em caso de erro
+        """
+        try:
+            # Primeiro tentar endpoint público (similar ao get_open_orders)
+            url = f"{self.base_url}/account"
+            params = {'account': self.main_public_key}
+            
+            response = requests.get(url, params=params, timeout=10)
+            self.logger.info(f"📊 GET /account (for positions) -> {response.status_code}")
+            self.debug_logger.debug(f"Response: {response.text[:500]}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Tentar extrair posições dos dados da conta
+                positions = []
+                
+                if isinstance(data, dict):
+                    # Verificar diferentes estruturas possíveis
+                    account_data = data.get('data', {})
+                    
+                    # Se positions_count > 0, mas não há array de posições, 
+                    # pode ser que as posições estejam em outro endpoint
+                    positions_count = account_data.get('positions_count', 0)
+                    
+                    positions = (account_data.get('positions', []) or 
+                               account_data.get('open_positions', []) or
+                               data.get('positions', []))
+                    
+                    # Se não encontramos array de posições mas o count indica que há posições,
+                    # tentar endpoint específico de posições
+                    if not positions and positions_count > 0:
+                        self.logger.info(f"🔍 {positions_count} posições indicadas, tentando endpoint específico")
+                        return self._try_positions_endpoint(symbol)
+                
+                if symbol and positions:
+                    # Filtrar por símbolo se especificado
+                    positions = [p for p in positions if p.get('symbol') == symbol]
+                
+                self.logger.info(f"✅ {len(positions)} posições encontradas")
+                return positions
+                
+            elif response.status_code == 401:
+                # Se precisar de autenticação, tentar método autenticado
+                self.logger.info("🔒 Endpoint requer autenticação - tentando método autenticado")
+                return self._get_positions_authenticated(symbol)
+            else:
+                self.logger.error(f"❌ Erro {response.status_code}: {response.text[:200]}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar posições: {e}")
+            return []
+    
+    def _get_positions_authenticated(self, symbol: str = None) -> Optional[List]:
+        """
+        Busca posições com autenticação Agent Wallet
+        """
+        try:
+            timestamp = int(time.time() * 1_000)
+            
+            signature_header = {
+                "timestamp": timestamp,
+                "expiry_window": 30000,
+                "type": "get_account",  # Usar get_account em vez de get_positions
+            }
+            
+            signature_payload = {
+                "account": self.main_public_key,
+            }
+            
+            message = prepare_message(signature_header, signature_payload)
+            signature = sign_message(message, self.agent_keypair)
+            
+            request_data = {
+                "account": self.main_public_key,
+                "agent_wallet": self.agent_public_key,
+                "signature": signature,
+                "timestamp": timestamp,
+                "expiry_window": 30000,
+            }
+            
+            url = f"{self.base_url}/account"
+            response = requests.post(url, json=request_data, timeout=10)
+            self.logger.info(f"📊 POST /account (auth for positions) -> {response.status_code}")
+            self.debug_logger.debug(f"Response: {response.text[:500]}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Tentar extrair posições dos dados da conta
+                positions = []
+                
+                if isinstance(data, dict):
+                    positions = (data.get('positions', []) or 
+                               data.get('data', {}).get('positions', []) or
+                               data.get('open_positions', []))
+                
+                if symbol and positions:
+                    positions = [p for p in positions if p.get('symbol') == symbol]
+                
+                self.logger.info(f"✅ {len(positions)} posições obtidas (autenticado)")
+                return positions
+            else:
+                self.logger.error(f"❌ Erro na busca autenticada de posições: {response.text}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro na requisição autenticada de posições: {e}")
+            return []
+    
+    def _try_positions_endpoint(self, symbol: str = None) -> Optional[List]:
+        """
+        Tenta endpoints alternativos para buscar posições
+        """
+        # Lista de endpoints possíveis para tentar
+        endpoints_to_try = [
+            "/account/positions",
+            "/positions", 
+            "/user/positions",
+            "/trading/positions"
+        ]
+        
+        for endpoint in endpoints_to_try:
+            try:
+                url = f"{self.base_url}{endpoint}"
+                params = {'account': self.main_public_key}
+                if symbol:
+                    params['symbol'] = symbol
+                
+                self.logger.debug(f"🔍 Tentando endpoint: {endpoint}")
+                response = requests.get(url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, dict) and 'data' in data:
+                        positions = data['data']
+                    elif isinstance(data, list):
+                        positions = data
+                    else:
+                        continue
+                    
+                    if positions:  # Se encontrou posições
+                        self.logger.info(f"✅ Posições encontradas em {endpoint}: {len(positions)}")
+                        return positions
+                        
+                elif response.status_code == 401:
+                    # Se precisar de autenticação, tentar com Agent Wallet
+                    auth_positions = self._try_authenticated_positions_endpoint(endpoint, symbol)
+                    if auth_positions:
+                        return auth_positions
+                
+            except Exception as e:
+                self.logger.debug(f"Erro no endpoint {endpoint}: {e}")
+                continue
+        
+        # Se chegou aqui, nenhum endpoint funcionou
+        self.logger.info("ℹ️ Nenhum endpoint de posições retornou dados")
+        return []
+    
+    def _try_authenticated_positions_endpoint(self, endpoint: str, symbol: str = None) -> Optional[List]:
+        """
+        Tenta endpoint de posições com autenticação
+        """
+        try:
+            timestamp = int(time.time() * 1_000)
+            
+            signature_header = {
+                "timestamp": timestamp,
+                "expiry_window": 30000,
+                "type": "get_positions",
+            }
+            
+            signature_payload = {
+                "account": self.main_public_key,
+            }
+            if symbol:
+                signature_payload["symbol"] = symbol
+            
+            message = prepare_message(signature_header, signature_payload)
+            signature = sign_message(message, self.agent_keypair)
+            
+            request_data = {
+                "account": self.main_public_key,
+                "agent_wallet": self.agent_public_key,
+                "signature": signature,
+                "timestamp": timestamp,
+                "expiry_window": 30000,
+            }
+            
+            url = f"{self.base_url}{endpoint}"
+            response = requests.post(url, json=request_data, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                positions = data.get('data', []) if isinstance(data, dict) else data
+                if positions:
+                    self.logger.info(f"✅ Posições autenticadas encontradas em {endpoint}: {len(positions)}")
+                    return positions
+            
+            return []
+            
+        except Exception as e:
+            self.logger.debug(f"Erro no endpoint autenticado {endpoint}: {e}")
+            return []
 
     def create_position_tp_sl(self, symbol: str, side: str, 
                             take_profit_stop: str, take_profit_limit: str,
@@ -1043,6 +1253,14 @@ def main():
             orders = auth.get_open_orders()
             if orders is not None:
                 print(f"✅ {len(orders)} ordens abertas encontradas!")
+                
+            print("\n📊 Testando posições abertas...")
+            positions = auth.get_positions()
+            if positions is not None:
+                print(f"✅ {len(positions)} posições encontradas!")
+                if positions:
+                    print("Primeira posição:")
+                    print(json.dumps(positions[0], indent=2))
                 
         else:
             print("❌ Falha no teste de conexão")

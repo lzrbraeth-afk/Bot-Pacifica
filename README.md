@@ -283,6 +283,10 @@ CHECK_BALANCE_BEFORE_ORDER=true
 CLEAN_ORDERS_ON_START=false
 LOG_LEVEL=INFO
 REBALANCE_INTERVAL_SECONDS=60
+
+# 🔄 Reset Periódico do Grid (NOVO!)
+ENABLE_PERIODIC_GRID_RESET=false    # Habilitar reset completo periódico
+GRID_RESET_INTERVAL_MINUTES=60      # Intervalo em minutos (60 = 1 hora)
 ```
 
 > **Dica**: Comece conservador (menos níveis, maior espaçamento, ordem menor) e aumente aos poucos.
@@ -366,6 +370,10 @@ GRID_LEVELS=12                    # Número de níveis
 GRID_SPACING_PERCENT=0.5          # Espaçamento percentual
 ORDER_SIZE_USD=15                 # Tamanho por ordem
 CLEAN_ORDERS_ON_START=true        # Limpar ordens antigas
+
+# 🔄 Reset periódico do grid (OPCIONAL)
+ENABLE_PERIODIC_GRID_RESET=true   # Habilitar reset completo
+GRID_RESET_INTERVAL_MINUTES=120   # Reset a cada 2 horas
 ```
 
 **🎯 Funcionalidades Principais:**
@@ -374,6 +382,7 @@ CLEAN_ORDERS_ON_START=true        # Limpar ordens antigas
 - **Análise de tendência** para ajustar direção do grid
 - **Cancelamento automático** de ordens obsoletas
 - **Sistema de relocação** de ordens de venda quando preço cai
+- **🆕 Reset periódico** - apaga todas ordens e recria grid do zero periodicamente
 - **Adaptação dinâmica** à volatilidade do mercado
 
 **⚡ Vantagens:**
@@ -525,15 +534,23 @@ Estratégia especializada para cenários de alta volatilidade:
 - **✅ Correção**: API Pacifica agora funciona 100%
 - **🎯 Resultado**: Teste com 11 ordens = 100% de sucesso
 
-### 🎉 **Como Usar as Novidades**
+### 🔄 **RESET PERIÓDICO DO GRID - NOVO!**
+- **� Funcionalidade**: Apaga TODAS as ordens e recria o grid do zero periodicamente
+- **⏰ Configurável**: Define de quanto em quanto tempo fazer o reset
+- **🔧 Robusto**: Aguarda cancelamentos e verifica estado antes de recriar
+- **📊 Status**: Mostra progresso e resultado do reset no log
+
+### �🎉 **Como Usar as Novidades**
 ```ini
 # No seu arquivo .env
-STRATEGY_TYPE=dynamic_grid        # Nova estratégia adaptativa
-CLEAN_ORDERS_ON_START=true        # Agora funcional
-SYMBOL=HYPE                       # Símbolo principal
+STRATEGY_TYPE=dynamic_grid              # Nova estratégia adaptativa
+CLEAN_ORDERS_ON_START=true              # Agora funcional
+ENABLE_PERIODIC_GRID_RESET=true         # 🆕 Reset periódico
+GRID_RESET_INTERVAL_MINUTES=60          # 🆕 Reset a cada 1 hora
+SYMBOL=HYPE                             # Símbolo principal
 ```
 
-**🚀 Status**: Bot agora com **grid inteligente** que se adapta automaticamente!
+**🚀 Status**: Bot agora com **grid inteligente** que se adapta automaticamente e se renova periodicamente!
 
 ---
 
