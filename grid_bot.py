@@ -455,15 +455,26 @@ class GridTradingBot:
                         active_positions = len(getattr(self.strategy, 'active_positions', []))
                         self.logger.info(f"💓 Heartbeat #{iteration} - Uptime: {uptime} | Posições: {active_positions}", force=True)
                 
-                # Verificar margem e posição
+                # ATIVAR VERIFICAÇÃO DE MARGEM (A CADA 5 ITERAÇÕES = ~5 SEGUNDOS)                
                 if self.check_balance and iteration % 5 == 0:
-                    # Atualizar estado da conta e verificar auto-close
+                    # 1. Atualizar estado da conta
                     self.position_mgr.update_account_state()
                     
-                    # is_safe, msg = self.position_mgr.check_margin_safety()
-                    # if not is_safe:
-                    #     self.logger.warning(f"⚠️ {msg}")
-                    pass
+                    # 2. ✅ ATIVAR VERIFICAÇÃO DE MARGEM (DESCOMENTADO)
+                    is_safe, msg = self.position_mgr.check_margin_safety()
+                    
+                    if not is_safe:
+                        # Log do problema detectado
+                        self.logger.warning(f"⚠️ {msg}")
+                        
+                        # 🔥 A FUNÇÃO JÁ EXECUTOU AS AÇÕES AUTOMATICAMENTE:
+                        # - Se margem < 20% → Cancelou ordens
+                        # - Se margem < 10% → Vendeu posição
+                        
+                        # Bot CONTINUA OPERANDO (não para)
+                    else:
+                        # Margem OK - apenas log debug
+                        self.logger.debug(f"✅ {msg}")
                 
                 # Verificar ordens executadas a cada 10 segundos
                 if iteration % 10 == 0:
@@ -479,6 +490,27 @@ class GridTradingBot:
                 
                 # Rebalancear estratégia se necessário
                 if current_time - last_rebalance >= self.rebalance_interval:
+                    
+                    # ========== ✅ ADICIONAR VERIFICAÇÃO DE MARGEM ==========
+                    # Verificar margem ANTES de rebalancear
+                    self.position_mgr.update_account_state()
+                    
+                    if self.position_mgr.account_balance > 0:
+                        margin_percent = (self.position_mgr.margin_available / 
+                                        self.position_mgr.account_balance * 100)
+                        
+                        if margin_percent < 20:
+                            self.logger.warning(f"⚠️ Margem baixa ({margin_percent:.1f}%) - pulando rebalanceamento")
+                            
+                            # Verificar proteções
+                            is_safe, msg = self.position_mgr.check_margin_safety()
+                            if not is_safe:
+                                self.logger.warning(f"🔧 {msg}")
+                            
+                            last_rebalance = current_time  # Atualizar timer
+                            continue  # Pular para próxima iteração do loop
+                    # ========== FIM DO BLOCO ==========
+                    
                     if self.strategy_type == 'grid':
                         self.logger.info(f"🔄 Verificando rebalanceamento em ${current_price:,.2f}")
                     else:

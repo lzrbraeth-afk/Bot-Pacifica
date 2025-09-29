@@ -295,7 +295,28 @@ class GridStrategy:
                     if "Máximo de ordens atingido" in reason:
                         self.logger.info(f"📊 {reason} - aguardando execução de ordens existentes")
                         return False
-                    else:  # ← ADICIONAR else AQUI
+                    
+                    elif "Margem insuficiente" in reason:
+                        # Log detalhado para problemas de margem
+                        margin_needed = order_value / self.position_mgr.leverage
+                        margin_available = self.position_mgr.margin_available
+                        
+                        if self.position_mgr.account_balance > 0:
+                            margin_percent = (margin_available / self.position_mgr.account_balance * 100)
+                        else:
+                            margin_percent = 0
+                        
+                        self.logger.warning(f"⚠️ Margem insuficiente para ${price:.2f}")
+                        self.logger.warning(f"   Necessário: ${margin_needed:.2f} | Disponível: ${margin_available:.2f}")
+                        self.logger.warning(f"   Margem livre: {margin_percent:.1f}%")
+                        
+                        # Se margem muito baixa, ativar proteções
+                        if margin_percent < 20:
+                            self.logger.warning("🔧 Margem crítica - verificando proteções...")
+                            is_safe, msg = self.position_mgr.check_margin_safety()
+                        
+                        return False
+                    else:
                         self.logger.warning(f"⚠️ Não pode colocar ordem: {reason}")
                         return False
 
@@ -490,7 +511,25 @@ class GridStrategy:
         """Rebalanceia o grid adicionando ordens faltantes COM CORREÇÃO ROBUSTA"""
         
         try:
-            # 🔧 VERIFICAÇÃO MELHORADA DE PREÇO INVÁLIDO COM RECUPERAÇÃO
+            # Verificar margem ANTES de tentar rebalancear
+            self.position_mgr.update_account_state()
+            
+            if self.position_mgr.account_balance > 0:
+                margin_percent = (self.position_mgr.margin_available / 
+                                self.position_mgr.account_balance * 100)
+                
+                if margin_percent < 25:
+                    self.logger.warning(f"⚠️ Margem baixa ({margin_percent:.1f}%) - pulando rebalanceamento")
+                    self.logger.info("💡 Mínimo necessário: 25% de margem livre")
+                    
+                    # Ativar proteções se muito baixo
+                    if margin_percent < 20:
+                        self.logger.warning("🔧 Ativando proteções automáticas...")
+                        is_safe, msg = self.position_mgr.check_margin_safety()
+                    
+                    return  # NÃO continua rebalanceamento
+            
+            # VERIFICAÇÃO DE PREÇO INVÁLIDO COM RECUPERAÇÃO
             if current_price <= 0:
                 self.logger.warning(f"Preço inválido: {current_price} - tentando recuperar...")
                 

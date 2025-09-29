@@ -12,13 +12,27 @@ class PositionManager:
     def __init__(self, auth_client):
         self.logger = logging.getLogger('PacificaBot.PositionManager')
         self.auth = auth_client
+
+        # ========== SISTEMA 1: Cancelamento de Ordens ==========
+        self.auto_cancel_orders = os.getenv('AUTO_CANCEL_ORDERS_ON_LOW_MARGIN', 'true').lower() == 'true'
+        self.cancel_orders_threshold = float(os.getenv('CANCEL_ORDERS_MARGIN_THRESHOLD', '20'))
+        self.cancel_orders_percentage = float(os.getenv('CANCEL_ORDERS_PERCENTAGE', '30'))
         
-        # Configurações de risco
-        self.margin_safety_percent = float(os.getenv('MARGIN_SAFETY_PERCENT', '20'))
+        # ========== SISTEMA 2: Redução de Posição (NOVO) ==========
+        self.auto_reduce_position = os.getenv('AUTO_REDUCE_POSITION_ON_LOW_MARGIN', 'true').lower() == 'true'
+        self.reduce_position_threshold = float(os.getenv('REDUCE_POSITION_MARGIN_THRESHOLD', '10'))
+        self.reduce_position_percentage = float(os.getenv('REDUCE_POSITION_PERCENTAGE', '20'))
+        
+        # Log das configurações
+        if self.auto_cancel_orders:
+            self.logger.info(f"🔧 Auto-cancel orders ATIVO: margem < {self.cancel_orders_threshold}%")
+        
+        if self.auto_reduce_position:
+            self.logger.info(f"🔧 Auto-reduce position ATIVO: margem < {self.reduce_position_threshold}%")
+        
         self.max_position_size = float(os.getenv('MAX_POSITION_SIZE_USD', '1000'))
         self.max_open_orders = int(os.getenv('MAX_OPEN_ORDERS', '20'))
         self.leverage = int(os.getenv('LEVERAGE', '10'))
-        self.auto_reduce = os.getenv('AUTO_REDUCE_ON_LOW_MARGIN', 'true').lower() == 'true'
         
         # 🆕 Configurações de Auto-Close
         self.auto_close_on_limit = os.getenv('AUTO_CLOSE_ON_MAX_POSITION', 'true').lower() == 'true'
@@ -33,7 +47,7 @@ class PositionManager:
         self.margin_used = 0
         self.margin_available = 0
         
-        self.logger.info(f"PositionManager inicializado - Safety: {self.margin_safety_percent}%, Max Position: ${self.max_position_size}")
+        self.logger.info(f"PositionManager inicializado - Safety: {self.reduce_position_percentage}%, Max Position: ${self.max_position_size}")
         if self.auto_close_on_limit:
             self.logger.info(f"🔧 Auto-close ATIVADO: {self.auto_close_strategy}, {self.auto_close_percentage}%")
     
@@ -324,7 +338,11 @@ class PositionManager:
         return ((self.account_balance - initial_balance) / initial_balance) * 100
     
     def check_margin_safety(self) -> Tuple[bool, str]:
-        """Verifica se margem está em nível seguro"""
+        """
+        Verifica margem e aplica proteções em CASCATA:
+        1. Margem < 20% → Cancela ordens (menos drástico)
+        2. Margem < 10% → Vende posição (emergência)
+        """
         
         if self.account_balance == 0:
             return False, "Saldo zero"
@@ -332,17 +350,195 @@ class PositionManager:
         # Calcular % de margem disponível
         margin_percent = (self.margin_available / self.account_balance) * 100
         
-        if margin_percent < self.margin_safety_percent:
-            warning = f"⚠️ Margem baixa: {margin_percent:.1f}% < {self.margin_safety_percent}%"
-            self.logger.warning(warning)
+        # ========== NÍVEL 2: EMERGÊNCIA (Reduzir Posição) ==========
+        if margin_percent < self.reduce_position_threshold:
+            warning = f"🚨 MARGEM CRÍTICA: {margin_percent:.1f}% < {self.reduce_position_threshold}%"
+            self.logger.error(warning)
             
-            if self.auto_reduce:
-                self.logger.info("🔧 Auto-reduce ativado - cancelando ordens menos prioritárias")
-                self._reduce_exposure()
+            if self.auto_reduce_position:
+                self.logger.warning("🔴 EMERGÊNCIA: Reduzindo posição!")
+                freed = self._reduce_position_on_low_margin()
+                
+                if freed > 0:
+                    self.logger.info(f"✅ Posição reduzida - ${freed:.2f} liberado")
+                else:
+                    self.logger.warning("⚠️ Não foi possível reduzir posição")
             
             return False, warning
         
+        # ========== NÍVEL 1: ALERTA (Cancelar Ordens) ==========
+        elif margin_percent < self.cancel_orders_threshold:
+            warning = f"⚠️ Margem baixa: {margin_percent:.1f}% < {self.cancel_orders_threshold}%"
+            self.logger.warning(warning)
+            
+            if self.auto_cancel_orders:
+                self.logger.info("🔧 Cancelando ordens para liberar margem")
+                cancelled = self._cancel_orders_on_low_margin()
+                
+                if cancelled > 0:
+                    self.logger.info(f"✅ {cancelled} ordens canceladas")
+                else:
+                    self.logger.warning("⚠️ Nenhuma ordem para cancelar")
+            
+            return False, warning
+        
+        # ========== TUDO OK ==========
         return True, f"Margem OK: {margin_percent:.1f}%"
+    
+    # ========================================================================
+    # SISTEMA 1: CANCELAMENTO DE ORDENS (RENOMEADO)
+    # ========================================================================
+    
+    def _cancel_orders_on_low_margin(self) -> int:
+        """
+        🔧 RENOMEADA de _reduce_exposure()
+        
+        Cancela X% das ordens mais distantes para liberar margem.
+        NÃO vende posições abertas.
+        
+        Returns:
+            Número de ordens canceladas
+        """
+        
+        if not self.open_orders:
+            return 0
+        
+        symbol = os.getenv('SYMBOL', 'SOL')
+        current_price = self._get_current_price(symbol)
+        
+        if current_price <= 0:
+            self.logger.warning("⚠️ Não foi possível obter preço atual")
+            return 0
+        
+        # Ordenar ordens por distância do preço atual
+        orders_with_distance = []
+        for order_id, order_data in self.open_orders.items():
+            price = order_data['price']
+            distance = abs(price - current_price) / current_price
+            orders_with_distance.append((distance, order_id, order_data))
+        
+        # Ordenar: mais distantes primeiro
+        orders_with_distance.sort(reverse=True)
+        
+        # Calcular quantas cancelar (baseado em percentual)
+        cancel_count = max(1, int(len(self.open_orders) * self.cancel_orders_percentage / 100))
+        cancelled_count = 0
+        
+        self.logger.warning(f"🔪 Cancelando {cancel_count} ordens mais distantes ({self.cancel_orders_percentage}%)")
+        
+        for i in range(min(cancel_count, len(orders_with_distance))):
+            distance, order_id, order_data = orders_with_distance[i]
+            
+            try:
+                # ✅ CANCELAR NA API REAL
+                result = self.auth.cancel_order(str(order_id), symbol)
+                
+                if result:
+                    self.remove_order(order_id)
+                    cancelled_count += 1
+                    self.logger.info(f"🗑️ Cancelada: {order_data['side']} @ ${order_data['price']:.2f} (distância: {distance*100:.1f}%)")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Erro ao cancelar ordem {order_id}: {e}")
+        
+        return cancelled_count
+    
+    # ========================================================================
+    # SISTEMA 2: REDUÇÃO DE POSIÇÃO (NOVO!)
+    # ========================================================================
+    
+    def _reduce_position_on_low_margin(self) -> float:
+        """
+        🆕 NOVA FUNÇÃO
+        
+        Vende X% da posição aberta para liberar margem em EMERGÊNCIA.
+        Usa o mesmo motor de _force_partial_sell() do AUTO_CLOSE.
+        
+        Returns:
+            Valor em USD liberado
+        """
+        
+        try:
+            symbol = os.getenv('SYMBOL', 'SOL')
+            
+            # Buscar posição real da API
+            api_positions = self.auth.get_positions()
+            
+            if not api_positions:
+                self.logger.warning("⚠️ Nenhuma posição encontrada na API")
+                return 0.0
+            
+            # Encontrar posição do símbolo
+            target_position = None
+            for pos in api_positions:
+                if pos.get('symbol') == symbol:
+                    target_position = pos
+                    break
+            
+            if not target_position:
+                self.logger.warning(f"⚠️ Nenhuma posição {symbol} encontrada")
+                return 0.0
+            
+            # Pegar quantidade e lado da posição
+            api_quantity = abs(float(target_position.get('amount', 0)))
+            position_side = target_position.get('side', '').lower()
+            
+            if api_quantity < 0.001:
+                self.logger.warning("⚠️ Posição muito pequena para reduzir")
+                return 0.0
+            
+            # Calcular quantidade a vender
+            qty_to_sell = api_quantity * (self.reduce_position_percentage / 100)
+            
+            # Determinar lado da ordem (oposto da posição)
+            order_side = 'bid' if position_side == 'ask' else 'ask'
+            
+            # Obter preço atual
+            current_price = self._get_current_price(symbol)
+            if current_price <= 0:
+                self.logger.warning(f"⚠️ Preço inválido para {symbol}")
+                return 0.0
+            
+            # Calcular valor a liberar
+            freed_value = qty_to_sell * current_price
+            
+            # Preparar ordem de venda
+            market_price = current_price * 0.999  # -0.1% para execução rápida
+            
+            # Arredondar preço e quantidade
+            tick_size = self.auth._get_tick_size(symbol)
+            market_price = self.auth._round_to_tick_size(market_price, tick_size)
+            
+            lot_size = 0.01  # Ajustar conforme símbolo
+            qty_to_sell = round(qty_to_sell / lot_size) * lot_size
+            qty_to_sell = round(qty_to_sell, 2)
+            
+            self.logger.warning(f"🚨 VENDENDO {self.reduce_position_percentage}% da posição: {qty_to_sell:.6f} {symbol}")
+            self.logger.warning(f"🚨 Preço: ${market_price:.2f} - Valor a liberar: ${freed_value:.2f}")
+            
+            # ✅ EXECUTAR VENDA REAL
+            result = self.auth.create_order(
+                symbol=symbol,
+                side=order_side,
+                amount=str(qty_to_sell),
+                price=str(market_price),
+                order_type="GTC",
+                reduce_only=True
+            )
+            
+            if result and result.get('success'):
+                order_id = result.get('order_id', 'N/A')
+                self.logger.warning(f"✅ Ordem de emergência criada: {order_id}")
+                self.logger.warning(f"✅ Reduzindo {self.reduce_position_percentage}% da posição por MARGEM CRÍTICA")
+                return freed_value
+            else:
+                error_msg = result.get('error', 'Erro desconhecido') if result else 'Resposta nula'
+                self.logger.error(f"❌ Falha na ordem de emergência: {error_msg}")
+                return 0.0
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro na redução de emergência: {e}")
+            return 0.0
     
     def remove_order(self, order_id: str) -> Optional[Dict]:
         """Remove ordem do tracking (executada ou cancelada)"""
