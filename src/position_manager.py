@@ -838,14 +838,18 @@ class PositionManager:
             if api_positions and isinstance(api_positions, list):
                 for api_pos in api_positions:
                     if api_pos.get('symbol') == symbol:
-                        api_qty = float(api_pos.get('quantity', 0))
-                        if api_qty > 0:  # Apenas posições longas
+                        # Usar 'amount' como quantidade, conforme documentação
+                        api_amt = float(api_pos.get('amount', 0))
+                        api_side = api_pos.get('side', '').lower()
+                        # Aceitar tanto long (bid) quanto short (ask)
+                        if abs(api_amt) > 0:
                             api_has_position = True
-                            api_quantity = api_qty
+                            api_quantity = abs(api_amt)
+                            position_side = api_side  # 'bid' (long) ou 'ask' (short)
                             break
             
             if not api_has_position or api_quantity <= 0:
-                self.logger.warning(f"⚠️ API não confirma posição positiva em {symbol} (qty: {api_quantity})")
+                self.logger.warning(f"⚠️ API não confirma posição aberta em {symbol} (amount: {api_quantity})")
                 self.logger.warning(f"⚠️ Removendo posição interna inconsistente")
                 # Limpar posição interna inconsistente
                 if symbol in self.positions:
@@ -857,10 +861,13 @@ class PositionManager:
             
             # Calcular quantidade a vender (percentual configurado)
             sell_percentage = self.auto_close_percentage / 100
-            qty_to_sell = api_quantity * sell_percentage  # Usar quantidade da API
-            
-            if qty_to_sell < 0.001:  # Quantidade muito pequena
-                self.logger.warning(f"⚠️ Quantidade a vender muito pequena: {qty_to_sell}")
+            qty_to_sell = api_quantity * sell_percentage
+            # Determinar o lado da ordem para reduzir posição
+            # Se posição é short (ask), ordem de compra ('bid')
+            # Se posição é long (bid), ordem de venda ('ask')
+            order_side = 'bid' if position_side == 'ask' else 'ask'
+            if qty_to_sell < 0.001:
+                self.logger.warning(f"⚠️ Quantidade a reduzir muito pequena: {qty_to_sell}")
                 return 0.0
             
             # Obter preço atual do mercado (mais preciso que estimativas)
@@ -903,11 +910,16 @@ class PositionManager:
                 has_final_position = False
                 if final_check and isinstance(final_check, list):
                     for pos_check in final_check:
-                        if (pos_check.get('symbol') == symbol and 
-                            float(pos_check.get('quantity', 0)) >= qty_to_sell):
-                            has_final_position = True
-                            break
-                
+                        if pos_check.get('symbol') == symbol:
+                            amt_final = float(pos_check.get('amount', 0))
+                            side_final = pos_check.get('side', '').lower()
+                            # Para short, precisa de pelo menos qty_to_sell em posição 'ask'; para long, em 'bid'
+                            if position_side == 'ask' and abs(amt_final) >= qty_to_sell and side_final == 'ask':
+                                has_final_position = True
+                                break
+                            elif position_side == 'bid' and abs(amt_final) >= qty_to_sell and side_final == 'bid':
+                                has_final_position = True
+                                break
                 if not has_final_position:
                     self.logger.warning(f"⚠️ ABORTAR: Posição insuficiente na verificação final")
                     self.logger.warning(f"⚠️ Necessário: {qty_to_sell}, mas posição pode ter mudado")
@@ -915,7 +927,7 @@ class PositionManager:
                 
                 result = self.auth.create_order(
                     symbol=symbol,
-                    side='ask',  # 'ask' para venda na API da Pacifica
+                    side=order_side,  # lado correto para reduzir posição
                     amount=str(qty_to_sell),
                     price=str(market_price),
                     order_type="GTC",
