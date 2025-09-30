@@ -1408,7 +1408,7 @@ class PacificaAuth:
         signature_header = {
             "timestamp": timestamp,
             "expiry_window": 30000,
-            "type": "create_position_tpsl",
+            "type": "set_position_tpsl",  # ✅ CORRIGIDO conforme documentação
         }
 
         # Payload conforme documentação oficial
@@ -1417,11 +1417,13 @@ class PacificaAuth:
             "side": side,
             "take_profit": {
                 "stop_price": str(take_profit_stop),
-                "limit_price": str(take_profit_limit)
+                "limit_price": str(take_profit_limit),
+                "client_order_id": str(uuid.uuid4())
             },
             "stop_loss": {
                 "stop_price": str(stop_loss_stop),
-                "limit_price": str(stop_loss_limit)
+                "limit_price": str(stop_loss_limit),
+                "client_order_id": str(uuid.uuid4())
             }
         }
 

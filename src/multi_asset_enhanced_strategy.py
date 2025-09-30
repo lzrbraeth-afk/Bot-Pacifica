@@ -610,6 +610,30 @@ class MultiAssetEnhancedStrategy:
             symbol = position_data['symbol']
             side = position_data['side']
             entry_price = position_data['price']
+            position_id = position_data['position_id']
+            
+            # 🔧 VERIFICAR SE A POSIÇÃO AINDA EXISTE NA API
+            self.logger.info(f"🔍 Enhanced: Verificando se posição {symbol} ainda existe na API...")
+            
+            # Buscar posições atuais da API
+            api_positions = self.auth.get_positions()
+            if not api_positions:
+                self.logger.warning(f"⚠️ Enhanced: Não foi possível obter posições da API para verificar {symbol}")
+            else:
+                # Verificar se a posição local ainda existe na API
+                position_found = False
+                for api_pos in api_positions:
+                    if api_pos.get('symbol') == symbol and api_pos.get('side') == side:
+                        position_found = True
+                        self.logger.info(f"✅ Enhanced: Posição {symbol} {side} confirmada na API")
+                        break
+                
+                if not position_found:
+                    self.logger.warning(f"❌ Enhanced: Posição {symbol} {side} NÃO encontrada na API - removendo local")
+                    # Remover posição local que não existe mais na API
+                    if position_id in self.active_positions:
+                        del self.active_positions[position_id]
+                    return False
             
             # 🔧 CORREÇÃO CRÍTICA: Usar preço ATUAL, não preço de entrada
             current_price = self._get_current_price(symbol)

@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **19 Problemas Críticos Resolvidos:**
+📋 **20 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -15,7 +15,95 @@ Este documento registra os principais problemas identificados e as correções a
 6. **Tratamento de preços inválidos** → Paralisação por falhas temporárias corrigida
 7. **Função get_positions() ausente** → Busca de posições implementada com endpoints múltiplos
 8. **Falta de reset periódico** → Sistema completo de renovação automática do grid
-9. **Rate limits e falhas de tipo** → Sistema Enhanced Multi-Asset otimizado e robusto
+9. **Rate limits e falhas de tip✅ **Validação preventiva** que impede configurações economicamente incorretas
+
+---
+
+## 🐛 **Problema 20: Endpoint /positions/tpsl com Erro 'Verification failed'**
+
+### **Problema**
+- Endpoint `/positions/tpsl` retornava consistentemente **"Verification failed" (400)**
+- Sistema tentava adicionar TP/SL em posições que **não existiam mais** na exchange
+- **Tipo de operação incorreto** para assinatura: `"create_position_tpsl"` vs `"set_position_tpsl"`
+- **Formato inconsistente**: Faltavam `client_order_id` nos objetos TP/SL
+
+### **Análise da Documentação**
+```json
+// ✅ FORMATO CORRETO segundo documentação oficial
+{
+  "type": "set_position_tpsl",  // ❌ Usávamos: "create_position_tpsl"
+  "take_profit": {
+    "stop_price": "55000",
+    "limit_price": "54950", 
+    "client_order_id": "uuid"  // ❌ Faltava este campo
+  }
+}
+```
+
+### **Solução Aplicada**
+
+#### **1. Correção do Tipo de Operação**
+```python
+# ❌ ANTES - Tipo incorreto
+signature_header = {
+    "type": "create_position_tpsl"
+}
+
+# ✅ AGORA - Tipo correto conforme documentação
+signature_header = {
+    "type": "set_position_tpsl"
+}
+```
+
+#### **2. Adição de Client Order IDs**
+```python
+# ❌ ANTES - Sem client_order_id
+"take_profit": {
+    "stop_price": str(take_profit_stop),
+    "limit_price": str(take_profit_limit)
+}
+
+# ✅ AGORA - Com client_order_id
+"take_profit": {
+    "stop_price": str(take_profit_stop),
+    "limit_price": str(take_profit_limit),
+    "client_order_id": str(uuid.uuid4())
+}
+```
+
+#### **3. Verificação de Posição Existente**
+```python
+# ✅ NOVO - Verificar se posição ainda existe na API
+api_positions = self.auth.get_positions()
+position_found = False
+for api_pos in api_positions:
+    if api_pos.get('symbol') == symbol and api_pos.get('side') == side:
+        position_found = True
+        break
+
+if not position_found:
+    # Remover posição local órfã
+    del self.active_positions[position_id]
+    return False
+```
+
+#### **4. Arquivos Corrigidos**
+- `src/pacifica_auth.py`: Tipo de operação e client_order_ids
+- `src/multi_asset_strategy.py`: Verificação de posição existente
+- `src/multi_asset_enhanced_strategy.py`: Verificação de posição existente
+
+### **Resultado**
+✅ **Assinatura válida** com tipo correto `"set_position_tpsl"`
+✅ **Formato consistente** com `client_order_id` em TP/SL
+✅ **Verificação prévia** se posição existe antes de tentar adicionar TP/SL
+✅ **Limpeza automática** de posições locais órfãs
+✅ **Logs informativos** sobre posições não encontradas na API
+✅ **Redução drástica** dos erros "Verification failed"
+✅ **Tentativas válidas** apenas em posições que realmente existem
+
+---
+
+*Documento atualizado em 30/09/2025* Sistema Enhanced Multi-Asset otimizado e robusto
 10. **Redução automática para posições short** → Funcionalidade corrigida para ambos os lados
 11. **Rebalanceamento sem verificação de margem** → Pré-validação obrigatória implementada
 12. **Sistema de proteção de margem confuso** → Arquitetura unificada com 2 níveis
@@ -26,6 +114,7 @@ Este documento registra os principais problemas identificados e as correções a
 17. **TP/SL duplicado causando erro 400** → Correção do salvamento de IDs de TP/SL nas posições
 18. **TP/SL calculado com preço desatualizado** → Correção para usar preço atual em vez de preço de entrada
 19. **Validação invertida de TP/SL** → Correção da lógica e valores padrão Take Profit vs Stop Loss
+20. **Endpoint /positions/tpsl com erro 'Verification failed'** → Correção do tipo de operação e verificação de posição
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
