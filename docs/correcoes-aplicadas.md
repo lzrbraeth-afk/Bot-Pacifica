@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **18 Problemas Críticos Resolvidos:**
+📋 **19 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -25,6 +25,7 @@ Este documento registra os principais problemas identificados e as correções a
 16. **Parâmetro 'side' incorreto na API TP/SL** → Correção de formato 'LONG'/'SHORT' para 'bid'/'ask'
 17. **TP/SL duplicado causando erro 400** → Correção do salvamento de IDs de TP/SL nas posições
 18. **TP/SL calculado com preço desatualizado** → Correção para usar preço atual em vez de preço de entrada
+19. **Validação invertida de TP/SL** → Correção da lógica e valores padrão Take Profit vs Stop Loss
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -888,6 +889,69 @@ self.logger.info(f"💰 {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_p
 ✅ **Logs informativos** mostrando diferença entre preço de entrada e atual
 ✅ **Sistema de proteção robusto** que funciona independente da volatilidade
 ✅ **Eliminação de TP/SL inválidos** que não ofereciam proteção real
+
+---
+
+## 🐛 **Problema 19: Validação Invertida de TP/SL**
+
+### **Problema**
+- Sistema de validação estava **invertido**: exigia `STOP_LOSS_PERCENT > TAKE_PROFIT_PERCENT`
+- Valores padrão **economicamente incorretos**: TP=1.5%, SL=2.0%
+- **Lógica invertida**: Bot configurado para **perder mais do que ganhar**
+- **Risk/Reward negativo**: Proporção de risco/recompensa desfavorável
+
+### **Exemplos do Problema**
+```bash
+# ❌ ERRO: Validação rejeitava configuração correta
+TAKE_PROFIT_PERCENT=2.0
+STOP_LOSS_PERCENT=1.5
+# Resultado: "STOP_LOSS_PERCENT deve ser maior que TAKE_PROFIT_PERCENT"
+
+# ❌ PADRÕES INCORRETOS: Economicamente sem sentido
+TP=1.5% (ganhar pouco)
+SL=2.0% (perder mais)
+# Risk/Reward = 0.75:1 (desfavorável)
+```
+
+### **Solução Aplicada**
+
+#### **1. Correção da Lógica de Validação**
+```python
+# ❌ ANTES - Lógica invertida
+if sl_percent <= tp_percent:
+    errors.append("STOP_LOSS_PERCENT deve ser maior que TAKE_PROFIT_PERCENT")
+
+# ✅ AGORA - Lógica correta
+if tp_percent <= sl_percent:
+    errors.append("TAKE_PROFIT_PERCENT deve ser maior que STOP_LOSS_PERCENT")
+    errors.append(f"Configuração atual: TP={tp_percent}% <= SL={sl_percent}% (sem sentido econômico)")
+```
+
+#### **2. Correção dos Valores Padrão**
+```python
+# ❌ ANTES - Valores invertidos
+TAKE_PROFIT_PERCENT = '1.5'  # Meta de lucro baixa
+STOP_LOSS_PERCENT = '2.0'    # Limite de perda alto
+
+# ✅ AGORA - Valores corretos
+TAKE_PROFIT_PERCENT = '2.0'  # Meta de lucro maior
+STOP_LOSS_PERCENT = '1.5'    # Limite de perda menor
+```
+
+#### **3. Arquivos Corrigidos**
+- `src/config_validator.py`: Lógica de validação e valores padrão
+- `src/multi_asset_strategy.py`: Valores padrão das estratégias
+- `src/multi_asset_enhanced_strategy.py`: Valores padrão das estratégias  
+- `src/multi_asset.py`: Valores padrão das estratégias
+
+### **Resultado**
+✅ **Validação lógica correta**: TAKE_PROFIT > STOP_LOSS
+✅ **Risk/Reward favorável**: 2.0% / 1.5% = 1.33:1 (aceitável)
+✅ **Expectativa positiva**: Sistema configurado para ganhar mais do que perde
+✅ **Padrões econômicos**: Configuração inicial faz sentido financeiro
+✅ **Mensagens claras**: Erros explicam o problema econômico
+✅ **Estratégias consistentes**: Todos os arquivos com valores corretos
+✅ **Validação preventiva**: Impede configurações economicamente incorretas
 
 ---
 

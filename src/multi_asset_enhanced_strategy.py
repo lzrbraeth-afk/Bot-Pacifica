@@ -32,8 +32,8 @@ class MultiAssetEnhancedStrategy:
         # Configurações de TP/SL
         self.auto_close_enabled = os.getenv('AUTO_CLOSE_ENABLED', 'true').lower() == 'true'
         self.use_api_tp_sl = os.getenv('USE_API_TP_SL', 'true').lower() == 'true'
-        self.stop_loss_percent = float(os.getenv('STOP_LOSS_PERCENT', '2.0'))
-        self.take_profit_percent = float(os.getenv('TAKE_PROFIT_PERCENT', '1.5'))
+        self.stop_loss_percent = float(os.getenv('STOP_LOSS_PERCENT', '1.5'))   # ✅ Limite de perda menor
+        self.take_profit_percent = float(os.getenv('TAKE_PROFIT_PERCENT', '2.0')) # ✅ Meta de lucro maior
         self.trailing_stop_enabled = os.getenv('TRAILING_STOP_ENABLED', 'false').lower() == 'true'
         self.trailing_stop_percent = float(os.getenv('TRAILING_STOP_PERCENT', '0.5'))
         self.max_position_time_minutes = int(os.getenv('MAX_POSITION_TIME_MINUTES', '60'))

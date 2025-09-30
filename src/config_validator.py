@@ -26,8 +26,8 @@ def validate_strategy_config(strategy_type: str) -> Tuple[List[str], List[str]]:
     if strategy_type in ['multi_asset', 'multi_asset_enhanced']:
         # Validar TP/SL para multi-asset
         try:
-            tp_percent = float(os.getenv('TAKE_PROFIT_PERCENT', '1.5'))
-            sl_percent = float(os.getenv('STOP_LOSS_PERCENT', '2.0'))
+            tp_percent = float(os.getenv('TAKE_PROFIT_PERCENT', '2.0'))  # ✅ Meta de lucro maior
+            sl_percent = float(os.getenv('STOP_LOSS_PERCENT', '1.5'))   # ✅ Limite de perda menor
             
             # Validações de range
             if tp_percent <= 0 or tp_percent > 10:
@@ -35,9 +35,10 @@ def validate_strategy_config(strategy_type: str) -> Tuple[List[str], List[str]]:
             if sl_percent <= 0 or sl_percent > 20:
                 errors.append("STOP_LOSS_PERCENT deve estar entre 0.1 e 20")
                 
-            # Validação lógica: SL deve ser maior que TP
-            if sl_percent <= tp_percent:
-                errors.append("STOP_LOSS_PERCENT deve ser maior que TAKE_PROFIT_PERCENT")
+            # Validação lógica: TP deve ser maior que SL (queremos ganhar mais do que arriscamos perder)
+            if tp_percent <= sl_percent:
+                errors.append("TAKE_PROFIT_PERCENT deve ser maior que STOP_LOSS_PERCENT")
+                errors.append(f"Configuração atual: TP={tp_percent}% <= SL={sl_percent}% (sem sentido econômico)")
                 
             # Avisos de configuração
             if tp_percent > 5:
