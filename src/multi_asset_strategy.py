@@ -313,11 +313,12 @@ class MultiAssetStrategy:
             )
             
             if result and result.get('success'):
-                order_id = result.get('data', {}).get('order_id')
+                order_data = result.get('data', {})
+                order_id = order_data.get('order_id')
                 position_id = f"{symbol}_{int(time.time())}"
                 
                 # Salvar posição
-                self.active_positions[position_id] = {
+                position_info = {
                     'symbol': symbol,
                     'side': order_side,  # 'bid' ou 'ask' conforme API
                     'quantity': quantity,
@@ -325,6 +326,17 @@ class MultiAssetStrategy:
                     'order_id': order_id,
                     'timestamp': datetime.now()
                 }
+                
+                # ✅ SALVAR IDs DE TP/SL SE CRIADOS JUNTO COM A ORDEM
+                if 'take_profit_order_id' in order_data:
+                    position_info['take_profit_order_id'] = order_data['take_profit_order_id']
+                    self.logger.info(f"🎯 TP ID salvo: {order_data['take_profit_order_id']}")
+                    
+                if 'stop_loss_order_id' in order_data:
+                    position_info['stop_loss_order_id'] = order_data['stop_loss_order_id']
+                    self.logger.info(f"🛡️ SL ID salvo: {order_data['stop_loss_order_id']}")
+                
+                self.active_positions[position_id] = position_info
                 
                 self.symbol_positions[symbol] = self.symbol_positions.get(symbol, 0) + 1
                 
@@ -392,16 +404,26 @@ class MultiAssetStrategy:
             side = position_data['side']
             entry_price = position_data['price']
             
-            # Calcular preços de TP/SL
+            # 🔧 CORREÇÃO CRÍTICA: Usar preço ATUAL, não preço de entrada
+            current_price = self._get_current_price(symbol)
+            if not current_price:
+                self.logger.error(f"❌ Não foi possível obter preço atual para {symbol}")
+                return False
+            
+            # Log da correção de preço
+            price_change_percent = ((current_price - entry_price) / entry_price) * 100
+            self.logger.info(f"💰 {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_price:.6f} ({price_change_percent:+.2f}%)")
+            
+            # Calcular preços de TP/SL baseado no preço ATUAL
             if side == 'bid':  # Long position (comprando)
-                tp_stop_price = entry_price * (1 + self.take_profit_percent / 100)
+                tp_stop_price = current_price * (1 + self.take_profit_percent / 100)
                 tp_limit_price = tp_stop_price * 0.999
-                sl_stop_price = entry_price * (1 - self.stop_loss_percent / 100)
+                sl_stop_price = current_price * (1 - self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 1.001
             else:  # Short position (vendendo) - side == 'ask'
-                tp_stop_price = entry_price * (1 - self.take_profit_percent / 100)
+                tp_stop_price = current_price * (1 - self.take_profit_percent / 100)
                 tp_limit_price = tp_stop_price * 1.001
-                sl_stop_price = entry_price * (1 + self.stop_loss_percent / 100)
+                sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 0.999
             
             # Arredondar preços

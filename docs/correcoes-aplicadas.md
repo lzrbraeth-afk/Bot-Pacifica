@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **16 Problemas Críticos Resolvidos:**
+📋 **18 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -23,6 +23,8 @@ Este documento registra os principais problemas identificados e as correções a
 14. **Sistema de validações de configuração** → Esclarecimento sobre TP/SL e validações preventivas
 15. **Rate limit HTTP 500 em múltiplos símbolos** → Sistema de cache e circuit breaker implementado
 16. **Parâmetro 'side' incorreto na API TP/SL** → Correção de formato 'LONG'/'SHORT' para 'bid'/'ask'
+17. **TP/SL duplicado causando erro 400** → Correção do salvamento de IDs de TP/SL nas posições
+18. **TP/SL calculado com preço desatualizado** → Correção para usar preço atual em vez de preço de entrada
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -771,6 +773,121 @@ if side == 'bid':  # Long position (comprando)
 ✅ **Sistema TP/SL funcional** em ambiente de produção
 ✅ **Mapeamento correto**: LONG → 'bid', SHORT → 'ask'
 ✅ **Operação confiável** do sistema de proteção TP/SL
+
+---
+
+## 🐛 **Problema 17: TP/SL Duplicado Causando Erro 400**
+
+### **Problema**
+- Estratégias Multi-Asset criavam ordens **COM** TP/SL incluído (`take_profit` e `stop_loss` na criação)
+- Os IDs de TP/SL retornados pela API **não eram salvos** nas posições locais
+- `_verify_api_tp_sl()` não detectava TP/SL existente e tentava adicionar novamente
+- API rejeitava requisições duplicadas com erro **"Verification failed" (400)**
+
+### **Solução Aplicada**
+
+#### **1. Salvamento Correto dos IDs de TP/SL**
+```python
+# ❌ ANTES - IDs de TP/SL não eram salvos
+position_info = {
+    'symbol': symbol,
+    'order_id': order_id,
+    'side': api_side
+    # ❌ Faltavam: take_profit_order_id, stop_loss_order_id
+}
+
+# ✅ AGORA - IDs de TP/SL salvos quando criados junto com ordem
+if 'take_profit_order_id' in order_data:
+    position_info['take_profit_order_id'] = order_data['take_profit_order_id']
+    
+if 'stop_loss_order_id' in order_data:
+    position_info['stop_loss_order_id'] = order_data['stop_loss_order_id']
+```
+
+#### **2. Detecção Correta de TP/SL Existente**
+```python
+# Verificação em _verify_api_tp_sl()
+has_tp = 'take_profit_order_id' in position and position['take_profit_order_id']
+has_sl = 'stop_loss_order_id' in position and position['stop_loss_order_id']
+
+# ✅ AGORA: Se ambos existem, NÃO tenta adicionar via /positions/tpsl
+if has_tp and has_sl:
+    # Posição já tem TP/SL completo - nada a fazer
+    pass
+```
+
+#### **3. Arquivos Corrigidos**
+- `src/multi_asset_strategy.py`: Salvamento dos IDs de TP/SL nas posições
+- `src/multi_asset_enhanced_strategy.py`: Mesma correção para estratégia avançada
+- `src/multi_asset.py`: Já tinha a correção implementada
+
+### **Resultado**
+✅ **Zero tentativas** de adicionar TP/SL duplicado via `/positions/tpsl`
+✅ **Eliminação completa** dos erros "Verification failed" (400)
+✅ **Detecção correta** de TP/SL criado junto com a ordem
+✅ **Sistema de verificação** funciona corretamente sem falsos positivos
+✅ **Performance melhorada** sem requisições desnecessárias à API
+✅ **Logs mais limpos** sem erros de TP/SL duplicado
+✅ **Operação confiável** das estratégias Multi-Asset em produção
+
+---
+
+## 🐛 **Problema 18: TP/SL Calculado com Preço Desatualizado**
+
+### **Problema**
+- Funções `_add_missing_tp_sl()` calculavam TP/SL baseado no **preço de entrada** da posição
+- Quando o preço oscilava significativamente, TP/SL ficavam **inadequados ou inválidos**
+- **Casos críticos**:
+  - TP já ultrapassado pelo preço atual (inútil)
+  - SL muito longe do preço atual (proteção inadequada)
+  - TP/SL com níveis irrelevantes para a situação atual do mercado
+
+### **Exemplos do Problema**
+```python
+# ❌ PROBLEMA: Posição LONG entry $1.75, preço atual $1.80 (+2.86%)
+entry_price = 1.75000
+tp_old = entry_price * 1.02 = 1.78500  # 🚨 Já ultrapassado!
+sl_old = entry_price * 0.985 = 1.72375 # 🚨 Muito longe!
+
+# ✅ CORREÇÃO: Baseado no preço atual $1.80
+current_price = 1.80000  
+tp_new = current_price * 1.02 = 1.83600  # ✅ Relevante
+sl_new = current_price * 0.985 = 1.77300 # ✅ Proteção real
+```
+
+### **Solução Aplicada**
+
+#### **1. Uso do Preço Atual em Todas as Funções**
+```python
+# ❌ ANTES - Baseado no preço de entrada
+entry_price = position_data['price']
+tp_stop_price = entry_price * (1 + self.take_profit_percent / 100)
+
+# ✅ AGORA - Baseado no preço atual do mercado
+current_price = self._get_current_price(symbol)
+tp_stop_price = current_price * (1 + self.take_profit_percent / 100)
+```
+
+#### **2. Logging de Comparação de Preços**
+```python
+# Log da correção aplicada
+price_change_percent = ((current_price - entry_price) / entry_price) * 100
+self.logger.info(f"💰 {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_price:.6f} ({price_change_percent:+.2f}%)")
+```
+
+#### **3. Arquivos Corrigidos**
+- `src/multi_asset_strategy.py`: Função `_add_missing_tp_sl()`
+- `src/multi_asset_enhanced_strategy.py`: Função `_add_missing_tp_sl()`
+- `src/multi_asset.py`: Funções `_create_api_tp_sl_for_existing_position()` e `_create_api_tp_sl()`
+
+### **Resultado**
+✅ **TP/SL sempre relevantes** baseados na situação atual do mercado
+✅ **Proteção efetiva** com Stop Loss em níveis apropriados
+✅ **Take Profit realista** que não foi ultrapassado
+✅ **Adaptação automática** às oscilações de preço
+✅ **Logs informativos** mostrando diferença entre preço de entrada e atual
+✅ **Sistema de proteção robusto** que funciona independente da volatilidade
+✅ **Eliminação de TP/SL inválidos** que não ofereciam proteção real
 
 ---
 

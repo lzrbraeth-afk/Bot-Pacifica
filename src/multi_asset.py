@@ -551,14 +551,24 @@ class MultiAssetScalpingStrategy:
         """
         
         try:
-            # Calcular preços de TP e SL
+            # 🔧 CORREÇÃO CRÍTICA: Usar preço ATUAL, não preço de entrada
+            current_price = self._get_current_price(symbol)
+            if not current_price:
+                self.logger.error(f"❌ Não foi possível obter preço atual para {symbol}")
+                return False
+            
+            # Log da correção de preço
+            price_change_percent = ((current_price - entry_price) / entry_price) * 100
+            self.logger.info(f"💰 {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_price:.6f} ({price_change_percent:+.2f}%)")
+            
+            # Calcular preços de TP e SL baseado no preço ATUAL
             if side == 'bid':  # Long position (comprando)
-                stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
-                take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
+                stop_loss_price = current_price * (1 - self.stop_loss_percent / 100)
+                take_profit_price = current_price * (1 + self.take_profit_percent / 100)
                 api_side = 'bid'
             else:  # Short position (vendendo) - side == 'ask'
-                stop_loss_price = entry_price * (1 + self.stop_loss_percent / 100)
-                take_profit_price = entry_price * (1 - self.take_profit_percent / 100)
+                stop_loss_price = current_price * (1 + self.stop_loss_percent / 100)
+                take_profit_price = current_price * (1 - self.take_profit_percent / 100)
                 api_side = 'ask'
             
             self.logger.info(f"🔧 Adicionando TP/SL para posição existente {symbol} {side}:")
@@ -824,14 +834,24 @@ class MultiAssetScalpingStrategy:
         """Criar TP/SL usando endpoint nativo da API Pacifica.fi CORRIGIDO"""
         
         try:
-            # Calcular preços de TP e SL
+            # 🔧 CORREÇÃO CRÍTICA: Usar preço ATUAL, não preço de entrada
+            current_price = self._get_current_price(symbol)
+            if not current_price:
+                self.logger.error(f"❌ Não foi possível obter preço atual para {symbol}")
+                return False
+            
+            # Log da correção de preço
+            price_change_percent = ((current_price - entry_price) / entry_price) * 100
+            self.logger.info(f"💰 {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_price:.6f} ({price_change_percent:+.2f}%)")
+            
+            # Calcular preços de TP e SL baseado no preço ATUAL
             if side == 'bid':  # Long position (comprando)
-                stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
-                take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
+                stop_loss_price = current_price * (1 - self.stop_loss_percent / 100)
+                take_profit_price = current_price * (1 + self.take_profit_percent / 100)
                 api_side = 'bid'  # Para posição LONG, as ordens de TP/SL são 'bid'
             else:  # Short position (vendendo) - side == 'ask'
-                stop_loss_price = entry_price * (1 + self.stop_loss_percent / 100)
-                take_profit_price = entry_price * (1 - self.take_profit_percent / 100)
+                stop_loss_price = current_price * (1 + self.stop_loss_percent / 100)
+                take_profit_price = current_price * (1 - self.take_profit_percent / 100)
                 api_side = 'ask'  # Para posição SHORT, as ordens de TP/SL são 'ask'
             
             self.logger.info(f"Criando TP/SL via API para {symbol} {side}:")
