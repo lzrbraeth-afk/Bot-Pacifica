@@ -1080,4 +1080,47 @@ def create_position_tp_sl(self, symbol: str, side: str,
 
 ---
 
+## ✅ PROBLEMA 22: "Invalid stop order side" no TP/SL
+
+**📍 Identificação:** API rejeitando TP/SL com erro 422 "Invalid stop order side"
+
+**🔧 Causa Raiz:** 
+- Ordens TP/SL criadas via `/positions/tpsl` não tinham campo `side` específico
+- TP/SL são ordens independentes que precisam de direção oposta à posição original
+- Para posição LONG (bid), TP/SL devem ser ordens SELL (ask)
+- Para posição SHORT (ask), TP/SL devem ser ordens BUY (bid)
+
+**💡 Solução Implementada:**
+```python
+# Em pacifica_auth.py - create_position_tp_sl()
+# 🔧 CORREÇÃO: Para posições LONG, TP/SL devem ser ordens SELL (ask)
+# Para posições SHORT, TP/SL devem ser ordens BUY (bid)
+tp_sl_side = 'ask' if side == 'bid' else 'bid'
+
+signature_payload = {
+    "symbol": symbol,
+    "side": side,
+    "take_profit": {
+        "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para TP
+        "stop_price": str(tp_stop_rounded),
+        "limit_price": str(tp_limit_rounded),
+        "client_order_id": str(uuid.uuid4())
+    },
+    "stop_loss": {
+        "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para SL
+        "stop_price": str(sl_stop_rounded),
+        "limit_price": str(sl_limit_rounded),
+        "client_order_id": str(uuid.uuid4())
+    }
+}
+```
+
+**🔧 Lógica Corrigida:**
+- **Posição LONG** (side='bid'): TP/SL com side='ask' (vender para fechar)
+- **Posição SHORT** (side='ask'): TP/SL com side='bid' (comprar para fechar)
+
+**✅ Resultado:** Eliminado erro "Invalid stop order side", TP/SL agora funcionam corretamente
+
+---
+
 *Documento atualizado em 30/09/2025*

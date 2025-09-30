@@ -1425,15 +1425,21 @@ class PacificaAuth:
         }
 
         # Payload conforme documentação oficial
+        # 🔧 CORREÇÃO: Para posições LONG, TP/SL devem ser ordens SELL (ask)
+        # Para posições SHORT, TP/SL devem ser ordens BUY (bid)
+        tp_sl_side = 'ask' if side == 'bid' else 'bid'
+        
         signature_payload = {
             "symbol": symbol,
             "side": side,
             "take_profit": {
+                "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para TP
                 "stop_price": str(tp_stop_rounded),
                 "limit_price": str(tp_limit_rounded),
                 "client_order_id": str(uuid.uuid4())
             },
             "stop_loss": {
+                "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para SL
                 "stop_price": str(sl_stop_rounded),
                 "limit_price": str(sl_limit_rounded),
                 "client_order_id": str(uuid.uuid4())
