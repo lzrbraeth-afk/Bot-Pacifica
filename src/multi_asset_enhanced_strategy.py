@@ -99,18 +99,97 @@ class MultiAssetEnhancedStrategy:
     def _parse_symbols(self) -> List[str]:
         """Parse dos símbolos do .env"""
         symbols_str = os.getenv('SYMBOLS', 'BTC,ETH,SOL')
+        
+        self.logger.info(f"📋 SYMBOLS configurado: {symbols_str}")
+        
         if symbols_str.upper() == 'AUTO':
-            return self._get_all_available_symbols()
+            self.logger.info("🔍 Modo AUTO detectado - buscando símbolos da API...")
+            result = self._get_all_available_symbols()
+            self.logger.info(f"✅ Símbolos retornados pelo AUTO: {result}")
+            return result
         else:
-            return [s.strip() for s in symbols_str.split(',')]
+            # ✅ CRÍTICO: Adicionar .upper() aqui!
+            symbols = [s.strip().upper() for s in symbols_str.split(',')]
+            self.logger.info(f"✅ Símbolos manuais configurados: {symbols}")
+            return symbols
     
     def _get_all_available_symbols(self) -> List[str]:
-        """Busca todos os símbolos disponíveis da API"""
+        """Busca todos os símbolos disponíveis com blacklist configurável"""
         try:
-            # Implementar busca de símbolos da API
-            pass
-        except:
-            return ['BTC', 'ETH', 'SOL']
+            prices_data = self.auth.get_prices()
+            
+            # Validar resposta
+            if not prices_data:
+                self.logger.warning("⚠️ API não retornou dados de preços")
+                return ['BTC', 'ETH', 'SOL']
+            
+            # Extrair dados (suporta diferentes estruturas)
+            if isinstance(prices_data, dict):
+                data_list = prices_data.get('data', [])
+            elif isinstance(prices_data, list):
+                data_list = prices_data
+            else:
+                self.logger.error(f"❌ Formato inesperado da API: {type(prices_data)}")
+                return ['BTC', 'ETH', 'SOL']
+            
+            if not data_list:
+                self.logger.warning("⚠️ Lista de dados vazia na resposta da API")
+                return ['BTC', 'ETH', 'SOL']
+            
+            # Extrair todos os símbolos
+            all_symbols = []
+            for item in data_list:
+                symbol = item.get('symbol')
+                if symbol:
+                    all_symbols.append(symbol)
+            
+            if not all_symbols:
+                self.logger.warning("⚠️ Nenhum símbolo encontrado nos dados")
+                return ['BTC', 'ETH', 'SOL']
+            
+            self.logger.info(f"✅ Total de símbolos na exchange: {len(all_symbols)}")
+            self.logger.info(f"📋 Todos os símbolos: {all_symbols}")
+            
+            # 🆕 LER BLACKLIST DO .ENV
+            use_blacklist = os.getenv('SYMBOLS_USE_BLACKLIST', 'true').lower() == 'true'
+            blacklist_str = os.getenv('SYMBOLS_BLACKLIST', 'PUMP,kPEPE,FARTCOIN')
+            max_symbols = int(os.getenv('SYMBOLS_MAX_COUNT', '0'))
+            
+            # Aplicar blacklist se configurado
+            if use_blacklist and blacklist_str:
+                blacklist = [s.strip().upper() for s in blacklist_str.split(',')]
+                filtered_symbols = [s for s in all_symbols if s not in blacklist]
+                
+                removed_count = len(all_symbols) - len(filtered_symbols)
+                if removed_count > 0:
+                    removed_list = [s for s in all_symbols if s in blacklist]
+                    self.logger.info(f"🚫 Blacklist removeu {removed_count} símbolos: {removed_list}")
+                else:
+                    self.logger.info("ℹ️ Nenhum símbolo na blacklist foi encontrado")
+                
+                symbols = filtered_symbols
+            else:
+                symbols = all_symbols
+                self.logger.info("ℹ️ Blacklist desativada - usando todos os símbolos")
+            
+            # Aplicar limite se configurado
+            if max_symbols > 0 and len(symbols) > max_symbols:
+                self.logger.info(f"📊 Limitando de {len(symbols)} para {max_symbols} símbolos")
+                symbols = symbols[:max_symbols]
+            
+            self.logger.info(f"🎯 Símbolos finais selecionados: {len(symbols)}")
+            self.logger.info(f"📋 Lista final: {symbols}")
+            
+            return symbols
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar símbolos: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+        
+        # Fallback final
+        self.logger.warning("⚠️ Usando fallback padrão: BTC, ETH, SOL")
+        return ['BTC', 'ETH', 'SOL']
     
     def get_lot_size(self, symbol: str) -> float:
         """Obtém lot size para o símbolo com validação detalhada"""

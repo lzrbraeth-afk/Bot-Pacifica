@@ -759,8 +759,16 @@ class PacificaAuth:
             
             if response.status_code == 200:
                 data = response.json()
+                
+                # ✅ VALIDAÇÃO OPCIONAL - não quebra código existente
+                if isinstance(data, dict) and 'success' in data:
+                    if not data.get('success'):
+                        self.logger.warning(f"⚠️ API retornou success=false: {data.get('message', 'sem mensagem')}")
+                        # RETORNAR data MESMO ASSIM para compatibilidade
+                        # O código que chama já valida 'data' internamente
+                
                 self.logger.info("✅ Preços obtidos com sucesso!")
-                return data
+                return data  # ✅ RETORNA SEMPRE (compatibilidade 100%)
             else:
                 self.logger.error(f"❌ Erro ao buscar preços - Status: {response.status_code}")
                 self.logger.error(f"Response: {response.text}")
