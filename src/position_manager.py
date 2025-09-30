@@ -150,11 +150,10 @@ class PositionManager:
             tp_sl_orders = []
             
             for order in symbol_filtered_orders:
-                # Identificar TP/SL pelos campos corretos da API
+                # Identificar TP/SL pelos campos da API
                 stop_price = order.get('stop_price')
                 stop_parent_id = order.get('stop_parent_order_id')
                 
-                # Ordem é TP/SL se tem stop_price OU está vinculada a outra ordem
                 is_tpsl_order = (stop_price is not None) or (stop_parent_id is not None)
                 
                 if is_tpsl_order:

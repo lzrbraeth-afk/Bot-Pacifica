@@ -444,11 +444,11 @@ class MultiAssetStrategy:
                 tp_limit_price = tp_stop_price * 0.999
                 sl_stop_price = current_price * (1 - self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 1.001
-            else:  # Short position (vendendo) - side == 'ask'
+            else:  # Short position - side == 'ask'
                 tp_stop_price = current_price * (1 - self.take_profit_percent / 100)
-                tp_limit_price = tp_stop_price * 1.001
+                tp_limit_price = tp_stop_price * 0.999  
                 sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
-                sl_limit_price = sl_stop_price * 0.999
+                sl_limit_price = sl_stop_price * 1.001  
             
             # Arredondar preços
             tp_stop_price = round(tp_stop_price, 4)

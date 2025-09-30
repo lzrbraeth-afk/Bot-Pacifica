@@ -7,6 +7,7 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_DOWN
 from typing import Dict, List, Optional
 from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger
@@ -465,10 +466,29 @@ class MultiAssetEnhancedStrategy:
             # Calcular quantidade
             base_quantity = self.position_size_usd / current_price
             lot_size = self.get_lot_size(symbol)
-            
+
             confidence_multiplier = min(1.2, confidence / 100 + 0.2)
             adjusted_quantity = base_quantity * confidence_multiplier
-            quantity = max(lot_size, round(adjusted_quantity / lot_size) * lot_size)
+
+            # Usar Decimal para evitar erro de precisão
+            quantity_decimal = Decimal(str(adjusted_quantity))
+            lot_size_decimal = Decimal(str(lot_size))
+
+            multiplier = int(quantity_decimal / lot_size_decimal)
+            quantity = float(multiplier * lot_size_decimal)
+
+            if quantity < lot_size:
+                quantity = lot_size
+
+            # Formatar baseado no lot_size
+            if lot_size >= 1:
+                quantity = round(quantity, 0)
+            elif lot_size >= 0.01:
+                quantity = round(quantity, 2)
+            elif lot_size >= 0.001:
+                quantity = round(quantity, 3)
+            else:
+                quantity = round(quantity, 8)
             
             self.logger.info(f"   💰 Quantity: {quantity} (ajustada por confidence: {confidence_multiplier:.2f}x)")
             
@@ -651,11 +671,11 @@ class MultiAssetEnhancedStrategy:
                 tp_limit_price = tp_stop_price * 0.999
                 sl_stop_price = current_price * (1 - self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 1.001
-            else:  # Short position (vendendo) - side == 'ask'
+            else:  # Short position - side == 'ask'
                 tp_stop_price = current_price * (1 - self.take_profit_percent / 100)
-                tp_limit_price = tp_stop_price * 1.001
+                tp_limit_price = tp_stop_price * 0.999  
                 sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
-                sl_limit_price = sl_stop_price * 0.999
+                sl_limit_price = sl_stop_price * 1.001  
             
             # 🔧 CORREÇÃO CRÍTICA: Arredondar para tick_size em vez de decimais fixos
             # Os preços serão arredondados novamente na função create_position_tp_sl,

@@ -1417,10 +1417,12 @@ class PacificaAuth:
             "type": "set_position_tpsl",  # ✅ CORRIGIDO conforme documentação
         }
 
-        # Payload conforme documentação oficial
+        # Calcular side da ordem de fechamento
+        closing_order_side = 'ask' if side == 'bid' else 'bid'
+
         signature_payload = {
             "symbol": symbol,
-            "side": side,  # Side da POSIÇÃO, não da ordem de fechamento
+            "side": closing_order_side,  # ← CORRIGIDO
             "take_profit": {
                 "stop_price": str(tp_stop_rounded),
                 "limit_price": str(tp_limit_rounded),
