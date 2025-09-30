@@ -245,10 +245,10 @@ class MultiAssetScalpingStrategy:
             position_time = datetime.now() - position['timestamp']
             
             # Calcular PNL atual
-            if side == 'LONG':
+            if side == 'bid':  # Long position (compramos)
                 pnl_percent = ((current_price - entry_price) / entry_price) * 100
                 pnl_usd = (current_price - entry_price) * quantity
-            else:  # SHORT
+            else:  # Short position (vendemos) - side == 'ask'
                 pnl_percent = ((entry_price - current_price) / entry_price) * 100
                 pnl_usd = (entry_price - current_price) * quantity
             
@@ -277,9 +277,9 @@ class MultiAssetScalpingStrategy:
                     
                     # Atualizar trailing stop apenas se lucro > take profit mínimo
                     if pnl_percent >= self.take_profit_percent:
-                        if side == 'LONG':
+                        if side == 'bid':  # Long position
                             new_trailing = current_price * (1 - self.trailing_stop_percent / 100)
-                        else:  # SHORT
+                        else:  # Short position - side == 'ask'
                             new_trailing = current_price * (1 + self.trailing_stop_percent / 100)
                         
                         self.position_trailing_stops[position_id] = new_trailing
@@ -289,10 +289,10 @@ class MultiAssetScalpingStrategy:
                 if position_id in self.position_trailing_stops:
                     trailing_price = self.position_trailing_stops[position_id]
                     
-                    if side == 'LONG' and current_price <= trailing_price:
+                    if side == 'bid' and current_price <= trailing_price:
                         should_close = True
                         close_reason = f"Trailing Stop: ${current_price:.4f} <= ${trailing_price:.4f}"
-                    elif side == 'SHORT' and current_price >= trailing_price:
+                    elif side == 'ask' and current_price >= trailing_price:
                         should_close = True
                         close_reason = f"Trailing Stop: ${current_price:.4f} >= ${trailing_price:.4f}"
                 
@@ -325,7 +325,7 @@ class MultiAssetScalpingStrategy:
             quantity = position['quantity']
             
             # Determinar lado oposto para fechamento
-            close_side = 'ask' if side == 'LONG' else 'bid'
+            close_side = 'ask' if side == 'bid' else 'bid'
             
             self.logger.info(f"Fechando posição {symbol} {side}: {quantity} @ ${close_price:.4f}")
             
@@ -486,7 +486,7 @@ class MultiAssetScalpingStrategy:
                 position_info = {
                     'symbol': symbol,
                     'order_id': order_id,
-                    'side': side,
+                    'side': api_side,  # 'bid' ou 'ask' conforme API
                     'price': price_rounded,
                     'quantity': quantity,
                     'timestamp': datetime.now(),
@@ -552,11 +552,11 @@ class MultiAssetScalpingStrategy:
         
         try:
             # Calcular preços de TP e SL
-            if side == 'LONG':
+            if side == 'bid':  # Long position (comprando)
                 stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
                 take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
                 api_side = 'bid'
-            else:  # SHORT
+            else:  # Short position (vendendo) - side == 'ask'
                 stop_loss_price = entry_price * (1 + self.stop_loss_percent / 100)
                 take_profit_price = entry_price * (1 - self.take_profit_percent / 100)
                 api_side = 'ask'
@@ -570,9 +570,9 @@ class MultiAssetScalpingStrategy:
                 symbol=symbol,
                 side=api_side,
                 take_profit_stop=str(take_profit_price),
-                take_profit_limit=str(take_profit_price * 0.999 if side == 'LONG' else take_profit_price * 1.001),
+                take_profit_limit=str(take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001),
                 stop_loss_stop=str(stop_loss_price),
-                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'SHORT' else stop_loss_price * 1.001)
+                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001)
             )
             
             if result and result.get('success'):
@@ -825,11 +825,11 @@ class MultiAssetScalpingStrategy:
         
         try:
             # Calcular preços de TP e SL
-            if side == 'LONG':
+            if side == 'bid':  # Long position (comprando)
                 stop_loss_price = entry_price * (1 - self.stop_loss_percent / 100)
                 take_profit_price = entry_price * (1 + self.take_profit_percent / 100)
                 api_side = 'bid'  # Para posição LONG, as ordens de TP/SL são 'bid'
-            else:  # SHORT
+            else:  # Short position (vendendo) - side == 'ask'
                 stop_loss_price = entry_price * (1 + self.stop_loss_percent / 100)
                 take_profit_price = entry_price * (1 - self.take_profit_percent / 100)
                 api_side = 'ask'  # Para posição SHORT, as ordens de TP/SL são 'ask'
@@ -843,9 +843,9 @@ class MultiAssetScalpingStrategy:
                 symbol=symbol,
                 side=api_side,
                 take_profit_stop=str(take_profit_price),
-                take_profit_limit=str(take_profit_price * 0.999 if side == 'LONG' else take_profit_price * 1.001),
+                take_profit_limit=str(take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001),
                 stop_loss_stop=str(stop_loss_price),
-                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'SHORT' else stop_loss_price * 1.001)
+                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001)
             )
             
             if result and result.get('success'):

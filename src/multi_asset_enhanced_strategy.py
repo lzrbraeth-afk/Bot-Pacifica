@@ -530,7 +530,7 @@ class MultiAssetEnhancedStrategy:
                 # Salvar posição
                 self.active_positions[position_id] = {
                     'symbol': symbol,
-                    'side': side,
+                    'side': order_side,  # 'bid' ou 'ask' conforme API
                     'quantity': quantity,
                     'price': current_price_rounded,
                     'order_id': order_id,
@@ -600,12 +600,12 @@ class MultiAssetEnhancedStrategy:
             entry_price = position_data['price']
             
             # Calcular preços de TP/SL
-            if side == 'bid' or side == 'buy':  # Long position
+            if side == 'bid':  # Long position (comprando)
                 tp_stop_price = entry_price * (1 + self.take_profit_percent / 100)
                 tp_limit_price = tp_stop_price * 0.999
                 sl_stop_price = entry_price * (1 - self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 1.001
-            else:  # Short position
+            else:  # Short position (vendendo) - side == 'ask'
                 tp_stop_price = entry_price * (1 - self.take_profit_percent / 100)
                 tp_limit_price = tp_stop_price * 1.001
                 sl_stop_price = entry_price * (1 + self.stop_loss_percent / 100)
@@ -662,9 +662,9 @@ class MultiAssetEnhancedStrategy:
                     continue
                 
                 # Calcular PNL
-                if side == 'bid' or side == 'buy':  # Long
+                if side == 'bid':  # Long position (compramos)
                     pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                else:  # Short
+                else:  # Short position (vendemos) - side == 'ask'
                     pnl_percent = ((entry_price - current_price) / entry_price) * 100
                 
                 # Enhanced: Verificar condições com lógica melhorada
@@ -742,7 +742,7 @@ class MultiAssetEnhancedStrategy:
             reason = position_data['reason']
             
             # Determinar lado da ordem de fechamento
-            close_side = 'ask' if side in ['bid', 'buy'] else 'bid'
+            close_side = 'ask' if side == 'bid' else 'bid'
             
             self.logger.info(f"🧠 Enhanced: Fechando posição {symbol} - {reason}")
             

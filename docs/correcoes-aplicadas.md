@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **15 Problemas Críticos Resolvidos:**
+📋 **16 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -22,6 +22,7 @@ Este documento registra os principais problemas identificados e as correções a
 13. **Modo AUTO multi-asset não funcional** → Sistema de detecção e operação automática implementado
 14. **Sistema de validações de configuração** → Esclarecimento sobre TP/SL e validações preventivas
 15. **Rate limit HTTP 500 em múltiplos símbolos** → Sistema de cache e circuit breaker implementado
+16. **Parâmetro 'side' incorreto na API TP/SL** → Correção de formato 'LONG'/'SHORT' para 'bid'/'ask'
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -722,6 +723,54 @@ Timeout aumentado de 10s para 15s
 ✅ **Logs mais limpos** com menos warnings de rate limit
 ✅ **Sistema resiliente** que se adapta à carga da API
 ✅ **Operação 24/7** sem interrupções por sobrecarga
+
+---
+
+## 🐛 **Problema 16: Parâmetro 'side' Incorreto na API TP/SL**
+
+### **Problema**
+- API rejeitava requisições de TP/SL com erro "Invalid side. Expected 'bid' or 'ask'"
+- Estratégias Multi-Asset salvavam posições com 'side': 'LONG'/'SHORT'
+- Função `create_position_tp_sl()` enviava valores incorretos para API
+- Sistema de TP/SL recém-implementado falhava em produção
+
+### **Solução Aplicada**
+
+#### **1. Correção do Mapeamento de 'side'**
+```python
+# ❌ ANTES - Inconsistência de valores
+side = 'LONG' if price_change > 0 else 'SHORT'      # Determinação do lado
+order_side = 'bid' if side == 'LONG' else 'ask'     # Conversão para API
+'side': side,  # ❌ Salvava 'LONG'/'SHORT' na posição
+
+# ✅ AGORA - Valores consistentes
+side = 'LONG' if price_change > 0 else 'SHORT'      # Determinação do lado  
+order_side = 'bid' if side == 'LONG' else 'ask'     # Conversão para API
+'side': order_side,  # ✅ Salva 'bid'/'ask' na posição
+```
+
+#### **2. Correção na Lógica de TP/SL**
+```python
+# ❌ ANTES - Verificação múltipla desnecessária
+if side == 'bid' or side == 'buy':  # Long position
+
+# ✅ AGORA - Verificação direta e clara
+if side == 'bid':  # Long position (comprando)
+```
+
+#### **3. Arquivos Corrigidos**
+- `src/multi_asset_strategy.py`: Salvamento de posições e lógica TP/SL
+- `src/multi_asset_enhanced_strategy.py`: Mesmas correções para estratégia avançada
+- `src/multi_asset.py`: Correções na estratégia multi-asset original
+- Todas as funções: `_add_missing_tp_sl()`, `_check_manual_tp_sl()`, `_close_position_manual()`, `_create_api_tp_sl()`
+
+### **Resultado**
+✅ **API aceita requisições TP/SL** sem erro de parâmetro 'side'
+✅ **Consistência total** entre criação de ordem e TP/SL
+✅ **Lógica simplificada** sem verificações redundantes 'buy'/'sell'
+✅ **Sistema TP/SL funcional** em ambiente de produção
+✅ **Mapeamento correto**: LONG → 'bid', SHORT → 'ask'
+✅ **Operação confiável** do sistema de proteção TP/SL
 
 ---
 
