@@ -449,6 +449,18 @@ class GridTradingBot:
         self.logger.info("✅ Bot operando!", force=True)
         self.logger.info("=" * 80)
         
+        # 🎯 VERIFICAÇÃO INICIAL DE TP/SL para estratégias Multi-Asset
+        if self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+            self.logger.info("🔍 Executando verificação inicial de TP/SL...")
+            try:
+                if hasattr(self.strategy, '_check_all_tp_sl'):
+                    self.strategy._check_all_tp_sl()
+                    self.logger.info("✅ Verificação inicial de TP/SL concluída")
+                else:
+                    self.logger.warning("⚠️ Método _check_all_tp_sl não encontrado na estratégia")
+            except Exception as e:
+                self.logger.error(f"❌ Erro na verificação inicial de TP/SL: {e}")
+        
         # Loop principal
         iteration = 0
         last_rebalance = time.time()

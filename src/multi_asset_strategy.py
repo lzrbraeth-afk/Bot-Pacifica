@@ -467,19 +467,101 @@ class MultiAssetStrategy:
             )
             
             if result and result.get('success'):
-                self.logger.info(f"✅ TP/SL adicionado para {symbol}: TP@{tp_stop_price} SL@{sl_stop_price}")
-                # Atualizar posição local se necessário
-                position_id = position_data['position_id']
-                if position_id in self.active_positions:
-                    self.active_positions[position_id].update({
-                        'take_profit_order_id': result.get('take_profit_order_id'),
-                        'stop_loss_order_id': result.get('stop_loss_order_id')
-                    })
-            else:
-                self.logger.error(f"❌ Falha ao adicionar TP/SL para {symbol}")
+                self.logger.info(f"✅ TP/SL criado para {symbol}: TP@{tp_stop_price} SL@{sl_stop_price}")
+                
+                # Aguardar processamento pela API
+                time.sleep(2)
+                
+                # Buscar IDs das ordens TP/SL criadas
+                tp_sl_ids = self._find_tpsl_orders_for_position(symbol, side)
+                
+                # Atualizar posição local se IDs foram encontrados
+                if tp_sl_ids.get('take_profit_order_id') or tp_sl_ids.get('stop_loss_order_id'):
+                    position_id = position_data['position_id']
+                    if position_id in self.active_positions:
+                        self.active_positions[position_id].update(tp_sl_ids)
+                        self.logger.info(f"✅ IDs TP/SL salvos: TP={tp_sl_ids.get('take_profit_order_id')}, SL={tp_sl_ids.get('stop_loss_order_id')}")
+                else:
+                    self.logger.warning(f"⚠️ TP/SL criado mas IDs não encontrados - será verificado no próximo ciclo")
                 
         except Exception as e:
             self.logger.error(f"❌ Erro ao adicionar TP/SL: {e}")
+    
+    def _find_tpsl_orders_for_position(self, symbol: str, side: str) -> dict:
+        """
+        Busca IDs de ordens TP/SL para uma posição específica
+        
+        Args:
+            symbol: Símbolo da posição
+            side: Side da posição ('bid' para long, 'ask' para short)
+            
+        Returns:
+            Dict com take_profit_order_id e stop_loss_order_id
+        """
+        try:
+            # Buscar todas as ordens abertas
+            all_orders = self.auth.get_open_orders()
+            
+            if not all_orders:
+                return {}
+            
+            tp_id = None
+            sl_id = None
+            current_price = self._get_current_price(symbol)
+            
+            if current_price <= 0:
+                self.logger.warning(f"⚠️ Preço atual inválido para {symbol}")
+                return {}
+            
+            # Procurar ordens TP/SL deste símbolo
+            for order in all_orders:
+                # Filtrar por símbolo
+                if order.get('symbol') != symbol:
+                    continue
+                
+                # Identificar se é ordem stop
+                stop_price = order.get('stop_price')
+                if stop_price is None:
+                    continue  # Não é ordem stop
+                
+                stop_price_float = float(stop_price)
+                order_id = order.get('order_id')
+                
+                # Determinar se é TP ou SL baseado na posição do stop_price
+                if side == 'bid':  # Long position
+                    # TP está acima do preço atual, SL abaixo
+                    if stop_price_float > current_price:
+                        tp_id = order_id
+                        self.logger.debug(f"   TP encontrado: {order_id} @ ${stop_price_float}")
+                    else:
+                        sl_id = order_id
+                        self.logger.debug(f"   SL encontrado: {order_id} @ ${stop_price_float}")
+                else:  # Short position (side == 'ask')
+                    # TP está abaixo do preço atual, SL acima
+                    if stop_price_float < current_price:
+                        tp_id = order_id
+                        self.logger.debug(f"   TP encontrado: {order_id} @ ${stop_price_float}")
+                    else:
+                        sl_id = order_id
+                        self.logger.debug(f"   SL encontrado: {order_id} @ ${stop_price_float}")
+            
+            result = {
+                'take_profit_order_id': tp_id,
+                'stop_loss_order_id': sl_id
+            }
+            
+            if tp_id or sl_id:
+                self.logger.info(f"🔍 IDs encontrados para {symbol}: TP={tp_id}, SL={sl_id}")
+            else:
+                self.logger.warning(f"⚠️ Nenhuma ordem TP/SL encontrada para {symbol}")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar IDs TP/SL: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            return {}
     
     def _check_manual_tp_sl(self):
         """Monitoramento manual de TP/SL (quando USE_API_TP_SL=false)"""

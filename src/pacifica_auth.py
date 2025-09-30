@@ -1394,18 +1394,11 @@ class PacificaAuth:
     def create_position_tp_sl(self, symbol: str, side: str, 
                             take_profit_stop: float, take_profit_limit: float,
                             stop_loss_stop: float, stop_loss_limit: float) -> Optional[Dict]:
-        """
-        Cria TP/SL para posição existente usando Agent Wallet
-        🔒 SEGURO: Não requer private key da wallet principal
-        """
-        
-        # 🔧 OBTER TICK_SIZE E ARREDONDAR PREÇOS
+        """Cria TP/SL para posição existente"""
+         
+        # Obter tick_size e arredondar TODOS os preços
         tick_size = self._get_tick_size(symbol)
-        if not tick_size:
-            self.logger.error(f"❌ Não foi possível obter tick_size para {symbol}")
-            return None
-            
-        # 🔧 ARREDONDAR TODOS OS PREÇOS PARA TICK_SIZE
+        
         tp_stop_rounded = self._round_to_tick_size(take_profit_stop, tick_size)
         tp_limit_rounded = self._round_to_tick_size(take_profit_limit, tick_size)
         sl_stop_rounded = self._round_to_tick_size(stop_loss_stop, tick_size)
@@ -1425,21 +1418,15 @@ class PacificaAuth:
         }
 
         # Payload conforme documentação oficial
-        # 🔧 CORREÇÃO: Para posições LONG, TP/SL devem ser ordens SELL (ask)
-        # Para posições SHORT, TP/SL devem ser ordens BUY (bid)
-        tp_sl_side = 'ask' if side == 'bid' else 'bid'
-        
         signature_payload = {
             "symbol": symbol,
-            "side": side,
+            "side": side,  # Side da POSIÇÃO, não da ordem de fechamento
             "take_profit": {
-                "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para TP
                 "stop_price": str(tp_stop_rounded),
                 "limit_price": str(tp_limit_rounded),
                 "client_order_id": str(uuid.uuid4())
             },
             "stop_loss": {
-                "side": tp_sl_side,  # 🔧 ADICIONADO: side específico para SL
                 "stop_price": str(sl_stop_rounded),
                 "limit_price": str(sl_limit_rounded),
                 "client_order_id": str(uuid.uuid4())

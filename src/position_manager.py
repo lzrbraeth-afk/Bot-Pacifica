@@ -150,14 +150,14 @@ class PositionManager:
             tp_sl_orders = []
             
             for order in symbol_filtered_orders:
-                order_type = order.get('type', '')
-                order_subtype = order.get('subType', '')
+                # Identificar TP/SL pelos campos corretos da API
+                stop_price = order.get('stop_price')
+                stop_parent_id = order.get('stop_parent_order_id')
                 
-                # Identificar ordens TP/SL pelos campos específicos
-                if (order_type in ['TAKE_PROFIT', 'STOP_LOSS'] or 
-                    order_subtype in ['take_profit', 'stop_loss'] or
-                    'tp' in order.get('label', '').lower() or
-                    'sl' in order.get('label', '').lower()):
+                # Ordem é TP/SL se tem stop_price OU está vinculada a outra ordem
+                is_tpsl_order = (stop_price is not None) or (stop_parent_id is not None)
+                
+                if is_tpsl_order:
                     tp_sl_orders.append(order)
                 else:
                     main_orders.append(order)

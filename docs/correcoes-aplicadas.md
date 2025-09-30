@@ -1123,4 +1123,40 @@ signature_payload = {
 
 ---
 
+## ✅ MELHORIA 23: Verificação Inicial Automática de TP/SL
+
+**📍 Objetivo:** Garantir que ao iniciar o bot, todas as posições Multi-Asset tenham TP/SL configurados
+
+**🔧 Implementação:** 
+- Adicionada verificação automática após inicialização completa
+- Executa antes do primeiro loop principal
+- Apenas para estratégias Multi-Asset (que usam TP/SL)
+- Usa método existente `_check_all_tp_sl()` que já adiciona TP/SL faltantes
+
+**💡 Código Adicionado:**
+```python
+# Em grid_bot.py - run()
+# 🎯 VERIFICAÇÃO INICIAL DE TP/SL para estratégias Multi-Asset
+if self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+    self.logger.info("🔍 Executando verificação inicial de TP/SL...")
+    try:
+        if hasattr(self.strategy, '_check_all_tp_sl'):
+            self.strategy._check_all_tp_sl()
+            self.logger.info("✅ Verificação inicial de TP/SL concluída")
+        else:
+            self.logger.warning("⚠️ Método _check_all_tp_sl não encontrado na estratégia")
+    except Exception as e:
+        self.logger.error(f"❌ Erro na verificação inicial de TP/SL: {e}")
+```
+
+**🎯 Benefícios:**
+- **Correção imediata**: Posições sem TP/SL são detectadas e corrigidas na inicialização
+- **Segurança**: Evita períodos sem proteção de TP/SL
+- **Robustez**: Tratamento de erros para não interromper inicialização
+- **Eficiência**: Usa métodos existentes, sem duplicação de código
+
+**✅ Resultado:** Bot agora sempre inicia com TP/SL verificados e corrigidos
+
+---
+
 *Documento atualizado em 30/09/2025*
