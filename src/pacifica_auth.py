@@ -1392,16 +1392,29 @@ class PacificaAuth:
             return []
 
     def create_position_tp_sl(self, symbol: str, side: str, 
-                            take_profit_stop: str, take_profit_limit: str,
-                            stop_loss_stop: str, stop_loss_limit: str) -> Optional[Dict]:
+                            take_profit_stop: float, take_profit_limit: float,
+                            stop_loss_stop: float, stop_loss_limit: float) -> Optional[Dict]:
         """
         Cria TP/SL para posição existente usando Agent Wallet
         🔒 SEGURO: Não requer private key da wallet principal
         """
         
+        # 🔧 OBTER TICK_SIZE E ARREDONDAR PREÇOS
+        tick_size = self._get_tick_size(symbol)
+        if not tick_size:
+            self.logger.error(f"❌ Não foi possível obter tick_size para {symbol}")
+            return None
+            
+        # 🔧 ARREDONDAR TODOS OS PREÇOS PARA TICK_SIZE
+        tp_stop_rounded = self._round_to_tick_size(take_profit_stop, tick_size)
+        tp_limit_rounded = self._round_to_tick_size(take_profit_limit, tick_size)
+        sl_stop_rounded = self._round_to_tick_size(stop_loss_stop, tick_size)
+        sl_limit_rounded = self._round_to_tick_size(stop_loss_limit, tick_size)
+        
         self.logger.info(f"🎯 Criando TP/SL para {symbol} {side}")
-        self.logger.info(f"   TP: stop={take_profit_stop}, limit={take_profit_limit}")
-        self.logger.info(f"   SL: stop={stop_loss_stop}, limit={stop_loss_limit}")
+        self.logger.info(f"   TP: stop={tp_stop_rounded}, limit={tp_limit_rounded}")
+        self.logger.info(f"   SL: stop={sl_stop_rounded}, limit={sl_limit_rounded}")
+        self.logger.debug(f"📏 Tick size {symbol}: {tick_size}")
         
         timestamp = int(time.time() * 1_000)
         
@@ -1416,13 +1429,13 @@ class PacificaAuth:
             "symbol": symbol,
             "side": side,
             "take_profit": {
-                "stop_price": str(take_profit_stop),
-                "limit_price": str(take_profit_limit),
+                "stop_price": str(tp_stop_rounded),
+                "limit_price": str(tp_limit_rounded),
                 "client_order_id": str(uuid.uuid4())
             },
             "stop_loss": {
-                "stop_price": str(stop_loss_stop),
-                "limit_price": str(stop_loss_limit),
+                "stop_price": str(sl_stop_rounded),
+                "limit_price": str(sl_limit_rounded),
                 "client_order_id": str(uuid.uuid4())
             }
         }
@@ -1482,13 +1495,13 @@ class PacificaAuth:
         symbol = tp_sl_data.get('symbol', 'BTC')
         side = tp_sl_data.get('side', 'bid')
         
-        # Extrair preços
-        tp_stop = tp_sl_data.get('take_profit_price', '0')
-        sl_stop = tp_sl_data.get('stop_loss_price', '0')
+        # Extrair preços como float
+        tp_stop = float(tp_sl_data.get('take_profit_price', '0'))
+        sl_stop = float(tp_sl_data.get('stop_loss_price', '0'))
         
         # Para simplificar, usar mesmo preço para stop e limit (pode ser ajustado)
-        tp_limit = str(float(tp_stop) * 0.999) if side == 'bid' else str(float(tp_stop) * 1.001)
-        sl_limit = str(float(sl_stop) * 0.999) if side == 'ask' else str(float(sl_stop) * 1.001)
+        tp_limit = tp_stop * 0.999 if side == 'bid' else tp_stop * 1.001
+        sl_limit = sl_stop * 0.999 if side == 'ask' else sl_stop * 1.001
         
         return self.create_position_tp_sl(
             symbol=symbol,

@@ -657,13 +657,11 @@ class MultiAssetEnhancedStrategy:
                 sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
                 sl_limit_price = sl_stop_price * 0.999
             
-            # Arredondar preços com precisão Enhanced
-            tp_stop_price = round(tp_stop_price, 6)
-            tp_limit_price = round(tp_limit_price, 6)
-            sl_stop_price = round(sl_stop_price, 6)
-            sl_limit_price = round(sl_limit_price, 6)
+            # 🔧 CORREÇÃO CRÍTICA: Arredondar para tick_size em vez de decimais fixos
+            # Os preços serão arredondados novamente na função create_position_tp_sl,
+            # mas já enviamos valores aproximados para melhor logging
             
-            # Chamar API para adicionar TP/SL
+            # Chamar API para adicionar TP/SL (função fará arredondamento final)
             result = self.auth.create_position_tp_sl(
                 symbol=symbol,
                 side=side,

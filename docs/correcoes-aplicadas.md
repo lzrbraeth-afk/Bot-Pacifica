@@ -1044,4 +1044,40 @@ STOP_LOSS_PERCENT = '1.5'    # Limite de perda menor
 
 ---
 
+## ✅ PROBLEMA 21: Violação de Tick Size em TP/SL
+
+**📍 Identificação:** API rejeitando TP/SL com erro "Take profit stop price 0.674827 is not a multiple of tick size 0.0001"
+
+**🔧 Causa Raiz:** 
+- Função `create_position_tp_sl` não aplicava arredondamento de tick_size
+- Estratégias passavam valores como string sem arredondamento prévio
+- Princípio de tick_size compliance não foi aplicado consistentemente nas funções TP/SL
+
+**💡 Solução Implementada:**
+```python
+# Em pacifica_auth.py - create_position_tp_sl()
+def create_position_tp_sl(self, symbol: str, side: str, 
+                         take_profit_stop: float, take_profit_limit: float,
+                         stop_loss_stop: float, stop_loss_limit: float) -> Optional[Dict]:
+    
+    # 🔧 NOVO: Aplicar tick_size para todos os preços TP/SL
+    tick_size = self._get_tick_size(symbol)
+    
+    take_profit_stop = self._round_to_tick_size(take_profit_stop, tick_size)
+    take_profit_limit = self._round_to_tick_size(take_profit_limit, tick_size)
+    stop_loss_stop = self._round_to_tick_size(stop_loss_stop, tick_size)
+    stop_loss_limit = self._round_to_tick_size(stop_loss_limit, tick_size)
+```
+
+**🔧 Correções Aplicadas:**
+1. **pacifica_auth.py**: Modificado `create_position_tp_sl` para aceitar float e aplicar tick_size
+2. **multi_asset_strategy.py**: Removido arredondamento manual, delegado para função API
+3. **multi_asset_enhanced_strategy.py**: Removido arredondamento manual
+4. **multi_asset.py**: Corrigido passagem de parâmetros de str() para float
+5. **create_position_tp_sl_simple**: Atualizado para trabalhar com float
+
+**✅ Resultado:** TP/SL agora respeita tick_size automaticamente, eliminando erros API
+
+---
+
 *Documento atualizado em 30/09/2025*

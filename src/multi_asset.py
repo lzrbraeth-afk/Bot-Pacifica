@@ -579,10 +579,10 @@ class MultiAssetScalpingStrategy:
             result = self.auth.create_position_tp_sl(
                 symbol=symbol,
                 side=api_side,
-                take_profit_stop=str(take_profit_price),
-                take_profit_limit=str(take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001),
-                stop_loss_stop=str(stop_loss_price),
-                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001)
+                take_profit_stop=take_profit_price,
+                take_profit_limit=take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001,
+                stop_loss_stop=stop_loss_price,
+                stop_loss_limit=stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001
             )
             
             if result and result.get('success'):
@@ -862,10 +862,10 @@ class MultiAssetScalpingStrategy:
             result = self.auth.create_position_tp_sl(
                 symbol=symbol,
                 side=api_side,
-                take_profit_stop=str(take_profit_price),
-                take_profit_limit=str(take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001),
-                stop_loss_stop=str(stop_loss_price),
-                stop_loss_limit=str(stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001)
+                take_profit_stop=take_profit_price,
+                take_profit_limit=take_profit_price * 0.999 if side == 'bid' else take_profit_price * 1.001,
+                stop_loss_stop=stop_loss_price,
+                stop_loss_limit=stop_loss_price * 0.999 if side == 'ask' else stop_loss_price * 1.001
             )
             
             if result and result.get('success'):
