@@ -118,6 +118,9 @@ class GridTradingBot:
             
         self.logger.info("=" * 80, force=True)
         
+        # 🔧 SISTEMA DE VALIDAÇÕES (NOVO)
+        self._run_config_validations()
+        
         # Inicializar componentes
         self.auth = None
         self.calculator = None
@@ -159,6 +162,32 @@ class GridTradingBot:
         console_handler.setLevel(log_level)
         console_handler.setFormatter(log_format)
         root_logger.addHandler(console_handler)
+    
+    def _run_config_validations(self):
+        """Executa validações de configuração sem afetar funcionalidade principal"""
+        try:
+            from src.config_validator import run_all_validations
+            
+            self.logger.info("🔧 Executando validações de configuração...")
+            validation_result = run_all_validations(self.strategy_type)
+            
+            if validation_result['warnings']:
+                self.logger.warning("⚠️ AVISOS DE CONFIGURAÇÃO:")
+                for warning in validation_result['warnings']:
+                    self.logger.warning(f"  • {warning}")
+                    
+            if validation_result['errors']:
+                self.logger.error("❌ PROBLEMAS CRÍTICOS DE CONFIGURAÇÃO:")
+                for error in validation_result['errors']:
+                    self.logger.error(f"  • {error}")
+                self.logger.error("⚠️ Bot pode não funcionar corretamente - verifique as configurações acima")
+            else:
+                self.logger.info("✅ Todas as validações passaram com sucesso")
+                
+        except ImportError:
+            self.logger.debug("📋 Config validator não encontrado, pulando validações")
+        except Exception as e:
+            self.logger.debug(f"⚠️ Erro durante validações: {e}")
     
     def initialize_components(self) -> bool:
         """Inicializa todos os componentes do bot"""

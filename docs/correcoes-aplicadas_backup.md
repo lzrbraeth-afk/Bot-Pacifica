@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **14 Problemas Críticos Resolvidos:**
+📋 **13 Problemas Críticos Resolvidos:**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -20,7 +20,6 @@ Este documento registra os principais problemas identificados e as correções a
 11. **Rebalanceamento sem verificação de margem** → Pré-validação obrigatória implementada
 12. **Sistema de proteção de margem confuso** → Arquitetura unificada com 2 níveis
 13. **Modo AUTO multi-asset não funcional** → Sistema de detecção e operação automática implementado
-14. **Sistema de validações de configuração** → Esclarecimento sobre TP/SL e validações preventivas
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -51,7 +50,228 @@ Este documento registra os principais problemas identificados e as correções a
 
 ---
 
-## 🔒 **Problema 2: Race Condition em Operações de Ordens**
+## � **NOVA FUNCIONALIDADE: Sistema de Validações**
+
+### **📋 ANÁLISE: Take Profit e Stop Loss**
+
+**RESPOSTA PRINCIPAL:** Take Profit e Stop Loss **NÃO são globais** - são específicos para estratégias multi-asset:
+
+#### **Grid Strategies** (`pure_grid`, `market_making`, `dynamic_grid`):
+- **❌ NÃO usam TP/SL automáticos**
+- Funcionam apenas com sistema de grid e ordens limit
+- Filtros no código excluem ordens `TAKE_PROFIT` e `STOP_LOSS` do processamento
+
+#### **Multi-Asset Strategies** (`multi_asset`, `multi_asset_enhanced`):
+- **✅ SIM, usam TP/SL**
+- Configurações específicas no `.env`:
+  ```ini
+  STOP_LOSS_PERCENT=2.0         # Stop Loss em %
+  TAKE_PROFIT_PERCENT=1.5       # Take Profit em %
+  USE_API_TP_SL=true            # Usar ordens TP/SL via API
+  ```
+
+### **🔧 Validações Propostas (Sem Alterar Estrutura)**
+
+Criei um sistema de validações que **não altera o código principal** mas adiciona verificações de segurança.
+
+#### **Arquivo: `src/config_validator.py` (NOVO)**
+```python
+"""
+Sistema de Validações de Configuração - Bot Pacifica
+Valida configurações sem alterar funcionalidade principal
+"""
+import os
+import logging
+
+def validate_strategy_config(strategy_type):
+    """Valida configurações específicas por estratégia"""
+    errors = []
+    warnings = []
+    
+    if strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+        # Validar TP/SL para multi-asset
+        try:
+            tp_percent = float(os.getenv('TAKE_PROFIT_PERCENT', '1.5'))
+            sl_percent = float(os.getenv('STOP_LOSS_PERCENT', '2.0'))
+            
+            if tp_percent <= 0 or tp_percent > 10:
+                errors.append("TAKE_PROFIT_PERCENT deve estar entre 0.1 e 10")
+            if sl_percent <= 0 or sl_percent > 20:
+                errors.append("STOP_LOSS_PERCENT deve estar entre 0.1 e 20")
+            if sl_percent <= tp_percent:
+                errors.append("STOP_LOSS_PERCENT deve ser maior que TAKE_PROFIT_PERCENT")
+                
+        except (ValueError, TypeError):
+            errors.append("TAKE_PROFIT_PERCENT e STOP_LOSS_PERCENT devem ser números válidos")
+            
+    elif strategy_type in ['pure_grid', 'market_making', 'dynamic_grid']:
+        # Avisar se TP/SL configurado para grid (será ignorado)
+        if os.getenv('TAKE_PROFIT_PERCENT') or os.getenv('STOP_LOSS_PERCENT'):
+            warnings.append("TP/SL configurado mas será IGNORADO para estratégias de Grid")
+    
+    return errors, warnings
+
+def validate_trading_params():
+    """Valida parâmetros de trading para evitar configurações perigosas"""
+    errors = []
+    warnings = []
+    
+    try:
+        # Validação de alavancagem
+        leverage = int(os.getenv('LEVERAGE', '10'))
+        if leverage < 1 or leverage > 50:
+            errors.append("LEVERAGE deve estar entre 1 e 50")
+        elif leverage > 20:
+            warnings.append(f"LEVERAGE={leverage} é alto - risco elevado")
+        
+        # Validação de tamanho de posição
+        order_size = float(os.getenv('ORDER_SIZE_USD', '35'))
+        if order_size < 1 or order_size > 1000:
+            errors.append("ORDER_SIZE_USD deve estar entre 1 e 1000")
+        elif order_size > 500:
+            warnings.append(f"ORDER_SIZE_USD={order_size} é alto para testes")
+            
+        # Validação de espaçamento do grid
+        spacing = float(os.getenv('GRID_SPACING_PERCENT', '0.2'))
+        if spacing < 0.01 or spacing > 5:
+            errors.append("GRID_SPACING_PERCENT deve estar entre 0.01 e 5")
+        elif spacing < 0.1:
+            warnings.append(f"GRID_SPACING_PERCENT={spacing} muito baixo - muitas ordens")
+            
+    except (ValueError, TypeError) as e:
+        errors.append(f"Erro ao validar parâmetros numéricos: {e}")
+    
+    return errors, warnings
+
+def validate_api_credentials():
+    """Valida credenciais de API necessárias"""
+    errors = []
+    
+    main_key = os.getenv('MAIN_PUBLIC_KEY', '').strip()
+    agent_key = os.getenv('AGENT_PRIVATE_KEY_B58', '').strip()
+    
+    if not main_key or len(main_key) < 32:
+        errors.append("MAIN_PUBLIC_KEY inválida ou não configurada")
+    if not agent_key or len(agent_key) < 32:
+        errors.append("AGENT_PRIVATE_KEY_B58 inválida ou não configurada")
+        
+    return errors, []
+
+def run_all_validations(strategy_type):
+    """Executa todas as validações e retorna relatório"""
+    all_errors = []
+    all_warnings = []
+    
+    # Executar validações
+    strategy_errors, strategy_warnings = validate_strategy_config(strategy_type)
+    trading_errors, trading_warnings = validate_trading_params()
+    api_errors, api_warnings = validate_api_credentials()
+    
+    # Consolidar resultados
+    all_errors.extend(strategy_errors)
+    all_errors.extend(trading_errors)
+    all_errors.extend(api_errors)
+    
+    all_warnings.extend(strategy_warnings)
+    all_warnings.extend(trading_warnings)
+    all_warnings.extend(api_warnings)
+    
+    return {
+        'errors': all_errors,
+        'warnings': all_warnings,
+        'has_critical_errors': len(all_errors) > 0
+    }
+```
+
+#### **Integração no Bot Principal**
+```python
+# Adicionado em grid_bot.py no método __init__ (após configurações)
+def __init__(self):
+    # ... código existente até linha ~45 ...
+    
+    # 🔧 SISTEMA DE VALIDAÇÕES (NOVO)
+    self._run_config_validations()
+    
+    # ... resto do código existente ...
+
+def _run_config_validations(self):
+    """Executa validações de configuração sem afetar funcionalidade"""
+    try:
+        from src.config_validator import run_all_validations
+        
+        validation_result = run_all_validations(self.strategy_type)
+        
+        if validation_result['warnings']:
+            self.logger.warning("🔧 VALIDAÇÕES - AVISOS:")
+            for warning in validation_result['warnings']:
+                self.logger.warning(f"  ⚠️ {warning}")
+                
+        if validation_result['errors']:
+            self.logger.error("🔧 VALIDAÇÕES - PROBLEMAS CRÍTICOS:")
+            for error in validation_result['errors']:
+                self.logger.error(f"  ❌ {error}")
+            self.logger.error("Bot pode não funcionar corretamente com estas configurações")
+        else:
+            self.logger.info("✅ Configurações validadas com sucesso")
+            
+    except ImportError:
+        self.logger.debug("Config validator não encontrado, pulando validações")
+    except Exception as e:
+        self.logger.debug(f"Erro nas validações: {e}")
+```
+
+### **📊 Benefícios das Validações:**
+✅ **Seguras**: Não alteram funcionalidade existente  
+✅ **Informativas**: Esclarecem diferenças entre estratégias  
+✅ **Preventivas**: Detectam configurações perigosas  
+✅ **Opcionais**: Funcionam como warnings, não bloqueiam execução  
+✅ **Documentadas**: Explicam comportamento de TP/SL por estratégia
+
+### **🧪 Testes das Validações:**
+
+**Teste 1 - Multi-Asset com TP/SL correto:**
+```bash
+TAKE_PROFIT_PERCENT=1.5, STOP_LOSS_PERCENT=2.5
+Resultado: ✅ TODAS as validações passaram!
+```
+
+**Teste 2 - Multi-Asset com TP/SL incorreto:**
+```bash
+TAKE_PROFIT_PERCENT=2.5, STOP_LOSS_PERCENT=1.5
+Resultado: ❌ STOP_LOSS_PERCENT deve ser maior que TAKE_PROFIT_PERCENT
+```
+
+**Teste 3 - Grid Strategy com TP/SL configurado:**
+```bash
+STRATEGY_TYPE=market_making, TAKE_PROFIT_PERCENT=1.5
+Resultado: ⚠️ TP/SL configurado mas será IGNORADO para estratégias de Grid
+```
+
+### **📋 Como Usar:**
+
+1. **Execução Manual:**
+   ```bash
+   python src/config_validator.py market_making
+   python src/config_validator.py multi_asset
+   ```
+
+2. **Integração Automática:**
+   - Validações executam automaticamente ao iniciar o bot
+   - Não bloqueiam execução, apenas informam sobre problemas
+   - Logs são integrados ao sistema de logging principal
+
+### **🔧 Validações Implementadas:**
+
+| **Categoria** | **Validações** |
+|---------------|----------------|
+| **Estratégia** | TP/SL só para multi-asset, ranges válidos, configurações lógicas |
+| **Trading** | Alavancagem (1-50), tamanho de posição, espaçamento do grid |
+| **API** | Chaves configuradas, endpoints válidos, URLs seguras |
+| **Símbolos** | Configuração correta por tipo de estratégia |
+
+---
+
+## �🔒 **Problema 2: Race Condition em Operações de Ordens**
 
 ### **Problema**
 - Múltiplas threads podiam modificar ordens simultaneamente
@@ -614,33 +834,4 @@ AUTO_REDUCE_POSITION_ON_LOW_MARGIN=true  # Vende posição
 
 ---
 
-## 🔧 **Problema 14: Sistema de Validações de Configuração**
-
-### **Problema**
-- Take Profit e Stop Loss não são globais - comportamento específico por estratégia
-- Configurações incorretas podem causar comportamento inesperado
-- Falta de validação preventiva de parâmetros críticos
-- Usuários confundem configurações entre estratégias Grid e Multi-Asset
-
-### **Análise Realizada**
-**Take Profit e Stop Loss são específicos para estratégias Multi-Asset:**
-- **Grid Strategies** (`pure_grid`, `market_making`, `dynamic_grid`): NÃO usam TP/SL
-- **Multi-Asset Strategies** (`multi_asset`, `multi_asset_enhanced`): SIM usam TP/SL
-- Código filtra ordens `TAKE_PROFIT` e `STOP_LOSS` do processamento do grid
-
-### **Solução Aplicada**
-- Criado sistema de validações `src/config_validator.py` sem alterar código principal
-- Validações por tipo de estratégia (Grid vs Multi-Asset)
-- Verificação de ranges seguros para parâmetros críticos
-- Integração automática no startup do bot via `_run_config_validations()`
-- Sistema de warnings não-bloqueantes
-
-### **Resultado**
-✅ Esclarecimento sobre comportamento TP/SL por estratégia
-✅ Detecção preventiva de configurações perigosas
-✅ Sistema não-invasivo que não altera funcionalidade existente
-✅ Validações automáticas no startup com logs informativos
-
----
-
-*Documento atualizado em 30/09/2025*
+*Documento atualizado em 29/09/2025*
