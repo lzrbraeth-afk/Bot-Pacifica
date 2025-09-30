@@ -157,6 +157,16 @@ class MultiAssetStrategy:
         # Atualizar preços e verificar sinais
         self._update_all_prices()
         
+        # 🆕 Verificação periódica de TP/SL (a cada 3 ciclos)
+        if not hasattr(self, '_tp_sl_check_counter'):
+            self._tp_sl_check_counter = 0
+        self._tp_sl_check_counter += 1
+        
+        if self._tp_sl_check_counter >= 3:  # A cada 3 ciclos de rebalanceamento
+            self.logger.debug("🔍 Verificação periódica de TP/SL...")
+            self._check_all_tp_sl()
+            self._tp_sl_check_counter = 0
+        
         symbols_analyzed = 0
         signals_found = 0
         
@@ -339,12 +349,193 @@ class MultiAssetStrategy:
         pass
     
     def _check_all_tp_sl(self):
-        """Verificar TP/SL de todas as posições (se não usando API nativa)"""
+        """Verificar TP/SL de todas as posições ativas"""
         if self.use_api_tp_sl:
-            return  # TP/SL gerenciado pela API
+            # Verificar se posições têm TP/SL via API
+            self._verify_api_tp_sl()
+        else:
+            # Monitoramento manual de TP/SL
+            self._check_manual_tp_sl()
+    
+    def _verify_api_tp_sl(self):
+        """Verificar se todas as posições têm TP/SL via API"""
+        if not self.active_positions:
+            return
         
-        # Implementar monitoramento manual se necessário
-        pass
+        missing_tp_sl = []
+        
+        for position_id, position in self.active_positions.items():
+            has_tp = 'take_profit_order_id' in position and position['take_profit_order_id']
+            has_sl = 'stop_loss_order_id' in position and position['stop_loss_order_id']
+            
+            if not has_tp or not has_sl:
+                missing_tp_sl.append({
+                    'position_id': position_id,
+                    'symbol': position['symbol'],
+                    'side': position['side'],
+                    'price': position['price'],
+                    'quantity': position['quantity'],
+                    'has_tp': has_tp,
+                    'has_sl': has_sl
+                })
+        
+        if missing_tp_sl:
+            self.logger.warning(f"⚠️ {len(missing_tp_sl)} posições sem TP/SL completo")
+            for pos in missing_tp_sl:
+                self.logger.info(f"🔧 Adicionando TP/SL para {pos['symbol']} - TP:{pos['has_tp']} SL:{pos['has_sl']}")
+                self._add_missing_tp_sl(pos)
+    
+    def _add_missing_tp_sl(self, position_data):
+        """Adicionar TP/SL em posição existente via API"""
+        try:
+            symbol = position_data['symbol']
+            side = position_data['side']
+            entry_price = position_data['price']
+            
+            # Calcular preços de TP/SL
+            if side == 'bid' or side == 'buy':  # Long position
+                tp_stop_price = entry_price * (1 + self.take_profit_percent / 100)
+                tp_limit_price = tp_stop_price * 0.999
+                sl_stop_price = entry_price * (1 - self.stop_loss_percent / 100)
+                sl_limit_price = sl_stop_price * 1.001
+            else:  # Short position
+                tp_stop_price = entry_price * (1 - self.take_profit_percent / 100)
+                tp_limit_price = tp_stop_price * 1.001
+                sl_stop_price = entry_price * (1 + self.stop_loss_percent / 100)
+                sl_limit_price = sl_stop_price * 0.999
+            
+            # Arredondar preços
+            tp_stop_price = round(tp_stop_price, 4)
+            tp_limit_price = round(tp_limit_price, 4)
+            sl_stop_price = round(sl_stop_price, 4)
+            sl_limit_price = round(sl_limit_price, 4)
+            
+            # Chamar API para adicionar TP/SL
+            result = self.auth.create_position_tp_sl(
+                symbol=symbol,
+                side=side,
+                take_profit_stop=tp_stop_price,
+                take_profit_limit=tp_limit_price,
+                stop_loss_stop=sl_stop_price,
+                stop_loss_limit=sl_limit_price
+            )
+            
+            if result and result.get('success'):
+                self.logger.info(f"✅ TP/SL adicionado para {symbol}: TP@{tp_stop_price} SL@{sl_stop_price}")
+                # Atualizar posição local se necessário
+                position_id = position_data['position_id']
+                if position_id in self.active_positions:
+                    self.active_positions[position_id].update({
+                        'take_profit_order_id': result.get('take_profit_order_id'),
+                        'stop_loss_order_id': result.get('stop_loss_order_id')
+                    })
+            else:
+                self.logger.error(f"❌ Falha ao adicionar TP/SL para {symbol}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao adicionar TP/SL: {e}")
+    
+    def _check_manual_tp_sl(self):
+        """Monitoramento manual de TP/SL (quando USE_API_TP_SL=false)"""
+        if not self.active_positions:
+            return
+        
+        positions_to_close = []
+        
+        for position_id, position in self.active_positions.items():
+            try:
+                symbol = position['symbol']
+                entry_price = position['price']
+                side = position['side']
+                quantity = position['quantity']
+                
+                # Obter preço atual
+                current_price = self._get_current_price(symbol)
+                if not current_price:
+                    continue
+                
+                # Calcular PNL
+                if side == 'bid' or side == 'buy':  # Long
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                else:  # Short
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                
+                # Verificar condições de fechamento
+                should_close = False
+                close_reason = ""
+                
+                if pnl_percent <= -self.stop_loss_percent:
+                    should_close = True
+                    close_reason = f"STOP LOSS: {pnl_percent:.2f}%"
+                elif pnl_percent >= self.take_profit_percent:
+                    should_close = True
+                    close_reason = f"TAKE PROFIT: {pnl_percent:.2f}%"
+                
+                if should_close:
+                    positions_to_close.append({
+                        'position_id': position_id,
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': quantity,
+                        'current_price': current_price,
+                        'reason': close_reason
+                    })
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Erro ao verificar TP/SL manual para {position_id}: {e}")
+        
+        # Fechar posições que atingiram TP/SL
+        for pos in positions_to_close:
+            self._close_position_manual(pos)
+    
+    def _close_position_manual(self, position_data):
+        """Fechar posição manualmente por TP/SL"""
+        try:
+            symbol = position_data['symbol']
+            side = position_data['side']
+            quantity = position_data['quantity']
+            current_price = position_data['current_price']
+            reason = position_data['reason']
+            
+            # Determinar lado da ordem de fechamento
+            close_side = 'ask' if side in ['bid', 'buy'] else 'bid'
+            
+            self.logger.info(f"🎯 Fechando posição {symbol} - {reason}")
+            
+            # Criar ordem de fechamento
+            result = self.auth.create_order(
+                symbol=symbol,
+                side=close_side,
+                amount=str(quantity),
+                price=str(current_price),
+                order_type="GTC",
+                reduce_only=True
+            )
+            
+            if result:
+                self.logger.info(f"✅ Ordem de fechamento criada para {symbol}")
+                # Remover da lista de posições ativas
+                position_id = position_data['position_id']
+                if position_id in self.active_positions:
+                    del self.active_positions[position_id]
+            else:
+                self.logger.error(f"❌ Falha ao criar ordem de fechamento para {symbol}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao fechar posição manual: {e}")
+    
+    def _get_current_price(self, symbol: str) -> float:
+        """Obter preço atual de um símbolo"""
+        try:
+            prices_data = self.auth.get_prices()
+            if prices_data and prices_data.get('success'):
+                for item in prices_data.get('data', []):
+                    if item.get('symbol') == symbol:
+                        return float(item.get('mark') or item.get('mid') or 0)
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao obter preço de {symbol}: {e}")
+            return 0.0
     
     def get_grid_status(self) -> Dict:
         """Retornar status compatível com o bot principal"""

@@ -120,6 +120,20 @@ class PacificaAuth:
         # 🔒 CONFIGURAR MAIN WALLET (apenas public key)
         self.setup_main_wallet()
 
+        # 🆕 CACHE DE HISTÓRICO COM TIMESTAMP
+        self._historical_cache = {}
+        self._cache_ttl_seconds = 90  # Cache válido por 90 segundos (1.5 min)
+        
+        # 🆕 RATE LIMIT PROTECTION - Controle global de requisições
+        self._last_kline_request_time = 0
+        self._min_kline_delay_seconds = 1.2  # Mínimo 1.2s entre requisições ao /kline
+        
+        # 🆕 CIRCUIT BREAKER - Detecção de API sobrecarregada
+        self._consecutive_errors = 0
+        self._max_consecutive_errors = 3
+        self._backoff_multiplier = 1.0
+        self._max_backoff_multiplier = 4.0
+
         self.logger.info("✅ PacificaAuth inicializado com Agent Wallet (SEGURO)")
 
     def setup_agent_wallet(self):
@@ -846,7 +860,11 @@ class PacificaAuth:
     def get_historical_data(self, symbol: str, interval: str = "1m", 
                        periods: int = 30, max_retries: int = 3) -> Optional[List[float]]:
         """
-        Busca histórico de preços da API Pacifica com retry automático
+        Busca histórico de preços da API Pacifica com:
+        ✅ Cache inteligente (90s TTL)
+        ✅ Rate limit protection (1.2s entre requests)
+        ✅ Circuit breaker (pausa quando API sobrecarregada)
+        ✅ Backoff exponencial agressivo
         
         Args:
             symbol: Símbolo (ex: BTC, ETH, SOL)
@@ -855,12 +873,46 @@ class PacificaAuth:
             max_retries: Máximo de tentativas (padrão: 3)
             
         Returns:
-            Lista de preços de fechamento para o algoritmo Enhanced
+            Lista de preços de fechamento ou None se falhar
         """
         
+        # 🆕 STEP 1: VERIFICAR CACHE PRIMEIRO (evita chamadas desnecessárias)
+        cache_key = f"{symbol}_{interval}_{periods}"
+        
+        if cache_key in self._historical_cache:
+            cached_data, cache_timestamp = self._historical_cache[cache_key]
+            cache_age_seconds = time.time() - cache_timestamp
+            
+            if cache_age_seconds < self._cache_ttl_seconds:
+                self.logger.debug(f"🎯 Cache HIT: {symbol} (idade: {cache_age_seconds:.1f}s)")
+                return cached_data
+            else:
+                self.logger.debug(f"⏰ Cache EXPIRED: {symbol} (idade: {cache_age_seconds:.1f}s)")
+        
+        # 🆕 STEP 2: RATE LIMIT GLOBAL (forçar delay entre requisições)
+        time_since_last_request = time.time() - self._last_kline_request_time
+        
+        # Aplicar backoff multiplier se houver erros consecutivos
+        effective_delay = self._min_kline_delay_seconds * self._backoff_multiplier
+        delay_needed = effective_delay - time_since_last_request
+        
+        if delay_needed > 0:
+            self.logger.debug(f"⏳ Rate limit global: aguardando {delay_needed:.2f}s para {symbol}")
+            time.sleep(delay_needed)
+        
+        # 🆕 STEP 3: CIRCUIT BREAKER (pausar se muitos erros consecutivos)
+        if self._consecutive_errors >= self._max_consecutive_errors:
+            circuit_pause = 5.0 * self._backoff_multiplier
+            self.logger.warning(
+                f"⚠️ CIRCUIT BREAKER ativo! "
+                f"{self._consecutive_errors} erros consecutivos. "
+                f"Pausando {circuit_pause:.1f}s antes de {symbol}"
+            )
+            time.sleep(circuit_pause)
+        
+        # 🆕 STEP 4: FAZER REQUISIÇÃO COM RETRY MELHORADO
         for attempt in range(max_retries):
             try:
-                import time
                 from datetime import datetime, timedelta
                 
                 # Converter intervalo para minutos
@@ -881,32 +933,75 @@ class PacificaAuth:
                     'start_time': start_time
                 }
                 
-                response = requests.get(url, params=params, timeout=10)
+                # 🆕 Marcar timestamp desta requisição
+                self._last_kline_request_time = time.time()
                 
-                # Verificar diferentes códigos de erro
+                # 🆕 Timeout aumentado para 15s (API pode estar lenta)
+                response = requests.get(url, params=params, timeout=15)
+                
+                # ============================================================
+                # TRATAMENTO DE ERROS COM BACKOFF AGRESSIVO
+                # ============================================================
+                
                 if response.status_code == 429:  # Rate limit exceeded
-                    retry_delay = 2 ** attempt  # Backoff exponencial: 2s, 4s, 8s
-                    self.logger.warning(f"⚠️ Rate limit {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
-                    if attempt < max_retries - 1:  # Não aguardar na última tentativa
-                        time.sleep(retry_delay)
-                        continue
-                    else:
-                        self.logger.error(f"❌ Rate limit persistente para {symbol} após {max_retries} tentativas")
-                        return None
-                        
-                elif response.status_code == 500:  # Server error
-                    retry_delay = 1.5 * (attempt + 1)  # 1.5s, 3s, 4.5s
-                    self.logger.warning(f"⚠️ Server error {symbol} (500) - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                    self._consecutive_errors += 1
+                    self._backoff_multiplier = min(
+                        self._max_backoff_multiplier, 
+                        self._backoff_multiplier * 1.5
+                    )
+                    
+                    retry_delay = 3 ** attempt  # Exponencial agressivo: 3s, 9s, 27s
+                    self.logger.warning(
+                        f"⚠️ Rate limit {symbol} - "
+                        f"Tentativa {attempt+1}/{max_retries}, "
+                        f"aguardando {retry_delay}s "
+                        f"(backoff: {self._backoff_multiplier:.1f}x)"
+                    )
+                    
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay)
                         continue
                     else:
-                        self.logger.error(f"❌ Server error persistente para {symbol} após {max_retries} tentativas")
+                        self.logger.error(f"❌ Rate limit persistente: {symbol}")
+                        return None
+                        
+                elif response.status_code == 500:  # Server error
+                    self._consecutive_errors += 1
+                    self._backoff_multiplier = min(
+                        self._max_backoff_multiplier, 
+                        self._backoff_multiplier * 1.3
+                    )
+                    
+                    # 🆕 Delay MUITO mais agressivo para erro 500
+                    retry_delay = 3.0 * (attempt + 1)  # 3s, 6s, 9s
+                    self.logger.warning(
+                        f"⚠️ Server error {symbol} (500) - "
+                        f"Tentativa {attempt+1}/{max_retries}, "
+                        f"aguardando {retry_delay}s "
+                        f"(backoff: {self._backoff_multiplier:.1f}x)"
+                    )
+                    
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        self.logger.error(f"❌ Server error persistente: {symbol}")
                         return None
                         
                 elif response.status_code == 503:  # Service unavailable
-                    retry_delay = 2.0 * (attempt + 1)  # 2s, 4s, 6s
-                    self.logger.warning(f"⚠️ Service unavailable {symbol} (503) - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                    self._consecutive_errors += 1
+                    self._backoff_multiplier = min(
+                        self._max_backoff_multiplier, 
+                        self._backoff_multiplier * 1.5
+                    )
+                    
+                    retry_delay = 4.0 * (attempt + 1)  # 4s, 8s, 12s
+                    self.logger.warning(
+                        f"⚠️ Service unavailable {symbol} (503) - "
+                        f"Tentativa {attempt+1}/{max_retries}, "
+                        f"aguardando {retry_delay}s"
+                    )
+                    
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay)
                         continue
@@ -914,8 +1009,16 @@ class PacificaAuth:
                         return None
                         
                 elif response.status_code == 200:
-                    # Sucesso - processar resposta
-                    self.logger.debug(f"📊 GET /kline {symbol} {interval} -> {response.status_code} (tentativa {attempt+1})")
+                    # 🆕 SUCESSO - Resetar contadores de erro
+                    self._consecutive_errors = 0
+                    
+                    # 🆕 Reduzir backoff gradualmente (recuperação suave)
+                    self._backoff_multiplier = max(1.0, self._backoff_multiplier * 0.9)
+                    
+                    self.logger.debug(
+                        f"📊 GET /kline {symbol} {interval} -> 200 "
+                        f"(tentativa {attempt+1}, backoff: {self._backoff_multiplier:.1f}x)"
+                    )
                     
                     data = response.json()
                     
@@ -929,55 +1032,79 @@ class PacificaAuth:
                             if close_price > 0:
                                 prices.append(close_price)
                         
-                        if len(prices) >= periods * 0.8:  # Aceitar se tiver pelo menos 80% dos dados
-                            self.logger.debug(f"✅ Histórico obtido: {len(prices)} preços de {symbol}")
+                        if len(prices) >= periods * 0.8:  # Aceitar se tiver 80%+ dos dados
+                            # 🆕 ARMAZENAR NO CACHE
+                            self._historical_cache[cache_key] = (prices, time.time())
+                            
+                            self.logger.debug(
+                                f"✅ Histórico obtido: {len(prices)} preços de {symbol} "
+                                f"(cache armazenado)"
+                            )
                             return prices
                         else:
-                            self.logger.warning(f"⚠️ Dados insuficientes para {symbol}: {len(prices)} < {periods}")
+                            self.logger.warning(
+                                f"⚠️ Dados insuficientes: {symbol} "
+                                f"({len(prices)} < {int(periods * 0.8)} necessários)"
+                            )
                             return None
                     else:
-                        self.logger.warning(f"⚠️ Resposta sem dados para {symbol}: {data}")
+                        self.logger.warning(f"⚠️ Resposta sem dados: {symbol}")
                         if attempt < max_retries - 1:
-                            time.sleep(1.0)
+                            time.sleep(2.0)  # 🆕 Delay maior antes de retry
                             continue
                         return None
                 else:
                     # Outros códigos de erro
-                    self.logger.warning(f"⚠️ Erro HTTP {response.status_code} para {symbol}: {response.text[:200]}")
+                    self._consecutive_errors += 1
+                    self.logger.warning(
+                        f"⚠️ Erro HTTP {response.status_code} para {symbol}: "
+                        f"{response.text[:200]}"
+                    )
                     if attempt < max_retries - 1:
-                        time.sleep(1.0)
+                        time.sleep(2.0)
                         continue
                     return None
                     
             except requests.exceptions.Timeout:
-                retry_delay = 1.0 * (attempt + 1)
-                self.logger.warning(f"⚠️ Timeout {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                self._consecutive_errors += 1
+                retry_delay = 2.0 * (attempt + 1)  # 2s, 4s, 6s
+                self.logger.warning(
+                    f"⚠️ Timeout {symbol} - "
+                    f"Tentativa {attempt+1}/{max_retries}, "
+                    f"aguardando {retry_delay}s"
+                )
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     continue
                 return None
                 
             except requests.exceptions.ConnectionError:
-                retry_delay = 2.0 * (attempt + 1)
-                self.logger.warning(f"⚠️ Connection error {symbol} - Tentativa {attempt+1}/{max_retries}, aguardando {retry_delay}s")
+                self._consecutive_errors += 1
+                retry_delay = 3.0 * (attempt + 1)  # 3s, 6s, 9s
+                self.logger.warning(
+                    f"⚠️ Connection error {symbol} - "
+                    f"Tentativa {attempt+1}/{max_retries}, "
+                    f"aguardando {retry_delay}s"
+                )
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     continue
                 return None
                 
             except Exception as e:
-                self.logger.error(f"❌ Erro inesperado na requisição de histórico para {symbol}: {e}")
+                self._consecutive_errors += 1
+                self.logger.error(f"❌ Erro inesperado: {symbol} - {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(1.0)
+                    time.sleep(2.0)
                     continue
                 return None
         
         # Se chegou aqui, todas as tentativas falharam
-        self.logger.error(f"❌ Falha completa para {symbol} após {max_retries} tentativas")
+        self.logger.error(f"❌ Falha completa: {symbol} após {max_retries} tentativas")
         return None
 
     # ============================================================================
-    # FUNÇÕES AUXILIARES (MANTIDAS DO CÓDIGO ORIGINAL)
+    # FUNÇÕES AUXILIARES E CACHE
     # ============================================================================
 
     def _get_tick_size(self, symbol: str) -> float:
@@ -1034,6 +1161,21 @@ class PacificaAuth:
             return round(result, 5)
         else:
             return round(result, 8)  # Máximo de 8 decimais para crypto
+
+    def clear_historical_cache(self):
+        """Limpa o cache de histórico (útil para forçar refresh)"""
+        cleared_count = len(self._historical_cache)
+        self._historical_cache.clear()
+        self.logger.info(f"🧹 Cache de histórico limpo ({cleared_count} entradas removidas)")
+
+    def get_cache_stats(self) -> dict:
+        """Retorna estatísticas do cache"""
+        return {
+            'cache_size': len(self._historical_cache),
+            'consecutive_errors': self._consecutive_errors,
+            'backoff_multiplier': self._backoff_multiplier,
+            'cached_symbols': list(set(k.split('_')[0] for k in self._historical_cache.keys()))
+        }
 
     # ============================================================================
     # FUNCIONALIDADES AVANÇADAS (TP/SL PARA POSIÇÕES EXISTENTES)

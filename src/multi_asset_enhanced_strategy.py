@@ -556,9 +556,242 @@ class MultiAssetEnhancedStrategy:
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
 
     def _check_all_tp_sl(self):
-        """Verificar TP/SL manual (mesmo da versão original)"""
-        # Implementar verificação manual de TP/SL se necessário
-        pass
+        """Verificar TP/SL de todas as posições ativas (Enhanced)"""
+        if self.use_api_tp_sl:
+            # Verificar se posições têm TP/SL via API
+            self._verify_api_tp_sl()
+        else:
+            # Monitoramento manual de TP/SL
+            self._check_manual_tp_sl()
+    
+    def _verify_api_tp_sl(self):
+        """Verificar se todas as posições têm TP/SL via API (Enhanced)"""
+        if not self.active_positions:
+            return
+        
+        missing_tp_sl = []
+        
+        for position_id, position in self.active_positions.items():
+            has_tp = 'take_profit_order_id' in position and position['take_profit_order_id']
+            has_sl = 'stop_loss_order_id' in position and position['stop_loss_order_id']
+            
+            if not has_tp or not has_sl:
+                missing_tp_sl.append({
+                    'position_id': position_id,
+                    'symbol': position['symbol'],
+                    'side': position['side'],
+                    'price': position['price'],
+                    'quantity': position['quantity'],
+                    'has_tp': has_tp,
+                    'has_sl': has_sl
+                })
+        
+        if missing_tp_sl:
+            self.logger.warning(f"🧠 Enhanced: {len(missing_tp_sl)} posições sem TP/SL completo")
+            for pos in missing_tp_sl:
+                self.logger.info(f"🔧 Enhanced: Adicionando TP/SL para {pos['symbol']} - TP:{pos['has_tp']} SL:{pos['has_sl']}")
+                self._add_missing_tp_sl(pos)
+    
+    def _add_missing_tp_sl(self, position_data):
+        """Adicionar TP/SL em posição existente via API (Enhanced)"""
+        try:
+            symbol = position_data['symbol']
+            side = position_data['side']
+            entry_price = position_data['price']
+            
+            # Calcular preços de TP/SL
+            if side == 'bid' or side == 'buy':  # Long position
+                tp_stop_price = entry_price * (1 + self.take_profit_percent / 100)
+                tp_limit_price = tp_stop_price * 0.999
+                sl_stop_price = entry_price * (1 - self.stop_loss_percent / 100)
+                sl_limit_price = sl_stop_price * 1.001
+            else:  # Short position
+                tp_stop_price = entry_price * (1 - self.take_profit_percent / 100)
+                tp_limit_price = tp_stop_price * 1.001
+                sl_stop_price = entry_price * (1 + self.stop_loss_percent / 100)
+                sl_limit_price = sl_stop_price * 0.999
+            
+            # Arredondar preços com precisão Enhanced
+            tp_stop_price = round(tp_stop_price, 6)
+            tp_limit_price = round(tp_limit_price, 6)
+            sl_stop_price = round(sl_stop_price, 6)
+            sl_limit_price = round(sl_limit_price, 6)
+            
+            # Chamar API para adicionar TP/SL
+            result = self.auth.create_position_tp_sl(
+                symbol=symbol,
+                side=side,
+                take_profit_stop=tp_stop_price,
+                take_profit_limit=tp_limit_price,
+                stop_loss_stop=sl_stop_price,
+                stop_loss_limit=sl_limit_price
+            )
+            
+            if result and result.get('success'):
+                self.logger.info(f"✅ Enhanced: TP/SL adicionado para {symbol}: TP@{tp_stop_price} SL@{sl_stop_price}")
+                # Atualizar posição local
+                position_id = position_data['position_id']
+                if position_id in self.active_positions:
+                    self.active_positions[position_id].update({
+                        'take_profit_order_id': result.get('take_profit_order_id'),
+                        'stop_loss_order_id': result.get('stop_loss_order_id')
+                    })
+            else:
+                self.logger.error(f"❌ Enhanced: Falha ao adicionar TP/SL para {symbol}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced: Erro ao adicionar TP/SL: {e}")
+    
+    def _check_manual_tp_sl(self):
+        """Monitoramento manual de TP/SL Enhanced (quando USE_API_TP_SL=false)"""
+        if not self.active_positions:
+            return
+        
+        positions_to_close = []
+        
+        for position_id, position in self.active_positions.items():
+            try:
+                symbol = position['symbol']
+                entry_price = position['price']
+                side = position['side']
+                quantity = position['quantity']
+                
+                # Obter preço atual
+                current_price = self._get_current_price(symbol)
+                if not current_price:
+                    continue
+                
+                # Calcular PNL
+                if side == 'bid' or side == 'buy':  # Long
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                else:  # Short
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                
+                # Enhanced: Verificar condições com lógica melhorada
+                should_close = False
+                close_reason = ""
+                
+                # Stop Loss
+                if pnl_percent <= -self.stop_loss_percent:
+                    should_close = True
+                    close_reason = f"STOP LOSS: {pnl_percent:.2f}%"
+                
+                # Take Profit
+                elif pnl_percent >= self.take_profit_percent:
+                    should_close = True
+                    close_reason = f"TAKE PROFIT: {pnl_percent:.2f}%"
+                
+                # Enhanced: Trailing Stop (se habilitado)
+                elif self.trailing_stop_enabled:
+                    trailing_result = self._check_trailing_stop(position_id, position, current_price, pnl_percent)
+                    if trailing_result:
+                        should_close = True
+                        close_reason = trailing_result
+                
+                if should_close:
+                    positions_to_close.append({
+                        'position_id': position_id,
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': quantity,
+                        'current_price': current_price,
+                        'reason': close_reason
+                    })
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Enhanced: Erro ao verificar TP/SL manual para {position_id}: {e}")
+        
+        # Fechar posições que atingiram TP/SL
+        for pos in positions_to_close:
+            self._close_position_manual(pos)
+    
+    def _check_trailing_stop(self, position_id: str, position: dict, current_price: float, pnl_percent: float) -> str:
+        """Verificar trailing stop Enhanced"""
+        try:
+            # Inicializar tracking se não existir
+            if not hasattr(self, 'position_max_profit'):
+                self.position_max_profit = {}
+            if not hasattr(self, 'position_trailing_stops'):
+                self.position_trailing_stops = {}
+            
+            # Atualizar máximo lucro visto
+            if position_id not in self.position_max_profit:
+                self.position_max_profit[position_id] = pnl_percent
+            else:
+                self.position_max_profit[position_id] = max(self.position_max_profit[position_id], pnl_percent)
+            
+            max_profit = self.position_max_profit[position_id]
+            
+            # Se lucro atual está trailing_stop_percent abaixo do máximo
+            if max_profit > 0 and (max_profit - pnl_percent) >= self.trailing_stop_percent:
+                return f"TRAILING STOP: Max:{max_profit:.2f}% Current:{pnl_percent:.2f}%"
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro no trailing stop: {e}")
+            return None
+    
+    def _close_position_manual(self, position_data):
+        """Fechar posição manualmente por TP/SL (Enhanced)"""
+        try:
+            symbol = position_data['symbol']
+            side = position_data['side']
+            quantity = position_data['quantity']
+            current_price = position_data['current_price']
+            reason = position_data['reason']
+            
+            # Determinar lado da ordem de fechamento
+            close_side = 'ask' if side in ['bid', 'buy'] else 'bid'
+            
+            self.logger.info(f"🧠 Enhanced: Fechando posição {symbol} - {reason}")
+            
+            # Criar ordem de fechamento
+            result = self.auth.create_order(
+                symbol=symbol,
+                side=close_side,
+                amount=str(quantity),
+                price=str(current_price),
+                order_type="GTC",
+                reduce_only=True
+            )
+            
+            if result:
+                self.logger.info(f"✅ Enhanced: Ordem de fechamento criada para {symbol}")
+                # Remover da lista de posições ativas
+                position_id = position_data['position_id']
+                if position_id in self.active_positions:
+                    del self.active_positions[position_id]
+                
+                # Limpar tracking de trailing stop
+                if hasattr(self, 'position_max_profit') and position_id in self.position_max_profit:
+                    del self.position_max_profit[position_id]
+                if hasattr(self, 'position_trailing_stops') and position_id in self.position_trailing_stops:
+                    del self.position_trailing_stops[position_id]
+            else:
+                self.logger.error(f"❌ Enhanced: Falha ao criar ordem de fechamento para {symbol}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced: Erro ao fechar posição manual: {e}")
+    
+    def _get_current_price(self, symbol: str) -> float:
+        """Obter preço atual de um símbolo (Enhanced)"""
+        try:
+            # Tentar usar histórico primeiro (mais eficiente)
+            if hasattr(self, 'price_history') and symbol in self.price_history:
+                if self.price_history[symbol]:
+                    return float(self.price_history[symbol][-1])
+            
+            # Fallback para API
+            prices_data = self.auth.get_prices()
+            if prices_data and prices_data.get('success'):
+                for item in prices_data.get('data', []):
+                    if item.get('symbol') == symbol:
+                        return float(item.get('mark') or item.get('mid') or 0)
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced: Erro ao obter preço de {symbol}: {e}")
+            return 0.0
     
     def check_and_rebalance(self, current_price: float):
         """🆕 MÉTODO ESSENCIAL - Rebalancear estratégia Enhanced (compatível com bot principal)"""
@@ -571,10 +804,16 @@ class MultiAssetEnhancedStrategy:
             # 2. Analisar sinais de mercado com algoritmo melhorado
             self._analyze_market_signals()
             
-            # 3. Verificar TP/SL manual se necessário
-            if not self.use_api_tp_sl:
+            # 3. 🆕 Verificação periódica de TP/SL (Enhanced - a cada 2 ciclos)
+            if not hasattr(self, '_tp_sl_check_counter'):
+                self._tp_sl_check_counter = 0
+            self._tp_sl_check_counter += 1
+            
+            if self._tp_sl_check_counter >= 2:  # Enhanced: mais frequente
+                self.logger.debug("🔍 Enhanced: Verificação periódica de TP/SL...")
                 self._check_all_tp_sl()
-                
+                self._tp_sl_check_counter = 0
+            
             # 4. Log periódico de performance
             if hasattr(self, 'signals_detected') and self.signals_detected > 0:
                 execution_rate = (self.signals_executed / self.signals_detected) * 100
