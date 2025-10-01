@@ -1186,6 +1186,19 @@ class MultiAssetScalpingBot:
         self.logger.info(f"🔗 API calls: {self.session_stats['api_calls']}")
         self.logger.info(f"⏰ Uptime: {uptime:.1f}h")
     
+    def _log_emergency_status(self):
+        """Log periódico do sistema de emergência"""
+        stats = self.emergency_sl.get_statistics()
+        
+        if stats['total_emergency_closures'] > 0:
+            self.logger.info("🚨 Emergency SL Stats:")
+            self.logger.info(f"  Total closures: {stats['total_emergency_closures']}")
+            
+            if stats['recent_closures']:
+                self.logger.info("  Recent:")
+                for closure in stats['recent_closures']:
+                    self.logger.info(f"    {closure['symbol']}: {closure['reason']}")
+    
     def shutdown_gracefully(self):
         """Shutdown gracioso"""
         self.logger.info("🔄 SHUTDOWN GRACIOSO")

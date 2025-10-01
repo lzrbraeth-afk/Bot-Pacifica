@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger
 from src.enhanced_signal_detector import EnhancedSignalDetector
+from src.emergency_sl_system import EmergencyStopLoss
 
 class MultiAssetEnhancedStrategy:
     def __init__(self, auth_client, calculator, position_manager):
@@ -74,12 +75,27 @@ class MultiAssetEnhancedStrategy:
         # 🔧 CACHE PARA SYMBOL_INFO (precisa existir antes de _initialize_symbols)
         self.symbol_info_cache = {}
 
-        # 🆕 INICIALIZAR ESTRUTURAS PARA CADA SÍMBOLO COM VALIDAÇÃO
+        # INICIALIZAR ESTRUTURAS PARA CADA SÍMBOLO COM VALIDAÇÃO
         self._initialize_symbols()
         
         self.logger.strategy_info(f"Enhanced Multi-Asset inicializada com {len(self.symbols)} símbolos")
         self.logger.info(f"🧠 Algoritmo melhorado: Quality ≥ {self.enhanced_min_signal_quality}, Confidence ≥ {self.enhanced_min_confidence}")
         
+        self._tp_sl_check_counter = 0
+
+        # CAMADA 3: Emergency Stop Loss
+        self.emergency_sl = EmergencyStopLoss(
+            auth_client=self.auth,
+            position_manager=self.position_mgr,
+            logger=self.logger
+        )
+        
+        self.logger.info("✅ Sistema de 3 camadas ativado:")
+        self.logger.info("  Camada 1: TP/SL da API (criado com ordem)")
+        self.logger.info("  Camada 2: Shadow SL (monitoramento interno)")
+        self.logger.info("  Camada 3: Emergency SL (fail-safe)")
+
+
     def get_symbol_info_cached(self, symbol: str):
         """Obtém symbol_info com cache para evitar requisições duplicadas"""
         if symbol not in self.symbol_info_cache:
@@ -91,11 +107,21 @@ class MultiAssetEnhancedStrategy:
         return self.symbol_info_cache[symbol]
     
     def _initialize_symbols(self):
-        """🆕 INICIALIZAR estruturas para cada símbolo com validação detalhada"""
+        """Inicializar estruturas para cada símbolo com validação"""
         for symbol in self.symbols:
             self.price_history[symbol] = []
-            self.lot_sizes[symbol] = self.get_lot_size(symbol)  # Chama validação detalhada
-            self.symbol_positions[symbol] = 0    
+            
+            # ✅ Preencher cache e validar
+            symbol_info = self.get_symbol_info_cached(symbol)
+            if symbol_info:
+                tick_size = symbol_info.get('tick_size')
+                lot_size = symbol_info.get('lot_size')
+                self.logger.info(f"✅ {symbol}: tick_size={tick_size}, lot_size={lot_size}")
+            else:
+                self.logger.warning(f"⚠️ {symbol}: Não foi possível obter symbol_info")
+            
+            self.lot_sizes[symbol] = self.get_lot_size(symbol)
+            self.symbol_positions[symbol] = 0   
 
     def _parse_symbols(self) -> List[str]:
         """Parse dos símbolos do .env"""
@@ -548,6 +574,35 @@ class MultiAssetEnhancedStrategy:
                 order_id = order_data.get('order_id')
                 position_id = f"{symbol}_{int(time.time())}"
                 
+                # 🔍 LOG DETALHADO DO QUE A API RETORNA
+                self.logger.info("=" * 60)
+                self.logger.info(f"DEBUG: Resposta da API para {symbol}")
+                self.logger.info(f"Campos disponíveis: {list(order_data.keys())}")
+                self.logger.info(f"Dados completos: {order_data}")
+                self.logger.info("=" * 60)
+                
+                # Procurar IDs de TP/SL em diferentes formatos possíveis
+                tp_id = None
+                sl_id = None
+                
+                # Formato 1: Campos diretos
+                tp_id = order_data.get('take_profit_order_id')
+                sl_id = order_data.get('stop_loss_order_id')
+                
+                # Formato 2: Campos alternativos
+                if not tp_id:
+                    tp_id = order_data.get('tp_order_id') or order_data.get('takeProfitOrderId')
+                if not sl_id:
+                    sl_id = order_data.get('sl_order_id') or order_data.get('stopLossOrderId')
+                
+                # Formato 3: Dentro de sub-objetos
+                if not tp_id and 'take_profit' in order_data:
+                    tp_id = order_data['take_profit'].get('order_id')
+                if not sl_id and 'stop_loss' in order_data:
+                    sl_id = order_data['stop_loss'].get('order_id')
+                
+                self.logger.info(f"IDs encontrados: TP={tp_id}, SL={sl_id}")
+
                 # Salvar posição
                 position_info = {
                     'symbol': symbol,
@@ -621,96 +676,8 @@ class MultiAssetEnhancedStrategy:
         if missing_tp_sl:
             self.logger.warning(f"🧠 Enhanced: {len(missing_tp_sl)} posições sem TP/SL completo")
             for pos in missing_tp_sl:
-                self.logger.info(f"🔧 Enhanced: Adicionando TP/SL para {pos['symbol']} - TP:{pos['has_tp']} SL:{pos['has_sl']}")
-                self._add_missing_tp_sl(pos)
-    
-    def _add_missing_tp_sl(self, position_data):
-        """Adicionar TP/SL em posição existente via API (Enhanced)"""
-        try:
-            symbol = position_data['symbol']
-            side = position_data['side']
-            entry_price = position_data['price']
-            position_id = position_data['position_id']
-            
-            # 🔧 VERIFICAR SE A POSIÇÃO AINDA EXISTE NA API
-            self.logger.info(f"🔍 Enhanced: Verificando se posição {symbol} ainda existe na API...")
-            
-            # Buscar posições atuais da API
-            api_positions = self.auth.get_positions()
-            if not api_positions:
-                self.logger.warning(f"⚠️ Enhanced: Não foi possível obter posições da API para verificar {symbol}")
-            else:
-                # Verificar se a posição local ainda existe na API
-                position_found = False
-                for api_pos in api_positions:
-                    if api_pos.get('symbol') == symbol and api_pos.get('side') == side:
-                        position_found = True
-                        self.logger.info(f"✅ Enhanced: Posição {symbol} {side} confirmada na API")
-                        break
-                
-                if not position_found:
-                    self.logger.warning(f"❌ Enhanced: Posição {symbol} {side} NÃO encontrada na API - removendo local")
-                    # Remover posição local que não existe mais na API
-                    if position_id in self.active_positions:
-                        del self.active_positions[position_id]
-                    return False
-            
-            # 🔧 CORREÇÃO CRÍTICA: Usar preço ATUAL, não preço de entrada
-            current_price = self._get_current_price(symbol)
-            if not current_price:
-                self.logger.error(f"❌ Enhanced: Não foi possível obter preço atual para {symbol}")
-                return False
-            
-            # Log da correção de preço
-            price_change_percent = ((current_price - entry_price) / entry_price) * 100
-            self.logger.info(f"💰 Enhanced: {symbol} - Entry: ${entry_price:.6f}, Atual: ${current_price:.6f} ({price_change_percent:+.2f}%)")
-            
-            # Calcular preços de TP/SL baseado no preço ATUAL
-            if side == 'bid':  # Long position (comprando)
-                tp_stop_price = current_price * (1 + self.take_profit_percent / 100)
-                tp_limit_price = tp_stop_price * 0.999
-                sl_stop_price = current_price * (1 - self.stop_loss_percent / 100)
-                sl_limit_price = sl_stop_price * 1.001
-            else:  # Short position - side == 'ask'
-                tp_stop_price = current_price * (1 - self.take_profit_percent / 100)
-                tp_limit_price = tp_stop_price * 0.999  
-                sl_stop_price = current_price * (1 + self.stop_loss_percent / 100)
-                sl_limit_price = sl_stop_price * 1.001  
-            
-            # 🔧 CORREÇÃO CRÍTICA: Arredondar para tick_size em vez de decimais fixos
-            # Os preços serão arredondados novamente na função create_position_tp_sl,
-            # mas já enviamos valores aproximados para melhor logging
-            
-            # Chamar API para adicionar TP/SL (função fará arredondamento final)
-            result = self.auth.create_position_tp_sl(
-                symbol=symbol,
-                side=side,
-                take_profit_stop=tp_stop_price,
-                take_profit_limit=tp_limit_price,
-                stop_loss_stop=sl_stop_price,
-                stop_loss_limit=sl_limit_price
-            )
-            
-            if result and result.get('success'):
-                self.logger.info(f"✅ TP/SL criado para {symbol}: TP@{tp_stop_price} SL@{sl_stop_price}")
-                
-                # Aguardar processamento pela API
-                time.sleep(2)
-                
-                # Buscar IDs das ordens TP/SL criadas
-                tp_sl_ids = self._find_tpsl_orders_for_position(symbol, side)
-                
-                # Atualizar posição local se IDs foram encontrados
-                if tp_sl_ids.get('take_profit_order_id') or tp_sl_ids.get('stop_loss_order_id'):
-                    position_id = position_data['position_id']
-                    if position_id in self.active_positions:
-                        self.active_positions[position_id].update(tp_sl_ids)
-                        self.logger.info(f"✅ IDs TP/SL salvos: TP={tp_sl_ids.get('take_profit_order_id')}, SL={tp_sl_ids.get('stop_loss_order_id')}")
-                else:
-                    self.logger.warning(f"⚠️ TP/SL criado mas IDs não encontrados - será verificado no próximo ciclo")
-                
-        except Exception as e:
-            self.logger.error(f"❌ Enhanced: Erro ao adicionar TP/SL: {e}")
+                self.logger.warning(f"⚠️ Enhanced: {pos['symbol']} sem TP/SL - monitoramento interno ativo")
+                # Não tenta adicionar via API - depende do monitoramento interno
     
     def _find_tpsl_orders_for_position(self, symbol: str, side: str) -> dict:
         """
@@ -950,21 +917,36 @@ class MultiAssetEnhancedStrategy:
             # 2. Analisar sinais de mercado com algoritmo melhorado
             self._analyze_market_signals()
             
-            # 3. 🆕 Verificação periódica de TP/SL (Enhanced - a cada 2 ciclos)
-            if not hasattr(self, '_tp_sl_check_counter'):
-                self._tp_sl_check_counter = 0
+            # 3. Verificação periódica de TP/SL (camada 2)
             self._tp_sl_check_counter += 1
-            
-            if self._tp_sl_check_counter >= 2:  # Enhanced: mais frequente
+
+            if self._tp_sl_check_counter >= 1:
                 self.logger.debug("🔍 Enhanced: Verificação periódica de TP/SL...")
                 self._check_all_tp_sl()
                 self._tp_sl_check_counter = 0
+
+            # CAMADA 3: Emergency SL (verificação independente)
+            self.emergency_sl.check_all_positions(self.active_positions)
+
+            # 🔍 LOG PERIÓDICO DE STATUS (a cada 10 verificações)
+            if not hasattr(self, '_emergency_log_counter'):
+                self._emergency_log_counter = 0
+            self._emergency_log_counter += 1
+
+            if self._emergency_log_counter >= 10:
+                stats = self.emergency_sl.get_statistics()
+                self.logger.info("=" * 60)
+                self.logger.info("🚨 EMERGENCY SL STATUS (Camada 3)")
+                self.logger.info(f"  Total emergency closures: {stats['total_emergency_closures']}")
+                self.logger.info(f"  Posições em loss monitoradas: {stats['positions_currently_in_loss']}")
+                self.logger.info("=" * 60)
+                self._emergency_log_counter = 0
             
             # 4. Log periódico de performance
             if hasattr(self, 'signals_detected') and self.signals_detected > 0:
                 execution_rate = (self.signals_executed / self.signals_detected) * 100
                 self.logger.debug(f"📊 Enhanced: {self.signals_executed}/{self.signals_detected} sinais executados ({execution_rate:.1f}%)")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Erro no rebalanceamento Enhanced: {e}")
     
