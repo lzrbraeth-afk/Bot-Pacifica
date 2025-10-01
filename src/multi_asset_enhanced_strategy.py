@@ -247,19 +247,41 @@ class MultiAssetEnhancedStrategy:
         self.logger.strategy_info("Inicializando Enhanced Multi-Asset Strategy...")
         
         try:
-            # Inicializar histórico de preços expandido
+            # 1. Inicializar histórico de preços expandido
             prices = self.auth.get_prices()
             if prices and 'data' in prices:
                 for item in prices['data']:
                     symbol = item.get('symbol')
                     price = item.get('mark') or item.get('mid')
                     if symbol in self.symbols and price:
-                        # Inicializar com preço atual (histórico será construído)
                         self.price_history[symbol] = [float(price)]
                         
             self.logger.info(f"✅ Preços iniciais carregados para {len(self.price_history)} símbolos")
             
-            # Log das configurações melhoradas
+            # 2. Sincronizar posições existentes na API
+            self.logger.info("🔄 Sincronizando com posições existentes na API...")
+            self._sync_positions_with_api()
+            
+            if self.active_positions:
+                self.logger.warning(f"⚠️ {len(self.active_positions)} posições existentes encontradas na API")
+                for pos_id, pos in self.active_positions.items():
+                    self.logger.info(f"  - {pos['symbol']}: {pos['quantity']} @ ${pos['price']:.2f}")
+            else:
+                self.logger.info("✅ Nenhuma posição existente - começando do zero")
+            
+            # 3. Executar Emergency SL imediatamente se houver posições
+            if self.active_positions:
+                self.logger.warning("🚨 Executando Emergency SL inicial nas posições existentes...")
+                self.emergency_sl.check_all_positions(self.active_positions)
+                
+                # Aguardar alguns segundos para processar
+                time.sleep(2)
+                
+                # Verificar se alguma posição foi fechada
+                remaining = len(self.active_positions)
+                self.logger.info(f"✅ Verificação inicial concluída - {remaining} posições ativas")
+            
+            # 4. Log das configurações melhoradas
             status = self.signal_detector.get_algorithm_status()
             self.logger.info(f"🧠 Algoritmo: {status['version']} com {len(status['indicators'])} indicadores")
             self.logger.info(f"🎯 Pesos: Momentum={status['weights']['momentum']}% | Trend={status['weights']['trend']}% | RSI={status['weights']['rsi']}%")
@@ -269,7 +291,7 @@ class MultiAssetEnhancedStrategy:
         except Exception as e:
             self.logger.error(f"❌ Erro ao inicializar Enhanced Strategy: {e}")
             return False
-    
+        
     def check_filled_orders(self, current_price: float):
         """Verifica ordens executadas e analisa sinais - método compatível"""
         try:
@@ -755,6 +777,86 @@ class MultiAssetEnhancedStrategy:
             self.logger.debug(traceback.format_exc())
             return {}
     
+    def _sync_positions_with_api(self):
+        """
+        Sincroniza posições internas com API
+        Detecta posições que estão na API mas não no tracking
+        """
+        try:
+            api_positions = self.auth.get_positions()
+            
+            if not api_positions:
+                return
+            
+            current_symbols = set(pos['symbol'] for pos in self.active_positions.values())
+            api_symbols = set(pos.get('symbol') for pos in api_positions)
+            
+            # Detectar posições que estão na API mas NÃO no tracking
+            missing_in_tracking = api_symbols - current_symbols
+            
+            if missing_in_tracking:
+                self.logger.warning(f"⚠️ Posições na API mas SEM tracking: {missing_in_tracking}")
+                
+                # Adicionar ao tracking
+                for api_pos in api_positions:
+                    symbol = api_pos.get('symbol')
+                    if symbol in missing_in_tracking:
+                        self._add_orphan_position(api_pos)
+            
+            # Detectar posições que estão no tracking mas NÃO na API
+            missing_in_api = current_symbols - api_symbols
+            
+            if missing_in_api:
+                self.logger.warning(f"⚠️ Posições no tracking mas NÃO na API: {missing_in_api}")
+                
+                # Remover do tracking
+                positions_to_remove = [
+                    pid for pid, pos in self.active_positions.items() 
+                    if pos['symbol'] in missing_in_api
+                ]
+                for pid in positions_to_remove:
+                    self.logger.info(f"🗑️ Removendo tracking órfão: {pid}")
+                    del self.active_positions[pid]
+                    
+        except Exception as e:
+            self.logger.error(f"Erro ao sincronizar posições: {e}")
+
+    def _add_orphan_position(self, api_position):
+        """Adiciona posição órfã com entry price CORRETO da API"""
+        try:
+            symbol = api_position.get('symbol')
+            side = api_position.get('side')
+            amount = abs(float(api_position.get('amount', 0)))
+            
+            # ✅ USAR ENTRY PRICE DA API, NÃO O PREÇO ATUAL
+            entry_price = float(api_position.get('entry_price', 0))
+            
+            # Se API não retornar entry_price, tentar outros campos
+            if entry_price <= 0:
+                entry_price = float(api_position.get('avg_entry_price', 0))
+            
+            if entry_price <= 0:
+                # Último recurso: usar preço atual MAS logar warning
+                entry_price = self._get_current_price(symbol)
+                self.logger.warning(f"⚠️ {symbol}: API não retornou entry_price, usando preço atual ${entry_price}")
+            
+            position_id = f"{symbol}_orphan_{int(time.time())}"
+            
+            self.active_positions[position_id] = {
+                'symbol': symbol,
+                'side': side,
+                'quantity': amount,
+                'price': entry_price,  # ✅ Entry real da API
+                'order_id': 'unknown',
+                'timestamp': datetime.now(),
+                'orphan': True
+            }
+            
+            self.logger.warning(f"➕ Posição órfã adicionada: {symbol} {side} @ ${entry_price:.6f}")
+            
+        except Exception as e:
+            self.logger.error(f"Erro ao adicionar posição órfã: {e}")
+    
     def _check_manual_tp_sl(self):
         """Monitoramento manual de TP/SL Enhanced (quando USE_API_TP_SL=false)"""
         if not self.active_positions:
@@ -946,6 +1048,16 @@ class MultiAssetEnhancedStrategy:
             if hasattr(self, 'signals_detected') and self.signals_detected > 0:
                 execution_rate = (self.signals_executed / self.signals_detected) * 100
                 self.logger.debug(f"📊 Enhanced: {self.signals_executed}/{self.signals_detected} sinais executados ({execution_rate:.1f}%)")
+
+            # Sincronizar com API a cada 5 ciclos
+            if not hasattr(self, '_sync_counter'):
+                self._sync_counter = 0
+            self._sync_counter += 1
+            
+            if self._sync_counter >= 5:
+                self.logger.debug("🔄 Sincronizando posições com API...")
+                self._sync_positions_with_api()
+                self._sync_counter = 0
 
         except Exception as e:
             self.logger.error(f"❌ Erro no rebalanceamento Enhanced: {e}")

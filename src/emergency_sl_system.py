@@ -84,8 +84,17 @@ class EmergencyStopLoss:
             if not current_price or current_price <= 0:
                 return
             
+             # 🔍 LOG DETALHADO ANTES DE CALCULAR PNL
+            self.logger.info(f"🔍 Verificando {symbol}:")
+            self.logger.info(f"   Entry price salvo: ${entry_price}")
+            self.logger.info(f"   Current price: ${current_price}")
+            self.logger.info(f"   Side salvo: {side}")
+            self.logger.info(f"   Quantity: {quantity}")
+            
             # Calcular PNL
             pnl_percent = self._calculate_pnl_percent(side, entry_price, current_price)
+            
+            self.logger.info(f"   PNL calculado: {pnl_percent:.2f}%")
             
             # Verificar tempo da posição
             position_age = self._get_position_age(position)
