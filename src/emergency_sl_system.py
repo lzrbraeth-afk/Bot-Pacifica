@@ -184,7 +184,30 @@ class EmergencyStopLoss:
             
             # Arredondar quantidade para lot_size
             lot_size = self._get_lot_size(symbol)
-            quantity_rounded = round(quantity / lot_size) * lot_size
+            
+            # 🔧 USAR DECIMAL PARA EVITAR ERRO DE PRECISÃO
+            from decimal import Decimal, ROUND_DOWN
+            
+            quantity_dec = Decimal(str(quantity))
+            lot_size_dec = Decimal(str(lot_size))
+            
+            # Arredondar para baixo para múltiplo do lot_size
+            multiple = int(quantity_dec / lot_size_dec)
+            quantity_rounded = float(multiple * lot_size_dec)
+            
+            # Garantir que não seja zero
+            if quantity_rounded < lot_size:
+                quantity_rounded = lot_size
+            
+            # Formatar com precisão baseada no lot_size
+            if lot_size >= 1:
+                quantity_rounded = round(quantity_rounded, 0)
+            elif lot_size >= 0.01:
+                quantity_rounded = round(quantity_rounded, 2)
+            elif lot_size >= 0.001:
+                quantity_rounded = round(quantity_rounded, 3)
+            else:
+                quantity_rounded = round(quantity_rounded, 4)
             
             self.logger.error(f"Executando fechamento: {close_side} {quantity_rounded} @ ${execution_price}")
             
