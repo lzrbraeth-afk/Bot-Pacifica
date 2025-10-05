@@ -322,12 +322,30 @@ class GridCalculator:
         # Calcular resultado
         result = multiples * self.lot_size
         
-        # Determinar precisão decimal baseado no lot_size
-        lot_str = str(self.lot_size)
+        # ✅ TRATAMENTO ESPECIAL PARA LOT_SIZE >= 1 (como ENA)
+        if self.lot_size >= 1:
+            return float(int(result))  # Forçar número inteiro
+        
+        # ✅ CORREÇÃO: Forçar formato decimal antes de contar decimais
+        # Converter notação científica para decimal explícito
+        lot_str = f"{self.lot_size:.10f}"  # Força formato 0.0000100000
+        
         if '.' in lot_str:
-            decimals = len(lot_str.split('.')[1].rstrip('0'))
+            decimals = len(lot_str.rstrip('0').split('.')[1])  # Remove zeros à direita
         else:
             decimals = 0
+        
+        # Log de debug (opcional - remover depois)
+        if result == 0 and quantity > 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ Arredondamento para zero detectado!")
+            logger.warning(f"   quantity: {quantity}")
+            logger.warning(f"   lot_size: {self.lot_size}")
+            logger.warning(f"   lot_str: {lot_str}")
+            logger.warning(f"   decimals: {decimals}")
+            logger.warning(f"   multiples: {multiples}")
+            logger.warning(f"   result: {result}")
         
         # Retornar com precisão correta
         return round(result, max(decimals, 2))  # Mínimo 2 decimais para segurança

@@ -51,74 +51,403 @@ class PositionManager:
         if self.auto_close_on_limit:
             self.logger.info(f"🔧 Auto-close ATIVADO: {self.auto_close_strategy}, {self.auto_close_percentage}%")
     
+    def get_current_exposure(self, symbol: Optional[str] = None) -> float:
+        """
+        Calcula exposição ATUAL baseada em posições reais da API
+        
+        IMPORTANTE: API Pacifica não retorna positionValue ou markPrice,
+        então calculamos: amount × preço_atual
+        
+        Args:
+            symbol: Se fornecido, retorna exposição apenas deste símbolo
+            
+        Returns:
+            float: Exposição total em USD baseada no valor atual das posições
+        """
+        try:
+            # Buscar posições abertas da API
+            positions = self.auth.get_positions()
+            
+            if not positions:
+                self.logger.debug("📊 Nenhuma posição aberta - exposição = $0")
+                return 0.0
+            
+            total_exposure = 0.0
+            
+            for position in positions:
+                pos_symbol = position.get('symbol', '')
+                
+                # Filtrar por símbolo se especificado
+                if symbol and pos_symbol != symbol:
+                    continue
+                
+                # ✅ CAMPOS QUE A API RETORNA
+                amount = abs(float(position.get('amount', 0)))
+                entry_price = float(position.get('entry_price', position.get('entryPrice', 0)))
+                side = position.get('side', 'bid')
+                
+                if amount == 0:
+                    continue
+                
+                # 🎯 OBTER PREÇO ATUAL DO MERCADO
+                current_price = self._get_current_price(pos_symbol)
+                
+                # Se não conseguir preço atual, usar entry_price como fallback
+                if current_price == 0:
+                    current_price = entry_price
+                    self.logger.warning(
+                        f"⚠️ {pos_symbol}: Usando entry_price como fallback "
+                        f"(não conseguiu obter preço atual)"
+                    )
+                
+                # ✅ CALCULAR VALOR ATUAL DA POSIÇÃO
+                position_value = amount * current_price
+                
+                total_exposure += position_value
+                
+                self.logger.debug(f"📊 {pos_symbol}:")
+                self.logger.debug(f"   Side: {side}")
+                self.logger.debug(f"   Amount: {amount:.4f}")
+                self.logger.debug(f"   Entry Price: ${entry_price:.4f}")
+                self.logger.debug(f"   Current Price: ${current_price:.4f}")
+                self.logger.debug(f"   Position Value: ${position_value:.2f}")
+            
+            if total_exposure > 0:
+                self.logger.info(f"💰 Exposição total calculada: ${total_exposure:.2f}")
+            else:
+                self.logger.debug(f"💰 Exposição total: ${total_exposure:.2f}")
+            
+            return total_exposure
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao calcular exposição atual: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            # Fallback para método antigo
+            return self._fallback_exposure_calculation()
+
+    def _get_current_price(self, symbol: str) -> float:
+        """
+        Obtém preço atual do símbolo com fallback em cascata
+        
+        Tenta obter preço na seguinte ordem:
+        1. mark (mark price - preferencial)
+        2. mid (preço médio)
+        3. last (último trade)
+        4. bid (melhor oferta de compra)
+        
+        Args:
+            symbol: Símbolo do ativo (ex: 'XRP', 'SOL')
+            
+        Returns:
+            float: Preço atual ou 0.0 se não encontrado
+        """
+        try:
+            # Buscar preços da API
+            price_data = self.auth.get_prices()
+            
+            # Validar resposta
+            if not price_data or 'data' not in price_data:
+                self.logger.warning("⚠️ Dados de preço não encontrados na resposta")
+                return 0.0
+            
+            # Verificar flag de sucesso (se existir)
+            if price_data.get('success') == False:
+                self.logger.warning(f"⚠️ API de preços retornou success=False")
+                return 0.0
+            
+            # Procurar símbolo nos dados
+            for item in price_data['data']:
+                item_symbol = item.get('symbol', '')
+                
+                if item_symbol == symbol:
+                    # ✅ FALLBACK EM CASCATA
+                    # Tentar mark primeiro (mais confiável)
+                    price = float(item.get('mark', 0))
+                    
+                    # Se mark = 0, tentar alternativas
+                    if price == 0:
+                        price = float(item.get('mid', 0))
+                    
+                    if price == 0:
+                        price = float(item.get('last', 0))
+                    
+                    if price == 0:
+                        price = float(item.get('bid', 0))
+                    
+                    # Validar se encontrou preço válido
+                    if price > 0:
+                        self.logger.debug(f"✅ Preço {symbol}: ${price:.4f}")
+                        return price
+                    else:
+                        self.logger.warning(f"⚠️ Nenhum preço válido encontrado para {symbol}")
+                        return 0.0
+            
+            # Se não encontrou o símbolo
+            self.logger.warning(f"⚠️ Símbolo {symbol} não encontrado nos dados de preço")
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao obter preço atual: {e}")
+            return 0.0
+
+    def _fallback_exposure_calculation(self) -> float:
+        """
+        Método de fallback: calcula exposição baseado em ordens abertas
+        """
+        total = sum(o.get('value', 0) for o in self.open_orders.values())
+        self.logger.warning(f"⚠️ Usando cálculo de fallback (ordens): ${total:.2f}")
+        return total
+
+    def get_position_summary(self, symbol: Optional[str] = None) -> Dict:
+        """
+        Retorna resumo detalhado das posições
+        
+        Returns:
+            Dict com informações de exposição e posições
+        """
+        try:
+            positions = self.auth.get_positions()
+            
+            if not positions:
+                return {
+                    'total_exposure': 0.0,
+                    'position_count': 0,
+                    'positions': [],
+                    'utilization_percent': 0.0
+                }
+            
+            position_list = []
+            total_exposure = 0.0
+            
+            for pos in positions:
+                pos_symbol = pos.get('symbol', '')
+                
+                if symbol and pos_symbol != symbol:
+                    continue
+                
+                # Dados da posição
+                quantity = abs(float(pos.get('amount', 0)))
+
+                # ✅ CORRETO: Usar 'or' para fallback
+                entry_price = float(pos.get('entry_price') or pos.get('entryPrice') or 0)
+                mark_price = float(pos.get('mark_price') or pos.get('markPrice') or 0)
+                position_value = abs(float(pos.get('position_value') or pos.get('positionValue') or 0))
+
+                # Calcular PnL
+                pnl_value = float(pos.get('pnl', 0))
+                pnl_percent = float(pos.get('pnl_percent') or pos.get('pnlPercent') or 0)
+                
+                position_info = {
+                    'symbol': pos_symbol,
+                    'size': quantity,
+                    'side': pos.get('side', ''),
+                    'entry_price': entry_price,
+                    'mark_price': mark_price,
+                    'position_value': position_value,
+                    'pnl': pnl_value,
+                    'pnl_percent': pnl_percent,
+                    'margin': position_value / self.leverage,
+                    'liquidation_price': float(pos.get('liquidationPrice', 0))
+                }
+                
+                position_list.append(position_info)
+                total_exposure += position_value
+            
+            utilization = (total_exposure / self.max_position_size * 100) if self.max_position_size > 0 else 0
+            
+            return {
+                'total_exposure': total_exposure,
+                'position_count': len(position_list),
+                'positions': position_list,
+                'utilization_percent': utilization,
+                'max_position_size': self.max_position_size,
+                'available_capacity': max(0, self.max_position_size - total_exposure)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao obter resumo de posições: {e}")
+            return {
+                'total_exposure': 0.0,
+                'position_count': 0,
+                'positions': [],
+                'utilization_percent': 0.0,
+                'error': str(e)
+            }
+        
+    def log_exposure_status(self):
+        """
+        Log detalhado do status de exposição atual
+        """
+        try:
+            summary = self.get_position_summary()
+            
+            self.logger.info("=" * 60)
+            self.logger.info("📊 STATUS DE EXPOSIÇÃO")
+            self.logger.info("=" * 60)
+            self.logger.info(f"💰 Exposição Total: ${summary['total_exposure']:.2f}")
+            self.logger.info(f"🎯 Limite Máximo: ${summary['max_position_size']:.2f}")
+            self.logger.info(f"📈 Utilização: {summary['utilization_percent']:.1f}%")
+            self.logger.info(f"✅ Capacidade Disponível: ${summary['available_capacity']:.2f}")
+            self.logger.info(f"📦 Posições Abertas: {summary['position_count']}")
+            
+            if summary['positions']:
+                self.logger.info("-" * 60)
+                for pos in summary['positions']:
+                    pnl_emoji = "🟢" if pos['pnl'] >= 0 else "🔴"
+                    self.logger.info(
+                        f"{pnl_emoji} {pos['symbol']}: "
+                        f"{pos['size']} @ ${pos['mark_price']:.2f} | "
+                        f"Valor: ${pos['position_value']:.2f} | "
+                        f"PnL: ${pos['pnl']:.2f} ({pos['pnl_percent']:.2f}%)"
+                    )
+            
+            self.logger.info("=" * 60)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao logar status de exposição: {e}")
+    
+    def _load_positions_from_api(self):
+        """Carrega posições diretamente da API usando mesma lógica de get_current_exposure"""
+        try:
+            self.logger.info(f"📍 Carregando detalhes das posições...")
+            
+            # Buscar posições pela API (mesmo método que funciona)
+            positions_response = self.auth.get_positions()
+            
+            if not positions_response:
+                self.logger.warning("Sem dados de posições")
+                self.positions.clear()
+                return
+            
+            # Limpar posições antigas
+            self.positions.clear()
+            
+            # Processar cada posição
+            for pos in positions_response:
+                symbol = pos.get('symbol')
+                if not symbol:
+                    continue
+                
+                # ✅ USAR CAMPOS CORRETOS DA API
+                amount = abs(float(pos.get('amount', 0)))
+                entry_price = float(pos.get('entry_price', pos.get('entryPrice', 0)))
+                side = pos.get('side', 'bid')
+                
+                if amount == 0 or entry_price == 0:
+                    continue
+                
+                # Determinar se é long ou short
+                # Se side='bid' geralmente é long, 'ask' é short
+                quantity = amount if side == 'bid' else -amount
+                
+                self.positions[symbol] = {
+                    'quantity': quantity,
+                    'avg_price': entry_price,
+                    'realized_pnl': float(pos.get('realized_pnl', 0)),
+                    'unrealized_pnl': float(pos.get('unrealized_pnl', 0)),
+                    'entry_price': entry_price,
+                    'side': side,
+                    'amount': amount
+                }
+                
+                self.logger.info(f"✅ Posição {symbol}: {quantity:+.4f} @ ${entry_price:.4f}")
+            
+            self.logger.info(f"📍 {len(self.positions)} posições carregadas: {list(self.positions.keys())}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao carregar posições: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+
     def update_account_state(self) -> bool:
-        """Atualiza estado da conta (saldo, margem, posições) COM CORREÇÃO"""
+        """Atualiza estado da conta (saldo, margem, posições)"""
         
         try:
             self.logger.info("🔄 Atualizando estado da conta...")
             
-            # 1. Obter dados da conta
             account_data = self.auth.get_account_info()
             
-            if account_data and 'data' in account_data:
-                data = account_data['data']
-                
-                # Extrair informações conforme documentação
-                self.account_balance = float(data.get('balance', 0))
-                account_equity = float(data.get('account_equity', 0))
-                self.margin_available = float(data.get('available_to_spend', 0))
-                self.margin_used = float(data.get('total_margin_used', 0))
-                
-                positions_count = data.get('positions_count', 0)
-                orders_count = data.get('orders_count', 0)
-                
-                self.logger.info(f"💰 Saldo: ${self.account_balance:.2f}")
-                self.logger.info(f"💰 Equity: ${account_equity:.2f}")
-                self.logger.info(f"💰 Margem Usada: ${self.margin_used:.2f}")
-                self.logger.info(f"💰 Margem Disponível: ${self.margin_available:.2f}")
-                self.logger.info(f"📊 Posições: {positions_count} | Ordens: {orders_count}")
-                
-                # Atualizar contadores internos baseado no estado real da API
-                self._sync_internal_state_with_api()
-                
-                # 🆕 Verificar auto-close baseado no valor da posição atual
-                self._check_position_size_and_auto_close()
-                
-                # 🆕 Simular posição baseada na margem usada para auto-close
-                # Se temos margem usada > 0, deve haver posições
-                if self.margin_used > 0:
-                    symbol = os.getenv('SYMBOL', 'SOL')
-                    
-                    # Estimar quantidade da posição baseada na margem usada
-                    # Assumir que toda margem usada é de uma posição long no símbolo principal
-                    estimated_position_value = self.margin_used * self.leverage
-                    current_price = self._get_current_price(symbol)
-                    
-                    if current_price > 0:
-                        estimated_quantity = estimated_position_value / current_price
-                        
-                        # Atualizar posição simulada
-                        self.positions[symbol] = {
-                            'symbol': symbol,
-                            'side': 'long',  # Assumir long baseado na margem positiva
-                            'quantity': estimated_quantity,
-                            'entry_price': current_price,  # Aproximação
-                            'value': estimated_position_value,
-                            'pnl': 0,  # Não temos PnL real
-                            'simulated': True  # Marcar como simulado
-                        }
-                        
-                        self.logger.debug(f"📊 Posição simulada: {symbol} = {estimated_quantity:.6f} (${estimated_position_value:.2f})")
-                
-                return True
-            else:
-                self.logger.error("❌ Falha ao obter dados da conta")
+            if not account_data:
+                self.logger.error("❌ get_account_info() retornou None")
                 return False
             
+            self.logger.info(f"📦 Resposta recebida: success={account_data.get('success')}")
+            
+            if not account_data.get('success'):
+                error_msg = account_data.get('error', 'Erro desconhecido')
+                self.logger.error(f"❌ success=false: {error_msg}")
+                return False
+            
+            if 'data' not in account_data:
+                self.logger.error("❌ Chave 'data' não encontrada")
+                return False
+            
+            # 🔥 SUPORTAR AMBOS: ARRAY OU OBJETO
+            raw_data = account_data['data']
+            
+            self.logger.info(f"📋 Tipo de 'data': {type(raw_data)}")
+            
+            if isinstance(raw_data, list):
+                self.logger.info("   → Formato ARRAY")
+                if len(raw_data) == 0:
+                    self.logger.error("❌ Array vazio")
+                    return False
+                data = raw_data[0]
+            elif isinstance(raw_data, dict):
+                self.logger.info("   → Formato OBJETO")
+                data = raw_data
+            else:
+                self.logger.error(f"❌ Formato desconhecido: {type(raw_data)}")
+                return False
+            
+            # Extrair valores
+            self.account_balance = float(data.get('balance', 0))
+            account_equity = float(data.get('account_equity', 0))
+            self.margin_available = float(data.get('available_to_spend', 0))
+            self.margin_used = float(data.get('total_margin_used', 0))
+            
+            positions_count = int(data.get('positions_count', 0))
+            orders_count = int(data.get('orders_count', 0))
+            
+            # Log dos valores
+            self.logger.info("=" * 70)
+            self.logger.info("💰 ESTADO DA CONTA:")
+            self.logger.info(f"   Saldo: ${self.account_balance:.2f}")
+            self.logger.info(f"   Equity: ${account_equity:.2f}")
+            self.logger.info(f"   Margem Usada: ${self.margin_used:.2f}")
+            self.logger.info(f"   Margem Disponível: ${self.margin_available:.2f}")
+            
+            if self.account_balance > 0:
+                margin_percent = (self.margin_available / self.account_balance) * 100
+                self.logger.info(f"   Margem Livre: {margin_percent:.1f}%")
+            
+            self.logger.info(f"   Posições: {positions_count}")
+            self.logger.info(f"   Ordens: {orders_count}")
+            self.logger.info("=" * 70)
+
+            if positions_count > 0:
+                self._load_positions_from_api()
+        
+            return True
+            
         except Exception as e:
-            self.logger.error(f"❌ Erro ao atualizar conta: {e}")
+            self.logger.error(f"❌ ERRO: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
+            return False
+            
+        except Exception as e:
+            self.logger.error("=" * 70)
+            self.logger.error(f"❌ ERRO CRÍTICO em update_account_state:")
+            self.logger.error(f"   Tipo: {type(e).__name__}")
+            self.logger.error(f"   Mensagem: {str(e)}")
+            import traceback
+            self.logger.error("   Stack trace:")
+            for line in traceback.format_exc().split('\n'):
+                if line.strip():
+                    self.logger.error(f"   {line}")
+            self.logger.error("=" * 70)
             return False
     
     def _sync_internal_state_with_api(self):
@@ -225,7 +554,7 @@ class PositionManager:
         
         self.logger.debug(f"💰 Margem recalculada: ${total_margin:.2f}")
 
-    def can_place_order(self, order_value: float) -> Tuple[bool, str]:
+    def can_place_order(self, order_value: float, symbol: Optional[str] = None) -> Tuple[bool, str]:
         """Verifica se pode colocar uma nova ordem COM CORREÇÃO"""
         
         #  Sincronizar com API antes da verificação
@@ -253,9 +582,23 @@ class PositionManager:
             return False, f"Máximo de ordens atingido: {main_orders_count}/{self.max_open_orders}"
 
         # Verificar posição máxima
-        total_exposure = sum(o.get('value', 0) for o in self.open_orders.values()) + order_value
-        if total_exposure > self.max_position_size:
-            return False, f"Exposição máxima excedida: ${total_exposure:.2f} > ${self.max_position_size}"
+        current_exposure = self.get_current_exposure(symbol if 'symbol' in locals() else None)
+        projected_exposure = current_exposure + order_value
+
+        if projected_exposure > self.max_position_size:
+            return False, (
+                f"Exposição máxima excedida: "
+                f"${projected_exposure:.2f} > ${self.max_position_size:.2f} "
+                f"(atual: ${current_exposure:.2f} + nova: ${order_value:.2f})"
+            )
+
+        # ✅ Pode colocar ordem
+        self.logger.debug(
+            f"✅ Ordem permitida: "
+            f"exposição atual ${current_exposure:.2f} + "
+            f"nova ${order_value:.2f} = "
+            f"${projected_exposure:.2f} < ${self.max_position_size:.2f}"
+        )
         
         return True, "OK"
 
@@ -507,9 +850,12 @@ class PositionManager:
             # Arredondar preço e quantidade
             tick_size = self.auth._get_tick_size(symbol)
             market_price = self.auth._round_to_tick_size(market_price, tick_size)
+
+            # 🔧 USAR LOT_SIZE DINÂMICO BASEADO NO SÍMBOLO
+            lot_size = self.auth._get_lot_size(symbol)
+            qty_to_sell = self.auth._round_to_lot_size(qty_to_sell, lot_size)
             
-            lot_size = 0.01  # Ajustar conforme símbolo
-            qty_to_sell = round(qty_to_sell / lot_size) * lot_size
+            self.logger.warning(f"🔧 Quantidade ajustada para lot_size {lot_size}: {qty_to_sell} {symbol}")
             qty_to_sell = round(qty_to_sell, 2)
             
             self.logger.warning(f"🚨 VENDENDO {self.reduce_position_percentage}% da posição: {qty_to_sell:.6f} {symbol}")
@@ -784,61 +1130,61 @@ class PositionManager:
         
         return False, "OK"
     
-    def _get_current_price(self, symbol: str) -> float:
-        """Obtém preço atual do símbolo"""
-        try:
-            price_data = self.auth.get_prices()
-            if price_data and 'data' in price_data:
-                for item in price_data['data']:
-                    item_symbol = item.get('symbol', '')
-                    
-                    if item_symbol == symbol:
-                        # Usar 'mark' como preço principal
-                        price = float(item.get('mark', 0))
-                        self.logger.debug(f"✅ Preço {symbol}: ${price}")
-                        return price
-                        
-                self.logger.warning(f"⚠️ Símbolo {symbol} não encontrado nos preços")
-                return 0
-            else:
-                self.logger.warning("⚠️ Dados de preço não encontrados na resposta")
-                return 0
-        except Exception as e:
-            self.logger.error(f"❌ Erro ao obter preço {symbol}: {e}")
-            return 0
-
     def _check_position_size_and_auto_close(self):
-        """🆕 Verifica se a posição atual excede o limite e ativa auto-close"""
+        """
+        ✅ CORRIGIDO: Verifica se a posição atual excede o limite usando valor REAL da API
+        """
         
         if not self.auto_close_on_limit:
             return  # Auto-close desabilitado
         
         try:
-            # Calcular valor total das posições usando margem usada como proxy
-            # A margem usada reflete o valor notional das posições atuais
-            position_value_usd = self.margin_used * self.leverage
+            # ✅ CORREÇÃO PRINCIPAL: Usar valor real da posição da API
+            symbol = os.getenv('SYMBOL', 'SOL')
+            current_exposure = self.get_current_exposure(symbol)
             
-            self.logger.info(f"💡 Debug cálculo posição: margin_used=${self.margin_used} * leverage={self.leverage} = ${position_value_usd}")
-            self.logger.info(f"🔍 Verificando tamanho da posição: ${position_value_usd:.2f} vs limite ${self.max_position_size:.2f}")
+            # Log comparativo (debug)
+            old_calculation = self.margin_used * self.leverage
+            self.logger.debug(f"📊 Comparação de cálculos:")
+            self.logger.debug(f"   Método ANTIGO (margin×leverage): ${old_calculation:.2f}")
+            self.logger.debug(f"   Método NOVO (posição real): ${current_exposure:.2f}")
+            self.logger.debug(f"   Diferença: ${abs(current_exposure - old_calculation):.2f}")
             
-            if position_value_usd > self.max_position_size:
-                self.logger.warning(f"⚠️ Posição excede limite: ${position_value_usd:.2f} > ${self.max_position_size:.2f}")
-                self.logger.info("🔧 Auto-close ativado - reduzindo posição...")
+            self.logger.info(f"🔍 Verificando tamanho da posição: ${current_exposure:.2f} vs limite ${self.max_position_size:.2f}")
+            
+            if current_exposure > self.max_position_size:
+                excess_amount = current_exposure - self.max_position_size
                 
-                # Calcular quanto precisa ser fechado
-                excess_amount = position_value_usd - self.max_position_size
-                self.logger.info(f"🎯 Tentando liberar espaço para ordem de ${excess_amount:.2f}")
+                self.logger.warning(f"⚠️ Posição excede limite!")
+                self.logger.warning(f"   Exposição atual: ${current_exposure:.2f}")
+                self.logger.warning(f"   Limite máximo: ${self.max_position_size:.2f}")
+                self.logger.warning(f"   Excesso: ${excess_amount:.2f}")
+                self.logger.info("🔧 Auto-close ativado - reduzindo posição...")
                 
                 # Executar auto-close baseado na estratégia
                 freed_amount = self._auto_close_positions(excess_amount)
                 
                 if freed_amount > 0:
                     self.logger.info(f"✅ Auto-close liberou ${freed_amount:.2f}")
+                    
+                    # Verificar se foi suficiente
+                    new_exposure = self.get_current_exposure(symbol)
+                    if new_exposure <= self.max_position_size:
+                        self.logger.info(f"✅ Posição agora dentro do limite: ${new_exposure:.2f} <= ${self.max_position_size:.2f}")
+                    else:
+                        remaining_excess = new_exposure - self.max_position_size
+                        self.logger.warning(f"⚠️ Ainda acima do limite em ${remaining_excess:.2f}")
                 else:
                     self.logger.warning("⚠️ Não foi possível reduzir a posição automaticamente")
+            else:
+                # Tudo OK
+                utilization = (current_exposure / self.max_position_size * 100) if self.max_position_size > 0 else 0
+                self.logger.debug(f"✅ Posição OK - Utilização: {utilization:.1f}% ({current_exposure:.2f}/{self.max_position_size:.2f})")
                     
         except Exception as e:
             self.logger.error(f"❌ Erro na verificação auto-close: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
 
     def _auto_close_positions(self, target_amount: float) -> float:
         """🆕 Executa auto-close baseado na estratégia configurada"""
@@ -1093,9 +1439,11 @@ class PositionManager:
                 market_price = self.auth._round_to_tick_size(market_price, tick_size)
                 
                 # 🔧 ARREDONDAR QUANTIDADE PARA LOT_SIZE  
-                lot_size = 0.01  # SOL lot_size
-                qty_to_sell = round(qty_to_sell / lot_size) * lot_size
-                qty_to_sell = round(qty_to_sell, 2)  # Máximo 2 casas decimais
+                lot_size = self.auth._get_lot_size(symbol)
+                qty_to_sell = self.auth._round_to_lot_size(qty_to_sell, lot_size)
+                
+                self.logger.info(f"🔧 Quantidade ajustada para lot_size {lot_size}: {qty_to_sell} {symbol}")
+                qty_to_sell = round(qty_to_sell, 2)  # Máximo 2 casas decimais para exibição
                 
                 self.logger.info(f"📄 Criando ordem: ask {qty_to_sell} {symbol} @ ${market_price}")
                 

@@ -22,6 +22,8 @@ from src.multi_asset_strategy import MultiAssetStrategy
 from src.multi_asset_enhanced_strategy import MultiAssetEnhancedStrategy
 from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger, get_strategy_specific_messages
+from src.telegram_notifier import TelegramNotifier
+from src.grid_risk_manager import GridRiskManager
 
 class GridTradingBot:
     def __init__(self):
@@ -62,16 +64,25 @@ class GridTradingBot:
         # ✨ NOVA FUNCIONALIDADE: Reset periódico do grid
         self.enable_periodic_reset = os.getenv('ENABLE_PERIODIC_GRID_RESET', 'false').lower() == 'true'
         self.grid_reset_interval = int(os.getenv('GRID_RESET_INTERVAL_MINUTES', '60')) * 60  # Converter para segundos
+
+        # Configurações de controle de sessão
+        self.session_stop_loss = float(os.getenv('SESSION_STOP_LOSS_USD', '100'))
+        self.session_take_profit = float(os.getenv('SESSION_TAKE_PROFIT_USD', '200'))
+        self.session_max_loss = float(os.getenv('SESSION_MAX_LOSS_USD', '150'))
         
-        # Headers específicos por estratégia
-        self.show_strategy_header()
-        
-        # Inicializar componentes
+        # Estado da sessão
+        self.session_start_balance = 0.0
+        self.session_realized_pnl = 0.0
+        self.is_paused = False
+
+        # Declarar componentes como None - serão inicializados em initialize_components()
         self.auth = None
         self.calculator = None
         self.position_mgr = None
+        self.telegram = None
+        self.risk_manager = None
         self.strategy = None
-        
+
         # Setup signal handlers para shutdown gracioso
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -120,17 +131,7 @@ class GridTradingBot:
         
         # 🔧 SISTEMA DE VALIDAÇÕES (NOVO)
         self._run_config_validations()
-        
-        # Inicializar componentes
-        self.auth = None
-        self.calculator = None
-        self.position_mgr = None
-        self.strategy = None
-        
-        # Setup signal handlers para shutdown gracioso
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
-    
+         
     def setup_logging(self):
         """Configura sistema de logging"""
         log_dir = Path("logs")
@@ -195,22 +196,40 @@ class GridTradingBot:
         try:
             self.logger.info("🔧 Inicializando componentes...")
             
-            # Inicializar autenticação
+            # 1. Autenticação
             self.auth = PacificaAuth()
+            self.logger.info("✅ Auth Client inicializado")
 
-            #  Limpar ordens antigas
+            # 2. Telegram Notifier (antes do Risk Manager)
+            self.telegram = TelegramNotifier()
+            self.logger.info("✅ Telegram Notifier inicializado")
+
+            # 3. Limpar ordens antigas (se configurado)
             clean_on_start = os.getenv('CLEAN_ORDERS_ON_START', 'false').lower() == 'true'
             if clean_on_start:
                 self.logger.warning("🧹 Limpando ordens antigas...")
                 self._clean_old_orders()
             
-            # Inicializar calculator COM auth para buscar market info
-            self.calculator = GridCalculator(auth_client=self.auth)  # PASSAR AUTH
+            # 4. Grid Calculator (COM auth para buscar market info)
+            self.calculator = GridCalculator(auth_client=self.auth)
+            self.logger.info("✅ Grid Calculator inicializado")
             
-            # Inicializar position manager
+            # 5. Position Manager
             self.position_mgr = PositionManager(self.auth)
+            self.logger.info("✅ Position Manager inicializado")
+
+            # 6. Grid Risk Manager (apenas para estratégias grid)
+            self.risk_manager = None
+            if self.strategy_type == 'grid':
+                self.risk_manager = GridRiskManager(
+                    auth_client=self.auth,
+                    position_manager=self.position_mgr,
+                    telegram_notifier=self.telegram,
+                    logger=self.logger
+                )
+                self.logger.info("✅ Grid Risk Manager inicializado")
             
-            # Inicializar strategy baseada no tipo configurado
+            # 7. Inicializar strategy baseada no tipo configurado
             if self.strategy_type == 'multi_asset':
                 self.logger.info("🎯 Inicializando estratégia Multi-Asset Scalping...")
                 self.strategy = MultiAssetStrategy(self.auth, self.calculator, self.position_mgr)
@@ -226,11 +245,13 @@ class GridTradingBot:
                     self.logger.info("📊 Inicializando estratégia Grid Trading...")
                     self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
             
-            self.logger.info("✅ Componentes inicializados")
+            self.logger.info("✅ Componentes inicializados com sucesso")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Erro ao inicializar componentes: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False
     
     def _clean_old_orders(self):
@@ -373,7 +394,7 @@ class GridTradingBot:
         if not self.initialize_components():
             self.logger.error("❌ Falha na inicialização - abortando")
             return
-        
+
         # Inicializando teste de symbol info (apenas para estratégia grid)
         if self.strategy_type == 'grid':
             self.logger.info(f"🔍 Testando market info para {self.symbol}...")
@@ -413,6 +434,25 @@ class GridTradingBot:
                 self.logger.error("❌ Falha ao verificar saldo")
                 return
         
+        # 🆕 Verifacao da conta
+                
+        self.logger.info("💳 Carregando informações da conta...")
+        if self.position_mgr.update_account_state():
+            self.logger.info("=" * 60)
+            self.logger.info("💰 STATUS DA CONTA:")
+            self.logger.info(f"   Saldo Total: ${self.position_mgr.account_balance:.2f}")
+            self.logger.info(f"   Margem Usada: ${self.position_mgr.margin_used:.2f}")
+            self.logger.info(f"   Margem Disponível: ${self.position_mgr.margin_available:.2f}")
+            
+            if self.position_mgr.account_balance > 0:
+                margin_percent = (self.position_mgr.margin_available / 
+                                self.position_mgr.account_balance * 100)
+                self.logger.info(f"   Margem Livre: {margin_percent:.1f}%")
+            
+            self.logger.info("=" * 60)
+        else:
+            self.logger.error("❌ Falha ao carregar informações da conta")
+
         # Inicializar estratégia com mensagens específicas
         messages = get_strategy_specific_messages(self.strategy_type)
         self.logger.strategy_info(messages['initialization'])
@@ -442,7 +482,6 @@ class GridTradingBot:
             else:
                 self.logger.strategy_info("Aguardando condições de mercado...")
         
-        # 🔧 CORREÇÃO: Mover para FORA do if/else
         self.running = True
         self.start_time = datetime.now()
         
@@ -466,17 +505,35 @@ class GridTradingBot:
         last_rebalance = time.time()
         last_price_check = time.time()
         last_grid_reset = time.time()  # ✨ NOVO: Controle do reset periódico
+        last_daily_report = datetime.now().date()  # Controle do relatório diário
         
         # Inicializar current_price baseado na estratégia
         if self.strategy_type == 'grid':
             current_price = self.get_current_price()  # Grid usa preço único
         else:
             current_price = 0  # Multi-asset não usa preço único
+
+        # Definir saldo inicial no risk manager
+        if self.risk_manager:
+            initial_balance = self.position_mgr.account_balance
+            self.risk_manager.set_initial_balance(initial_balance)
         
         while self.running:
             try:
                 iteration += 1
                 current_time = time.time()
+
+                # ===== VERIFICAR SE BOT ESTÁ PAUSADO =====
+                if self.risk_manager and self.risk_manager.check_if_paused():
+                    if iteration % 10 == 0:  # Log a cada 10 iterações
+                        self.logger.info("⏸️ Bot pausado - aguardando retomada...")
+                    time.sleep(10)  # Aguardar 10 segundos
+                    continue  # Pular resto do loop
+
+                # DEBUG: Enviar status do Risk Manager (apenas em modo debug)
+                debug_mode = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+                if self.risk_manager and debug_mode and iteration % 20 == 0:
+                    self.risk_manager.send_periodic_debug_status()
 
                 # 🔧 Obter preço apenas para estratégia grid com tratamento robusto
                 if self.strategy_type == 'grid' and current_time - last_price_check >= 30:
@@ -486,6 +543,127 @@ class GridTradingBot:
                     else:
                         self.logger.warning("⚠️ Falha ao atualizar preço - mantendo preço anterior")
                     last_price_check = current_time
+
+               # ===== VERIFICAR RISCO DA POSIÇÃO (NÍVEL 1) =====
+                if self.risk_manager and self.strategy_type == 'grid':
+                    should_close, reason = self.risk_manager.check_position_risk(self.symbol, current_price)
+                    
+                    if should_close:
+                        self.logger.warning(f"🛑 Fechando posição por: {reason}")
+                        
+                        # Fechar posição
+                        try:
+                            position = self.position_mgr.positions.get(self.symbol, {})
+                            quantity = position.get('quantity', 0)
+                            
+                            if quantity != 0:
+                                # Determinar lado da ordem de fechamento
+                                close_side = 'ask' if quantity > 0 else 'bid'
+                                close_qty = abs(quantity)
+                                
+                                self.logger.info(f"📤 Criando ordem de fechamento: {close_side} {close_qty} @ MARKET")
+                                
+                                # 🔥 IMPLEMENTAÇÃO REAL DA ORDEM DE FECHAMENTO
+                                try:
+                                    # Criar ordem MARKET para fechar posição
+                                    close_order = self.auth.create_order(
+                                        symbol=self.symbol,
+                                        side=close_side,
+                                        amount=close_qty,
+                                        price=current_price,
+                                        order_type='IOC',
+                                        reduce_only=True
+                                    )
+                                    
+                                    if close_order and close_order.get('success'):
+                                        self.logger.info(f"✅ Posição fechada com sucesso: {close_order.get('order_id')}")
+                                        
+                                        # Calcular PNL realizado
+                                        avg_price = position.get('avg_price', 0)
+                                        pnl_usd = (current_price - avg_price) * quantity
+                                        
+                                        # Registrar fechamento do ciclo
+                                        self.risk_manager.record_cycle_close(self.symbol, pnl_usd, reason)
+                                        
+                                        # Cancelar todas as ordens do grid
+                                        self.logger.info("🚫 Cancelando ordens do grid...")
+                                        if hasattr(self.strategy, 'cancel_all_orders'):
+                                            self.strategy.cancel_all_orders()
+                                        
+                                        # Aguardar cancelamentos
+                                        time.sleep(2)
+                                        
+                                        # Resetar posição
+                                        self.position_mgr.positions[self.symbol] = {
+                                            'quantity': 0,
+                                            'avg_price': 0,
+                                            'realized_pnl': position.get('realized_pnl', 0) + pnl_usd,
+                                            'unrealized_pnl': 0
+                                        }
+                                        
+                                        # Reiniciar grid
+                                        self.logger.info("♻️ Reiniciando grid...")
+                                        self.risk_manager.reset_cycle()
+                                        
+                                        # Aguardar antes de recriar grid
+                                        time.sleep(3)
+                                        
+                                        if self.strategy.initialize_grid(current_price):
+                                            self.logger.info("✅ Grid reiniciado com sucesso!")
+                                        else:
+                                            self.logger.warning("⚠️ Aguardando condições para recriar grid...")
+                                    else:
+                                        error_msg = close_order.get('error', 'Erro desconhecido') if close_order else 'Sem resposta da API'
+                                        self.logger.error(f"❌ Falha ao criar ordem de fechamento: {error_msg}")
+                                        
+                                        # Tentar novamente na próxima iteração
+                                        self.logger.warning("⚠️ Tentará fechar posição novamente na próxima verificação")
+                                        
+                                except Exception as order_error:
+                                    self.logger.error(f"❌ Erro ao executar ordem de fechamento: {order_error}")
+                                    import traceback
+                                    self.logger.error(traceback.format_exc())
+                                    
+                                    # Notificar via Telegram
+                                    if self.telegram:
+                                        try:
+                                            self.telegram.send_error_alert(
+                                                error_message=f"Falha ao fechar posição: {order_error}",
+                                                traceback_info=traceback.format_exc()
+                                            )
+                                        except:
+                                            pass
+                                            
+                        except Exception as e:
+                            self.logger.error(f"❌ Erro ao fechar posição: {e}")
+                            import traceback
+                            self.logger.error(traceback.format_exc())
+                
+                # ===== VERIFICAR LIMITE DE SESSÃO (NÍVEL 2) =====
+                if self.risk_manager:
+                    should_stop, reason = self.risk_manager.check_session_limits()
+                    
+                    if should_stop:
+                        self.logger.error(f"🚨 LIMITE DE SESSÃO ATINGIDO: {reason}")
+                        
+                        # Fechar posição se existir
+                        position = self.position_mgr.positions.get(self.symbol, {})
+                        if position.get('quantity', 0) != 0:
+                            self.logger.warning("🛑 Fechando posição por limite de sessão...")
+                            # Implementar fechamento aqui
+                        
+                        # Cancelar todas as ordens
+                        if hasattr(self.strategy, 'cancel_all_orders'):
+                            self.strategy.cancel_all_orders()
+                        
+                        # Verificar ação configurada
+                        action = self.risk_manager.get_action_on_limit()
+                        
+                        if action == 'shutdown':
+                            self.logger.error("🛑 Encerrando bot por limite de sessão...")
+                            self.running = False
+                            break
+                        # Se for 'pause', o bot já foi pausado pelo risk_manager 
                 
                 # Log de heartbeat específico da estratégia
                 if iteration % 10 == 0:
@@ -532,7 +710,6 @@ class GridTradingBot:
                 # Rebalancear estratégia se necessário
                 if current_time - last_rebalance >= self.rebalance_interval:
                     
-                    # ========== ✅ ADICIONAR VERIFICAÇÃO DE MARGEM ==========
                     # Verificar margem ANTES de rebalancear
                     self.position_mgr.update_account_state()
                     
@@ -550,10 +727,11 @@ class GridTradingBot:
                             
                             last_rebalance = current_time  # Atualizar timer
                             continue  # Pular para próxima iteração do loop
-                    # ========== FIM DO BLOCO ==========
                     
                     if self.strategy_type == 'grid':
                         self.logger.info(f"🔄 Verificando rebalanceamento em ${current_price:,.2f}")
+                        if self.risk_manager and iteration % 30 == 0:  # A cada 30 iterações
+                            self.risk_manager.log_periodic_status()
                     else:
                         self.logger.info("🔄 Verificando sinais Multi-Asset")
                     
@@ -616,18 +794,46 @@ class GridTradingBot:
                 
                 # Aguardar próxima iteração
                 time.sleep(1)
-                
+
             except KeyboardInterrupt:
-                self.logger.info("⌨️ Interrompido pelo usuário")
-                break
-            
+                self.logger.info("🛑 Interrupção via teclado")
+                break  # Sair do while loop
+
             except Exception as e:
                 self.logger.error(f"❌ Erro no loop principal: {e}")
-                time.sleep(5)  # Aguardar antes de continuar
+                import traceback
+                traceback_str = traceback.format_exc()
+                self.logger.error(traceback_str)
+
+                # Notificar erro via Telegram (com proteção)
+                try:
+                    if hasattr(self, 'telegram') and self.telegram:
+                        self.telegram.send_error_alert(
+                            error_message=str(e),
+                            traceback_info=traceback_str
+                        )
+                except Exception as telegram_error:
+                    self.logger.warning(f"⚠️ Falha ao enviar erro via Telegram: {telegram_error}")
+                
+                # Aguardar antes de continuar
+                time.sleep(5)
+
+        # LIMPEZA FINAL (fora do while loop)
+        try:
+            if hasattr(self, 'risk_manager') and self.risk_manager:
+                self.risk_manager.close_session()
+        except Exception as rm_error:
+            self.logger.warning(f"⚠️ Erro ao fechar risk manager: {rm_error}")
         
-        # Shutdown
         self.logger.info("🏁 Encerrando bot...")
-        self.shutdown()
+        
+        # Shutdown protegido
+        try:
+            self.shutdown()
+        except Exception as shutdown_error:
+            self.logger.error(f"❌ Erro durante shutdown: {shutdown_error}")
+            # Tentar shutdown manual dos componentes críticos
+            self.running = False
     
     def print_status(self):
         """Imprime status atual do bot com métricas avançadas"""

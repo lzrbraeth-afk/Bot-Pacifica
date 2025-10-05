@@ -177,6 +177,14 @@ class PacificaAuth:
         Cria uma ordem com TP/SL opcionais usando Agent Wallet
         🔒 SEGURO: Não requer private key da wallet principal
         """
+        # Validação: não criar ordem com quantidade zero ou negativa
+        try:
+            amount_float = float(amount)
+        except Exception:
+            amount_float = 0.0
+        if amount_float <= 0:
+            self.logger.warning(f"⚠️ Ordem não criada: quantidade inválida ({amount})")
+            return {'success': False, 'error': f'Quantidade da ordem é muito baixa: {amount}', 'code': 0}
         
         timestamp = int(time.time() * 1_000)
         
@@ -554,79 +562,101 @@ class PacificaAuth:
 
     def get_account_info(self) -> Optional[Dict]:
         """
-        Busca informações da conta usando Agent Wallet
-        🔒 SEGURO: Se precisar de autenticação, usa Agent Wallet
+        Busca informações da conta (endpoint público)
+        Endpoint: GET /api/v1/account?account={wallet}
         """
         
-        # Primeiro tentar sem autenticação (endpoint público)
         url = f"{self.base_url}/account"
         params = {'account': self.main_public_key}
         
         try:
-            response = requests.get(url, params=params, timeout=10)
-            self.logger.info(f"💰 GET /account -> {response.status_code}")
-            self.debug_logger.debug(f"Response: {response.text}")
+            self.logger.info("=" * 70)
+            self.logger.info("🔍 REQUISIÇÃO GET ACCOUNT INFO")
+            self.logger.info(f"   URL: {url}")
+            self.logger.info(f"   Wallet: {self.main_public_key}")
+            self.logger.info("=" * 70)
+            
+            response = requests.get(
+                url, 
+                params=params,
+                headers={"Accept": "*/*"},
+                timeout=10
+            )
+            
+            self.logger.info(f"📥 Status Code: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
-                self.logger.info("✅ Informações da conta obtidas!")
+                
+                # Log da estrutura recebida
+                self.logger.info("✅ Resposta recebida com sucesso")
+                self.logger.info(f"   Success: {data.get('success')}")
+                self.logger.info(f"   Error: {data.get('error')}")
+                
+                # 🔧 SUPORTE PARA AMBOS FORMATOS: ARRAY OU OBJETO
+                if 'data' in data:
+                    raw_data = data['data']
+                    account_item = None
+                    
+                    if isinstance(raw_data, list):
+                        self.logger.info(f"   Data: ARRAY com {len(raw_data)} elemento(s)")
+                        if len(raw_data) > 0:
+                            account_item = raw_data[0]
+                        else:
+                            self.logger.warning("⚠️ Array vazio - sem dados de conta")
+                    
+                    elif isinstance(raw_data, dict):
+                        self.logger.info("   Data: OBJETO (formato direto)")
+                        account_item = raw_data
+                    
+                    else:
+                        self.logger.warning(f"⚠️ Formato inesperado: {type(raw_data)}")
+                        self.logger.info(f"   Type: {type(raw_data)}")
+                    
+                    # Processar dados se encontrados
+                    if account_item:
+                        self.logger.info("   Dados da conta:")
+                        self.logger.info(f"      balance: {account_item.get('balance', 'N/A')}")
+                        self.logger.info(f"      account_equity: {account_item.get('account_equity', 'N/A')}")
+                        self.logger.info(f"      available_to_spend: {account_item.get('available_to_spend', 'N/A')}")
+                        self.logger.info(f"      total_margin_used: {account_item.get('total_margin_used', 'N/A')}")
+                        self.logger.info(f"      positions_count: {account_item.get('positions_count', 'N/A')}")
+                        self.logger.info(f"      orders_count: {account_item.get('orders_count', 'N/A')}")
+                    else:
+                        self.logger.warning("⚠️ Nenhum dado de conta encontrado")
+                else:
+                    self.logger.warning("⚠️ Chave 'data' não encontrada na resposta")
+                
+                self.logger.info("=" * 70)
                 return data
+                
             elif response.status_code == 401:
-                # Se precisar de autenticação, usar Agent Wallet
-                self.logger.info("🔒 Endpoint requer autenticação - usando Agent Wallet")
+                self.logger.warning("🔒 Erro 401 - Não autorizado")
+                self.logger.info("   Tentando método autenticado...")
                 return self._get_account_info_authenticated()
+                
             else:
-                self.logger.error(f"❌ Erro ao buscar conta - Status: {response.status_code}")
-                self.logger.error(f"Response: {response.text}")
+                self.logger.error(f"❌ Erro HTTP {response.status_code}")
+                self.logger.error(f"   Response: {response.text[:500]}")
                 return None
-        except Exception as e:
-            self.logger.error(f"❌ Erro ao buscar conta: {e}")
+                
+        except requests.Timeout:
+            self.logger.error("❌ Timeout na requisição (10s)")
             return None
-
-    def _get_account_info_authenticated(self) -> Optional[Dict]:
-        """
-        Busca informações da conta com autenticação Agent Wallet
-        """
-        
-        timestamp = int(time.time() * 1_000)
-        
-        signature_header = {
-            "timestamp": timestamp,
-            "expiry_window": 30000,
-            "type": "get_account",
-        }
-        
-        signature_payload = {
-            "account": self.main_public_key,
-        }
-        
-        # 🔒 ASSINATURA COM AGENT WALLET
-        message = prepare_message(signature_header, signature_payload)
-        signature = sign_message(message, self.agent_keypair)
-        
-        # 🔒 REQUEST COM AGENT WALLET
-        request_data = {
-            "account": self.main_public_key,
-            "agent_wallet": self.agent_public_key,
-            "signature": signature,
-            "timestamp": timestamp,
-            "expiry_window": 30000,
-        }
-        
-        try:
-            url = f"{self.base_url}/account"
-            response = requests.post(url, json=request_data, timeout=10)
-            self.logger.info(f"💰 POST /account (auth) -> {response.status_code}")
             
-            if response.status_code == 200:
-                data = response.json()
-                self.logger.info("✅ Informações da conta obtidas (autenticado)!")
-                return data
-            else:
-                self.logger.error(f"❌ Erro na busca autenticada: {response.text}")
-                return None
+        except requests.RequestException as e:
+            self.logger.error(f"❌ Erro de rede: {e}")
+            return None
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"❌ Erro ao decodificar JSON: {e}")
+            self.logger.error(f"   Response raw: {response.text[:500]}")
+            return None
+            
         except Exception as e:
-            self.logger.error(f"❌ Erro na requisição autenticada: {e}")
+            self.logger.error(f"❌ Erro inesperado: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return None
 
     def get_open_orders(self, symbol: str = None) -> Optional[List]:
@@ -1130,6 +1160,65 @@ class PacificaAuth:
         fallback = tick_sizes.get(symbol, 0.00001)
         self.logger.warning(f"⚠️ Usando tick_size fallback para {symbol}: {fallback}")
         return fallback
+
+    def _get_lot_size(self, symbol: str) -> float:
+        """Obtém lot_size específico do símbolo"""
+        try:
+            info = self.get_symbol_info(symbol)
+            if info and 'lot_size' in info:
+                lot_size = float(info['lot_size'])
+                self.logger.debug(f"🔍 {symbol} lot_size: {lot_size}")
+                return lot_size
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erro ao obter lot_size para {symbol}: {e}")
+        
+        # Fallback para valores conhecidos
+        lot_sizes = {
+            'BTC': 0.001,
+            'ETH': 0.01,
+            'SOL': 0.01,
+            'BNB': 0.01,
+            'AVAX': 0.01,
+            'LTC': 0.01,
+            'ENA': 1.0,      # ✅ ENA usa números inteiros
+            'DOGE': 1.0,
+            'XRP': 1.0,
+            'PENGU': 1.0,
+            'PUMP': 1.0,
+            'FARTCOIN': 1.0
+        }
+        fallback = lot_sizes.get(symbol, 0.01)
+        self.logger.warning(f"⚠️ Usando lot_size fallback para {symbol}: {fallback}")
+        return fallback
+
+    def _round_to_lot_size(self, quantity: float, lot_size: float) -> float:
+        """
+        Arredonda quantidade para múltiplo válido do lot_size
+        """
+        if lot_size >= 1:
+            # Para lot_size >= 1, usar números inteiros
+            return float(int(round(quantity / lot_size) * lot_size))
+        else:
+            # Para lot_size < 1, usar arredondamento decimal com melhor precisão
+            from decimal import Decimal, ROUND_HALF_UP
+            
+            # Converter para Decimal para evitar erros de precisão
+            qty_dec = Decimal(str(quantity))
+            lot_dec = Decimal(str(lot_size))
+            
+            # Calcular múltiplos e arredondar
+            multiples = (qty_dec / lot_dec).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            result = float(multiples * lot_dec)
+            
+            # Determinar precisão baseada no lot_size
+            if lot_size == 0.01:
+                return round(result, 2)
+            elif lot_size == 0.001:
+                return round(result, 3)
+            elif lot_size == 0.0001:
+                return round(result, 4)
+            else:
+                return round(result, 8)
 
     def _round_to_tick_size(self, price: float, tick_size: float) -> float:
         """

@@ -6,7 +6,7 @@ Este documento registra os principais problemas identificados e as correções a
 
 ### 🎯 **Problemas Corrigidos**
 
-📋 **24 Problemas e Melhorias :**
+📋 **34 Problemas e Melhorias :**
 1. **Bug de variável indefinida** → Crash no startup eliminado
 2. **Race conditions** → Estado inconsistente e ordens duplicadas corrigidas  
 3. **Erro "No position found"** → API dessincrona resolvida
@@ -31,6 +31,16 @@ Este documento registra os principais problemas identificados e as correções a
 22. **"Invalid stop order side" no TP/SL** → Correção da lógica de side para TP/SL
 23. **Verificação inicial automática de TP/SL** → Sistema proativo de correção no startup
 24. **Sistema de proteção inadequado** → Implementado sistema de 3 camadas contra posições órfãs
+25. **🆕 Sistema Grid Risk Manager ausente** → Sistema completo de gerenciamento de risco em 2 níveis
+26. **🆕 Ordens com quantidade zero/negativa** → Validação rigorosa antes da criação de ordens
+27. **🆕 Sistema de notificação Telegram frágil** → Sistema resiliente com múltiplos fallbacks
+28. **🆕 Cálculo de exposição incorreto** → Cálculo baseado em posições reais da API
+29. **🆕 Arredondamento incorreto para ENA** → Tratamento especial para lot_size >= 1
+30. **🆕 Formato inconsistente account info** → Suporte para array e objeto na resposta da API
+31. **🆕 Integração de proteção ausente** → Risk Manager integrado ao loop principal do bot
+32. **🆕 Target de profit de sessão** → Nova configuração para controle de lucro acumulado
+33. **🆕 Lot_size fixo multi-ativo** → Sistema dinâmico baseado no símbolo
+34. **🆕 Arredondamento incorreto para BTC** → Suporte para notação científica em lot_size
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -1257,6 +1267,636 @@ Posição PENGU aberta mas não rastreada:
 - `src/multi_asset_strategy.py`: Implementação das 3 camadas
 - `src/emergency_stop_loss.py`: Sistema de fail-safe independente
 - `src/pacifica_auth.py`: Melhorias na criação de TP/SL
+
+---
+
+## 🆕 **Problema 25: Sistema Grid Risk Manager Ausente**
+
+### **Problema**
+- Bot Grid Trading não possuía sistema de gerenciamento de risco dedicado
+- Não havia proteção por ciclo (posições individuais)
+- Faltava proteção de sessão (PNL acumulado)
+- Sem controle automático de stop loss/take profit por ciclo
+- Ausência de sistema de pausa automática em caso de perdas
+
+### **Análise Técnica**
+```
+❌ ANTES: Sem proteção de risco específica para Grid
+- Grid funcionava sem limites de PNL por ciclo
+- Sem controle de PNL acumulado da sessão
+- Dependia apenas de proteções básicas do position_manager
+- Sem histórico de performance por ciclo
+```
+
+### **Solução Implementada**
+✅ **Sistema Grid Risk Manager Completo**
+
+**1. Proteção em 2 Níveis:**
+```python
+# Nível 1: Proteção por Ciclo
+self.cycle_stop_loss_percent = 5.0%     # Stop loss individual
+self.cycle_take_profit_percent = 8.0%   # Take profit individual
+
+# Nível 2: Proteção de Sessão
+self.session_max_loss_usd = 80.0        # Máxima perda em USD
+self.session_max_loss_percent = 20.0%   # Máxima perda em %
+self.session_profit_target_usd = 160.0  # Meta de lucro em USD
+self.session_profit_target_percent = 40.0% # Meta de lucro em %
+```
+
+**2. Sistema de Ações Configuráveis:**
+```python
+# Ação ao atingir limite: 'pause' ou 'shutdown'
+self.action_on_limit = 'pause'
+self.pause_duration_minutes = 120  # 2 horas de pausa
+```
+
+**3. Integração no Loop Principal:**
+```python
+# Verificação de risco por ciclo
+should_close, reason = self.risk_manager.check_position_risk(symbol, current_price)
+if should_close:
+    # Fecha posição e reinicia grid automaticamente
+    
+# Verificação de limites de sessão
+should_stop, reason = self.risk_manager.check_session_limits()
+if should_stop:
+    # Pausa bot ou faz shutdown conforme configuração
+```
+
+**4. Histórico e Notificações:**
+- Registro detalhado de cada ciclo fechado
+- Notificações via Telegram para cada evento
+- Arquivo JSON com histórico persistente
+- Estatísticas de win rate e performance
+
+### **Configurações Disponíveis**
+```env
+# Proteção por Ciclo
+ENABLE_CYCLE_PROTECTION=true
+GRID_CYCLE_STOP_LOSS_PERCENT=5.0
+GRID_CYCLE_TAKE_PROFIT_PERCENT=8.0
+
+# Proteção de Sessão  
+ENABLE_SESSION_PROTECTION=true
+GRID_SESSION_MAX_LOSS_USD=80.0
+GRID_SESSION_MAX_LOSS_PERCENT=20.0
+GRID_SESSION_PROFIT_TARGET_USD=160.0
+GRID_SESSION_PROFIT_TARGET_PERCENT=40.0
+
+# Ações e Controle
+GRID_ACTION_ON_LIMIT=pause
+GRID_PAUSE_DURATION_MINUTES=120
+GRID_SAVE_PNL_HISTORY=true
+```
+
+### **📁 Arquivos Criados/Modificados**
+- `src/grid_risk_manager.py`: **NOVO** - Sistema completo de risk management
+- `grid_bot.py`: Integração do GridRiskManager no loop principal
+- `.env_example`: Novas configurações de risco
+
+---
+
+## 🆕 **Problema 26: Ordens com Quantidade Zero/Negativa**
+
+### **Problema**
+- API permitia criação de ordens com quantidade zero ou negativa
+- Causava erro 400 "Invalid order amount" da exchange
+- Desperdiçava requisições à API
+- Não havia validação prévia antes do envio
+
+### **Análise Técnica**
+```
+❌ ANTES: Sem validação de quantidade
+def create_order(self, symbol, side, amount, price, ...):
+    # Enviava direto para API sem validar amount
+    response = requests.post(url, json=payload)
+```
+
+### **Solução Implementada**
+✅ **Validação Rigorosa de Quantidade**
+
+```python
+def create_order(self, symbol: str, side: str, amount: str, price: str, ...):
+    # Validação: não criar ordem com quantidade zero ou negativa
+    try:
+        amount_float = float(amount)
+    except Exception:
+        amount_float = 0.0
+    
+    if amount_float <= 0:
+        self.logger.warning(f"⚠️ Ordem não criada: quantidade inválida ({amount})")
+        return {
+            'success': False, 
+            'error': f'Quantidade da ordem é muito baixa: {amount}', 
+            'code': 0
+        }
+    
+    # Continua com criação da ordem apenas se válida
+    # ...
+```
+
+### **Benefícios**
+- ✅ Elimina erros 400 por quantidade inválida
+- ✅ Economiza requisições desnecessárias à API
+- ✅ Retorna erro estruturado para tratamento upstream
+- ✅ Log claro do motivo da rejeição
+
+### **📁 Arquivos Modificados**
+- `src/pacifica_auth.py`: Validação de quantidade no create_order()
+
+---
+
+## 🆕 **Problema 27: Sistema de Notificação Telegram Frágil**
+
+### **Problema**
+- Notificações Telegram falhavam frequentemente
+- Timeouts baixos causavam falhas em redes lentas
+- Sem sistema de retry ou fallback
+- Perda de notificações importantes
+- Sem cache para reenvio posterior
+
+### **Análise Técnica**
+```
+❌ ANTES: Sistema básico sem resiliência
+- Timeout fixo de 10 segundos
+- Máximo 2 tentativas
+- Sem fallback para falhas de rede
+- Notificações perdidas permanentemente
+```
+
+### **Solução Implementada**
+✅ **Sistema Telegram Resiliente Completo**
+
+**1. Timeouts Estendidos:**
+```python
+self.request_timeout = 45      # Aumentado de 10s
+self.connect_timeout = 20      # Aumentado de 5s
+self.max_retries = 5          # Aumentado de 2
+self.retry_delay = 3.0        # Backoff progressivo
+```
+
+**2. Sistema de Fallbacks em Cascata:**
+```python
+def _send_message_with_fallback(self, message: str) -> bool:
+    # Método 1: HTTP padrão com timeout estendido
+    success = self._send_via_standard_http(message)
+    if success:
+        return True
+    
+    # Método 2: Salvar na fila para tentativa posterior
+    self._save_message_to_queue(message)
+    
+    # Método 3: Log local como backup
+    self._log_message_locally(message)
+    
+    return False
+```
+
+**3. Fila de Mensagens Persistente:**
+```python
+def _save_message_to_queue(self, message: str, priority: str = "INFO"):
+    queued_message = {
+        "timestamp": time.time(),
+        "message": message,
+        "priority": priority,
+        "attempts": 0
+    }
+    self.message_queue.append(queued_message)
+```
+
+**4. Rate Limiting Inteligente:**
+```python
+self.rate_limit = 2.0  # Mínimo 2s entre mensagens
+# Respeita rate limits 429 da API Telegram
+```
+
+**5. Backup em Arquivo Local:**
+```python
+def _log_message_locally(self, message: str):
+    with open("telegram_backup.log", "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] TELEGRAM_BACKUP: {message}\n")
+```
+
+### **Configurações Disponíveis**
+```env
+TELEGRAM_ENABLED=true
+TELEGRAM_TIMEOUT_SECONDS=45
+TELEGRAM_CONNECT_TIMEOUT=20
+TELEGRAM_MAX_RETRIES=5
+TELEGRAM_RETRY_DELAY_SECONDS=3.0
+TELEGRAM_RATE_LIMIT_SECONDS=2.0
+```
+
+### **📁 Arquivos Criados**
+- `src/telegram_notifier_resilient.py`: **NOVO** - Sistema resiliente completo
+
+---
+
+## 🆕 **Problema 28: Cálculo de Exposição Incorreto**
+
+### **Problema**
+- Exposição calculada baseada em ordens abertas em vez de posições reais
+- Não considerava preços atuais do mercado
+- Cálculo impreciso causava decisões erradas de risk management
+- Auto-close ativado incorretamente
+
+### **Análise Técnica**
+```
+❌ ANTES: Cálculo baseado em ordens
+def get_current_exposure(self):
+    # Calculava apenas valor das ordens abertas
+    total = sum(o.get('value', 0) for o in self.open_orders.values())
+    return total  # ❌ Não refletia posições reais
+```
+
+### **Solução Implementada**
+✅ **Cálculo Baseado em Posições Reais da API**
+
+```python
+def get_current_exposure(self, symbol: Optional[str] = None) -> float:
+    # Buscar posições abertas da API
+    positions = self.auth.get_positions()
+    
+    total_exposure = 0.0
+    
+    for position in positions:
+        # ✅ CAMPOS QUE A API RETORNA
+        amount = abs(float(position.get('amount', 0)))
+        entry_price = float(position.get('entry_price', 0))
+        
+        # 🎯 OBTER PREÇO ATUAL DO MERCADO
+        current_price = self._get_current_price(pos_symbol)
+        
+        # ✅ CALCULAR VALOR ATUAL DA POSIÇÃO
+        position_value = amount * current_price
+        total_exposure += position_value
+    
+    return total_exposure
+```
+
+**Método Robusto de Preço Atual:**
+```python
+def _get_current_price(self, symbol: str) -> float:
+    # Fallback em cascata para obter preço
+    for item in price_data['data']:
+        if item_symbol == symbol:
+            # ✅ FALLBACK EM CASCATA
+            price = float(item.get('mark', 0))      # Preferencial
+            if price == 0:
+                price = float(item.get('mid', 0))   # Alternativa 1
+            if price == 0:
+                price = float(item.get('last', 0))  # Alternativa 2
+            if price == 0:
+                price = float(item.get('bid', 0))   # Fallback final
+            
+            return price
+```
+
+### **Benefícios**
+- ✅ Exposição real baseada em posições ativas
+- ✅ Preços atuais do mercado em tempo real
+- ✅ Decisões precisas de risk management
+- ✅ Auto-close ativado corretamente
+
+### **📁 Arquivos Modificados**
+- `src/position_manager.py`: Novo método get_current_exposure() e _get_current_price()
+
+---
+
+## 🆕 **Problema 29: Arredondamento Incorreto para ENA e Ativos Similares**
+
+### **Problema**
+- Ativo ENA usa lot_size = 1.0 (números inteiros)
+- Sistema arredondava para decimais causando erro "not multiple of lot size"
+- Rejeição de ordens por precisão incorreta
+- Problema em vários ativos com lot_size >= 1
+
+### **Análise Técnica**
+```
+❌ ANTES: Arredondamento uniforme
+def round_quantity(self, quantity: float) -> float:
+    # Sempre aplicava arredondamento decimal
+    multiples = math.floor(quantity / self.lot_size)
+    result = multiples * self.lot_size
+    return round(result, 4)  # ❌ Sempre 4 decimais
+```
+
+**Exemplo do Problema:**
+```python
+# ENA com lot_size = 1.0
+quantity = 15.7
+result = round(15.0, 4) = 15.0000  # ❌ Exchange rejeita decimais
+```
+
+### **Solução Implementada**
+✅ **Tratamento Especial para lot_size >= 1**
+
+```python
+def round_quantity(self, quantity: float) -> float:
+    multiples = math.floor(quantity / self.lot_size)
+    result = multiples * self.lot_size
+    
+    # ✅ TRATAMENTO ESPECIAL PARA LOT_SIZE >= 1 (como ENA)
+    if self.lot_size >= 1:
+        return float(int(result))  # Forçar número inteiro
+    
+    # Para lot_size < 1, usar arredondamento decimal normal
+    # ... resto da lógica existente
+```
+
+**Resultado Correto:**
+```python
+# ENA com lot_size = 1.0
+quantity = 15.7
+result = float(int(15.0)) = 15  # ✅ Exchange aceita
+```
+
+### **Benefícios**
+- ✅ Suporte correto para ENA e ativos similares
+- ✅ Elimina erros "not multiple of lot size"
+- ✅ Mantém compatibilidade com ativos decimais
+- ✅ Arredondamento preciso baseado no tipo de ativo
+
+### **📁 Arquivos Modificados**
+- `src/grid_calculator.py`: Lógica especial no round_quantity()
+
+---
+
+## 🆕 **Problema 30: Formato Inconsistente da API Account Info**
+
+### **Problema**
+- API retornava ora um array, ora um objeto no campo 'data'
+- Código esperava sempre um formato específico
+- Falha ao extrair informações da conta
+- Logs insuficientes para debug
+
+### **Análise Técnica**
+```
+❌ ANTES: Expectativa de formato único
+def update_account_state(self):
+    data = account_data['data']
+    # Assumia sempre objeto direto
+    balance = data.get('balance', 0)  # ❌ Falhava se fosse array
+```
+
+**Formatos Possíveis da API:**
+```json
+// Formato 1: Objeto direto
+{"success": true, "data": {"balance": 100, "account_equity": 95}}
+
+// Formato 2: Array com um elemento  
+{"success": true, "data": [{"balance": 100, "account_equity": 95}]}
+```
+
+### **Solução Implementada**
+✅ **Suporte Automático para Ambos Formatos**
+
+```python
+def update_account_state(self) -> bool:
+    # 🔥 SUPORTAR AMBOS: ARRAY OU OBJETO
+    raw_data = account_data['data']
+    
+    if isinstance(raw_data, list):
+        self.logger.info("   → Formato ARRAY")
+        if len(raw_data) == 0:
+            self.logger.error("❌ Array vazio")
+            return False
+        data = raw_data[0]  # Pegar primeiro elemento
+        
+    elif isinstance(raw_data, dict):
+        self.logger.info("   → Formato OBJETO")
+        data = raw_data     # Usar diretamente
+        
+    else:
+        self.logger.error(f"❌ Formato desconhecido: {type(raw_data)}")
+        return False
+    
+    # Extrair valores do formato normalizado
+    self.account_balance = float(data.get('balance', 0))
+    # ...
+```
+
+**Logs Detalhados para Debug:**
+```python
+self.logger.info("=" * 70)
+self.logger.info("💰 ESTADO DA CONTA:")
+self.logger.info(f"   Saldo: ${self.account_balance:.2f}")
+self.logger.info(f"   Equity: ${account_equity:.2f}")
+self.logger.info(f"   Margem Usada: ${self.margin_used:.2f}")
+self.logger.info(f"   Margem Disponível: ${self.margin_available:.2f}")
+self.logger.info("=" * 70)
+```
+
+### **Benefícios**
+- ✅ Compatibilidade com ambos formatos da API
+- ✅ Detecção automática do tipo de resposta
+- ✅ Logs detalhados para troubleshooting
+- ✅ Robustez contra mudanças na API
+
+### **📁 Arquivos Modificados**
+- `src/pacifica_auth.py`: Método get_account_info() com suporte dual
+- `src/position_manager.py`: Método update_account_state() robusto
+
+---
+
+## 🆕 **Problema 31: Integração de Proteção Ausente no Bot Principal**
+
+### **Problema**
+- Grid Risk Manager criado mas não integrado ao loop principal
+- Verificações de risco não executadas automaticamente
+- Fechamento de posições não implementado
+- Sistema de pausa não funcional
+
+### **Análise Técnica**
+```
+❌ ANTES: Risk Manager isolado
+# GridRiskManager existia mas não era usado no grid_bot.py
+# Sem verificações periódicas de risco
+# Sem fechamento automático de posições
+```
+
+### **Solução Implementada**
+✅ **Integração Completa no Loop Principal**
+
+**1. Inicialização do Risk Manager:**
+```python
+def initialize_components(self) -> bool:
+    # ... outros componentes ...
+    
+    # 6. Grid Risk Manager (apenas para estratégias grid)
+    self.risk_manager = None
+    if self.strategy_type == 'grid':
+        self.risk_manager = GridRiskManager(
+            auth_client=self.auth,
+            position_manager=self.position_mgr,
+            telegram_notifier=self.telegram,
+            logger=self.logger
+        )
+        self.logger.info("✅ Grid Risk Manager inicializado")
+```
+
+**2. Verificação de Pausa no Loop:**
+```python
+while self.running:
+    # ===== VERIFICAR SE BOT ESTÁ PAUSADO =====
+    if self.risk_manager and self.risk_manager.check_if_paused():
+        if iteration % 10 == 0:  # Log a cada 10 iterações
+            self.logger.info("⏸️ Bot pausado - aguardando retomada...")
+        time.sleep(10)  # Aguardar 10 segundos
+        continue  # Pular resto do loop
+```
+
+**3. Verificação de Risco por Posição:**
+```python
+# ===== VERIFICAR RISCO DA POSIÇÃO (NÍVEL 1) =====
+if self.risk_manager and self.strategy_type == 'grid':
+    should_close, reason = self.risk_manager.check_position_risk(symbol, current_price)
+    
+    if should_close:
+        self.logger.warning(f"🛑 Fechando posição por: {reason}")
+        
+        # Implementação completa do fechamento de posição
+        position = self.position_mgr.positions.get(symbol, {})
+        quantity = position.get('quantity', 0)
+        
+        if quantity != 0:
+            # Criar ordem de fechamento MARKET
+            close_order = self.auth.create_order(
+                symbol=symbol,
+                side='ask' if quantity > 0 else 'bid',
+                amount=abs(quantity),
+                price=current_price,
+                order_type='IOC',
+                reduce_only=True
+            )
+            
+            # Cancelar ordens do grid e reiniciar
+            if close_order and close_order.get('success'):
+                self.strategy.cancel_all_orders()
+                self.risk_manager.reset_cycle()
+                self.strategy.initialize_grid(current_price)
+```
+
+**4. Verificação de Limites de Sessão:**
+```python
+# ===== VERIFICAR LIMITE DE SESSÃO (NÍVEL 2) =====
+if self.risk_manager:
+    should_stop, reason = self.risk_manager.check_session_limits()
+    
+    if should_stop:
+        self.logger.error(f"🚨 LIMITE DE SESSÃO ATINGIDO: {reason}")
+        
+        # Verificar ação configurada
+        action = self.risk_manager.get_action_on_limit()
+        
+        if action == 'shutdown':
+            self.logger.error("🛑 Encerrando bot por limite de sessão...")
+            self.running = False
+            break
+        # Se for 'pause', o bot já foi pausado pelo risk_manager
+```
+
+### **Benefícios**
+- ✅ Proteção ativa durante operação
+- ✅ Fechamento automático de posições em risco
+- ✅ Sistema de pausa funcional
+- ✅ Reinicialização automática do grid
+- ✅ Controle completo de sessão
+
+### **📁 Arquivos Modificados**
+- `grid_bot.py`: Integração completa do GridRiskManager
+
+---
+
+## 🆕 **Problema 32: Target de Profit de Sessão**
+
+### **Problema**
+- Faltava configuração para meta de lucro por sessão
+- Grid podia operar indefinidamente sem realização de lucros
+- Sem controle de quando parar em caso de lucro excepcional
+
+### **Solução Implementada**
+✅ **Nova Configuração de Target de Profit**
+
+```env
+# Adicionado ao .env_example
+GRID_SESSION_PROFIT_TARGET_PERCENT=40.0
+```
+
+**Integração no Risk Manager:**
+```python
+# Verificar Take Profit Acumulado por PERCENTUAL
+if accumulated_percent >= self.session_profit_target_percent:
+    reason = f"SESSION_TAKE_PROFIT_PCT: {accumulated_percent:.2f}% >= {self.session_profit_target_percent}%"
+    self._trigger_session_limit(reason, 'take_profit')
+    return True, reason
+```
+
+### **Benefícios**
+- ✅ Controle de realização de lucros
+- ✅ Proteção contra reversões de mercado
+- ✅ Meta clara de performance por sessão
+
+### **📁 Arquivos Modificados**
+- `.env_example`: Nova configuração GRID_SESSION_PROFIT_TARGET_PERCENT
+
+---
+
+## 🆕 **Problema 33: Lot_size Fixo para Multi-Ativo**
+
+### **Problema**
+- Lot_size hardcoded causava problemas em diferentes ativos
+- Especialmente crítico para ENA que usa números inteiros
+- Sistema não adaptava para características específicas de cada ativo
+
+### **Análise Técnica**
+```
+❌ ANTES: Lot_size fixo
+# Em position_manager.py
+lot_size = 0.01  # SOL lot_size - ❌ Hardcoded
+qty_to_sell = round(qty_to_sell / lot_size) * lot_size
+```
+
+### **Solução Implementada**
+✅ **Sistema Dinâmico Baseado no Símbolo**
+
+```python
+# 🔧 USAR LOT_SIZE DINÂMICO BASEADO NO SÍMBOLO
+lot_size = self.auth._get_lot_size(symbol)
+qty_to_sell = self.auth._round_to_lot_size(qty_to_sell, lot_size)
+
+self.logger.warning(f"🔧 Quantidade ajustada para lot_size {lot_size}: {qty_to_sell} {symbol}")
+```
+
+**Método _get_lot_size() Robusto:**
+```python
+def _get_lot_size(self, symbol: str) -> float:
+    try:
+        info = self.get_symbol_info(symbol)
+        if info and 'lot_size' in info:
+            return float(info['lot_size'])
+    except Exception as e:
+        self.logger.warning(f"⚠️ Erro ao obter lot_size para {symbol}: {e}")
+    
+    # Fallback para valores conhecidos
+    lot_sizes = {
+        'BTC': 0.001, 'ETH': 0.01, 'SOL': 0.01,
+        'ENA': 1.0, 'DOGE': 1.0, 'XRP': 1.0  # ✅ Suporte específico
+    }
+    fallback = lot_sizes.get(symbol, 0.01)
+    return fallback
+```
+
+### **Benefícios**
+- ✅ Suporte adequado para cada ativo
+- ✅ Elimina erros de lot_size incorreto
+- ✅ Escalabilidade para novos ativos
+- ✅ Fallback robusto para ativos desconhecidos
+
+### **📁 Arquivos Modificados**
+- `src/position_manager.py`: Uso dinâmico de lot_size
+- `src/pacifica_auth.py`: Métodos _get_lot_size() e _round_to_lot_size()
 - `grid_bot.py`: Integração do sistema de emergência
 
 ### **✅ Resultado**
@@ -1268,4 +1908,164 @@ Posição PENGU aberta mas não rastreada:
 
 ---
 
-*Documento atualizado em 01/10/2025*
+## 🆕 **Problema 34: Arredondamento Incorreto para BTC com Notação Científica**
+
+### **Problema**
+- BTC usa lot_size = 1e-05 (0.00001 em notação científica)
+- Função round_quantity() convertia para string causando erro na detecção de decimais
+- Sistema calculava 0 decimais ao invés de 5
+- Todas as ordens eram arredondadas incorretamente para 0.0
+- Erro: "❌ Quantidade inválida calculada: 0.0 para preço $123481.0"
+
+### **Análise Técnica**
+```python
+❌ ANTES: Conversão incorreta de notação científica
+def round_quantity(self, quantity: float) -> float:
+    # ...
+    lot_str = str(self.lot_size)  # "1e-05" (mantém notação científica)
+    if '.' in lot_str:  # False! Não encontra ponto decimal
+        decimals = len(lot_str.split('.')[1].rstrip('0'))
+    else:
+        decimals = 0  # ❌ ERRADO! Deveria ser 5
+```
+
+**Exemplo do Problema:**
+```python
+# BTC com lot_size = 1e-05 (0.00001)
+lot_size = 1e-05
+lot_str = str(1e-05)  # = "1e-05" (string científica)
+'.' in "1e-05"  # False
+decimals = 0  # ❌ Deveria ser 5
+
+# Resultado:
+quantity = 0.000813 BTC
+round(0.000813, 0) = 0.0  # ❌ Arredonda para zero!
+```
+
+### **Solução Implementada**
+✅ **Conversão Forçada para Formato Decimal**
+
+```python
+def round_quantity(self, quantity: float) -> float:
+    """Arredonda quantidade para múltiplo de lot_size"""
+    import math
+    
+    if self.lot_size == 0:
+        return quantity
+    
+    multiples = math.floor(quantity / self.lot_size)
+    result = multiples * self.lot_size
+    
+    # ✅ TRATAMENTO ESPECIAL PARA LOT_SIZE >= 1 (como ENA)
+    if self.lot_size >= 1:
+        return float(int(result))
+    
+    # ✅ CORREÇÃO: Forçar formato decimal antes de contar decimais
+    lot_str = f"{self.lot_size:.10f}"  # "0.0000100000" (decimal explícito)
+    
+    if '.' in lot_str:
+        decimals = len(lot_str.rstrip('0').split('.')[1])
+    else:
+        decimals = 0
+    
+    # ✅ PROTEÇÃO: Log se arredondar para zero
+    if result == 0 and quantity > 0:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"⚠️ Arredondamento para zero detectado!")
+        logger.warning(f"   quantity: {quantity}, lot_size: {self.lot_size}")
+        logger.warning(f"   decimals: {decimals}, result: {result}")
+    
+    return round(result, max(decimals, 2))
+```
+
+**Resultado Correto:**
+```python
+# BTC com lot_size = 1e-05 (0.00001)
+lot_size = 1e-05
+lot_str = f"{1e-05:.10f}"  # = "0.0000100000" (decimal explícito)
+'.' in "0.0000100000"  # True ✅
+decimals = len("00001") = 5  # ✅ Correto!
+
+# Resultado:
+quantity = 0.000813 BTC
+multiples = floor(0.000813 / 0.00001) = 81
+result = 81 * 0.00001 = 0.00081
+round(0.00081, 5) = 0.00081 ✅
+
+# Validação:
+valor_nocional = 0.00081 * $122941 = $99.58 ✅ (> $10 mínimo)
+```
+
+### **Comparação Visual**
+| Aspecto | ❌ ANTES | ✅ DEPOIS |
+|---------|----------|-----------|
+| Conversão lot_size | str(1e-05) = "1e-05" | f"{1e-05:.10f}" = "0.0000100000" |
+| Detecção de ponto | '.' in "1e-05" = False | '.' in "0.0000100000" = True |
+| Decimais calculados | 0 (errado) | 5 (correto) |
+| Quantidade final | 0.0 (rejeitada) | 0.00081 BTC (aceita) |
+| Valor nocional | $0 (inválido) | $99.58 (válido) |
+
+### **Benefícios**
+- ✅ Suporte correto para BTC e outros ativos com notação científica
+- ✅ Elimina erros de "Quantidade inválida calculada: 0.0"
+- ✅ Mantém compatibilidade com ENA (lot_size >= 1)
+- ✅ Mantém compatibilidade com SOL e outros ativos decimais
+- ✅ Arredondamento preciso independente do formato de lot_size
+- ✅ Sistema de log para debug de problemas futuros
+
+### **📁 Arquivos Modificados**
+```
+grid_calculator.py
+├── round_quantity()
+│   ├── ✅ Adicionada conversão f"{lot_size:.10f}" para formato decimal
+│   ├── ✅ Corrigida detecção de decimais para notação científica
+│   └── ✅ Adicionado log de debug para arredondamento zero
+```
+
+### **🧪 Casos de Teste Validados**
+```python
+# Teste 1: BTC (lot_size = 0.00001)
+lot_size = 1e-05
+quantity = 0.000813
+resultado = 0.00081 ✅
+
+# Teste 2: SOL (lot_size = 0.001)
+lot_size = 0.001
+quantity = 0.8134
+resultado = 0.813 ✅
+
+# Teste 3: ENA (lot_size = 1.0)
+lot_size = 1.0
+quantity = 15.7
+resultado = 15 ✅
+
+# Teste 4: Notação científica extrema (lot_size = 1e-08)
+lot_size = 1e-08
+quantity = 0.000000123
+resultado = 0.00000012 ✅
+```
+
+### **⚠️ Notas Importantes**
+
+1. **Notação Científica vs Decimal:**
+   - Python's str() mantém notação científica: str(1e-05) = "1e-05"
+   - F-string com formato força decimal: f"{1e-05:.10f}" = "0.0000100000"
+
+2. **Por que isso afetava apenas BTC:**
+   - SOL usa lot_size = 0.001 (já é formato decimal)
+   - ENA usa lot_size = 1.0 (tratamento especial >= 1)
+   - BTC usa lot_size = 1e-05 (notação científica da API)
+
+3. **Backward Compatibility:**
+   - Solução mantém 100% compatibilidade com todos os ativos anteriores
+   - Não altera comportamento para lot_size >= 1 (ENA)
+   - Não altera comportamento para decimais normais (SOL)
+
+**📅 Data da Correção**: 05/10/2025  
+**🔧 Versão do Bot**: 2.1  
+**✅ Status**: Testado e Validado em Produção
+
+---
+
+*Documento atualizado em 05/10/2025*
