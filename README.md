@@ -18,7 +18,56 @@ O trading de contratos perpétuos com alavancagem envolve **altos riscos finance
 
 Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 
+## 📑 Índice
 
+- [⚡ Quick Start](#-quick-start)
+- [🚀 Principais Funcionalidades](#-principais-funcionalidades)
+- [🚀 Instalação](#️-instalação)
+- [⚙️ Configuração (.env)](#️-configuração-env)
+- [📱 Sistema de Notificações Telegram](#-sistema-de-notificações-telegram)
+- [🎯 Estratégias Disponíveis](#-estratégias-disponíveis)
+- [🛡️ Sistema AUTO_CLOSE](#️-sistema-auto_close-proteção-automática)
+- [🧪 Troubleshooting e Validação](#-troubleshooting-e-validação)
+- [🚀 Novidades Recentes](#-novidades-recentes---setembro-2025)
+
+## ⚡ Quick Start
+
+**Para usuários experientes que querem começar rapidamente:**
+
+1. **Instalar Python 3.10+** e **git**
+2. **Clonar repositório**: `git clone [URL] && cd Bot-Pacifica`
+3. **Ambiente virtual**: `python -m venv .venv && .\.venv\Scripts\Activate.ps1` (Windows)
+4. **Dependências**: `pip install -r requirements.txt`
+5. **Configurar .env**: Copiar `.env.example` → `.env` e editar:
+
+   **💡 Configuração Mínima (Iniciante):**
+   ```ini
+   # API Básica
+   MAIN_PUBLIC_KEY=sua_carteira_sol
+   AGENT_PRIVATE_KEY_B58=sua_chave_api_pacifica
+   
+   # Estratégia Simples
+   STRATEGY_TYPE=market_making
+   SYMBOL=SOL
+   LEVERAGE=5
+   GRID_LEVELS=6
+   ORDER_SIZE_USD=25
+   
+   # Proteção Básica
+   STOP_LOSS_PERCENT=1.5
+   TAKE_PROFIT_PERCENT=2.0
+   
+   # Telegram (Opcional)
+   TELEGRAM_ENABLED=true
+   TELEGRAM_BOT_TOKEN=seu_token
+   TELEGRAM_CHAT_ID=seu_chat_id
+   ```
+
+6. **Executar**: `python grid_bot.py`
+
+> 📋 **Para configuração completa** (71 variáveis), consulte a [seção de Configuração](#️-configuração-env---completa) ou o arquivo [`.env.example`](.env.example).
+
+📹 **[Video Tutorial Completo](https://www.youtube.com/watch?v=cKypCQwXctc)**
 
 ---
 
@@ -45,19 +94,21 @@ Leia o arquivo [DISCLAIMER](DISCLAIMER.md).
 ### 📈 Métricas e Monitoramento
 - **Performance tracking** em tempo real com ROI, Sharpe Ratio e drawdown
 - **Logs específicos por estratégia** com emojis e terminologia adequada
-- **Sistema de notificação** de operações e eventos críticos
+- **📱 Sistema de notificações Telegram** robusto com múltiplos tipos de alerta
 - **Relatórios detalhados** de trades e resultados
 
 ### ⚙️ Configuração Simplificada
 - **STRATEGY_TYPE único**: Seleção simples entre as 5 estratégias
 - **Configuração .env** com exemplos para cada estratégia
 - **Templates prontos** para diferentes cenários de trading
+- **📱 Notificações Telegram** com setup em 3 passos
 
 ### 🛠️ Recursos Técnicos
 - Rebalanceamento automático e deslocamento de grid por limiar
 - **Multi-Asset Trading** com gerenciamento individual de risco por símbolo
 - Gestão de margem, limite de ordens e tamanho máximo de posição
 - **Sistema AUTO_CLOSE** com estratégia híbrida para proteção automática de risco
+- **📱 Notificações Telegram** robustas com fallback e persistência
 - **Loss Management** especializado para cenários de alta volatilidade
 - Logs estruturados (arquivo e console) e *shutdown* gracioso
 - **PerformanceTracker** com métricas como *win rate*, *drawdown*, *Sharpe/Sortino*, *profit factor*
@@ -76,6 +127,7 @@ src/
 ├── multi_asset_enhanced_strategy.py # 🧠 Estratégia Enhanced com 5 indicadores
 ├── enhanced_signal_detector.py      # Detector de sinais com algoritmo avançado
 ├── strategy_logger.py               # Sistema de logs específicos por estratégia
+├── telegram_notifier.py             # 📱 Sistema de notificações Telegram
 ├── position_manager.py              # Saldo, margem, ordens e posições
 └── performance_tracker.py           # Métricas e relatórios de performance
 ```
@@ -216,80 +268,342 @@ O processo de atualização foi simplificado para ser feito em poucos passos, ta
    ./update.sh
 ```
 
-## ⚙️ Configuração (.env)
+## ⚙️ Configuração (.env) - COMPLETA
 
-### 🎯 Seleção de Estratégia Simplificada
+> 📋 **Referência Completa**: Consulte o arquivo [`.env.example`](.env.example) atualizado com **todas as 71 variáveis** disponíveis.
 
-O bot agora usa um **sistema simplificado** com uma única variável `STRATEGY_TYPE`:
+### 🎯 Quick Setup por Perfil de Usuário
 
+#### 🟢 **INICIANTE** (Configuração Conservadora)
 ```ini
-# ✅ ESTRATÉGIA (Escolha UMA das 4 opções)
-STRATEGY_TYPE=pure_grid           # Grid trading clássico
-# STRATEGY_TYPE=market_making     # Grid dinâmico adaptativo
-# STRATEGY_TYPE=dynamic_grid      # 🚀 Grid adaptativo inteligente
-# STRATEGY_TYPE=multi_asset       # Scalping multi-asset básico
-# STRATEGY_TYPE=multi_asset_enhanced  # 🧠 Enhanced com 5 indicadores
+# Básico
+STRATEGY_TYPE=market_making
+SYMBOL=SOL
+LEVERAGE=5
+GRID_LEVELS=6
+ORDER_SIZE_USD=25
+GRID_SPACING_PERCENT=0.3
+
+# Proteção
+STOP_LOSS_PERCENT=1.5
+TAKE_PROFIT_PERCENT=2.0
+MAX_POSITION_SIZE_USD=200
 ```
 
-### 📋 Configuração Base
-
+#### 🟡 **INTERMEDIÁRIO** (Configuração Equilibrada)
 ```ini
-# 🔐 API / Segurança
+# Básico  
+STRATEGY_TYPE=dynamic_grid
+SYMBOL=SOL
+LEVERAGE=10
+GRID_LEVELS=8
+ORDER_SIZE_USD=35
+GRID_SPACING_PERCENT=0.2
+
+# Proteção Avançada
+ENABLE_CYCLE_PROTECTION=true
+GRID_CYCLE_STOP_LOSS_PERCENT=5.0
+GRID_SESSION_PROFIT_TARGET_PERCENT=40.0
+```
+
+#### 🔴 **AVANÇADO** (Configuração Agressiva)
+```ini
+# Multi-Asset Enhanced
+STRATEGY_TYPE=multi_asset_enhanced
+SYMBOLS=AUTO
+POSITION_SIZE_USD=50
+MAX_CONCURRENT_TRADES=5
+LEVERAGE=15
+
+# Sistema de Emergência (Camada 3)
+EMERGENCY_SL_PERCENT=3.0
+EMERGENCY_TP_PERCENT=5.0
+```
+
+### 📋 Configurações Principais
+
+#### 🔐 **API e Autenticação**
+```ini
 MAIN_PUBLIC_KEY=                    # Seu endereço da carteira SOL
-AGENT_PRIVATE_KEY_B58=              # Chave privada gerada durante criação da API
+AGENT_PRIVATE_KEY_B58=              # Chave API gerada na Pacifica
 API_ADDRESS=https://api.pacifica.fi/api/v1
 WS_BASE_URL=wss://ws.pacifica.fi/ws
+```
 
-# 💰 Ativo e Alavancagem  
-SYMBOL=SOL                          # Ativo principal (Pure Grid/Market Making)
-LEVERAGE=10                         # Alavancagem padrão
+#### 🎯 **Estratégia Principal**
+```ini
+# Escolha UMA das 5 estratégias:
+STRATEGY_TYPE=pure_grid             # Grid clássico com range fixo
+# STRATEGY_TYPE=market_making       # Grid dinâmico adaptativo
+# STRATEGY_TYPE=dynamic_grid        # 🚀 Grid adaptativo inteligente  
+# STRATEGY_TYPE=multi_asset         # Scalping multi-asset básico
+# STRATEGY_TYPE=multi_asset_enhanced # 🧠 Enhanced com 5 indicadores
+```
 
-# 🎯 Estratégia Selecionada
-STRATEGY_TYPE=multi_asset_enhanced  # Escolha sua estratégia
+#### ⚙️ **Configuração Básica de Trading**
+```ini
+SYMBOL=SOL                          # Ativo principal (estratégias grid)
+LEVERAGE=10                         # Alavancagem
+MAX_OPEN_ORDERS=20                  # Ordens simultâneas
+CHECK_BALANCE_BEFORE_ORDER=true     # Verificação de saldo
+REBALANCE_INTERVAL_SECONDS=60       # Intervalo de rebalanceamento
+```
 
-# 🌐 Multi-Asset Trading (para multi_asset e multi_asset_enhanced)
-SYMBOLS=BTC,ETH,SOL,AVAX           # ou AUTO para todos os símbolos
-POSITION_SIZE_USD=20               # Tamanho da posição em USD
-MAX_CONCURRENT_TRADES=3            # Máximo de trades simultâneos
-PRICE_CHANGE_THRESHOLD=0.3         # Threshold de mudança de preço (%)
+### 🛡️ Sistema de Gestão de Risco (3 Camadas)
 
-# 🛡️ Take Profit / Stop Loss
-AUTO_CLOSE_ENABLED=true            # Habilitar sistema AUTO_CLOSE
-STOP_LOSS_PERCENT=2.0             # Stop Loss em %
-TAKE_PROFIT_PERCENT=1.5           # Take Profit em %
-USE_API_TP_SL=true                # Usar TP/SL via API (recomendado)
-TRAILING_STOP_ENABLED=false       # Trailing stop
-TRAILING_STOP_PERCENT=0.5         # Trailing stop %
-MAX_POSITION_TIME_MINUTES=60
+#### **Camada 1: TP/SL Automáticos**
+```ini
+AUTO_CLOSE_ENABLED=true             # Habilitar TP/SL
+USE_API_TP_SL=true                  # Via API (recomendado)
+STOP_LOSS_PERCENT=1.0               # Stop Loss %
+TAKE_PROFIT_PERCENT=1.5             # Take Profit %
+TRAILING_STOP_ENABLED=false         # Trailing stop
+MAX_POSITION_TIME_MINUTES=60        # Tempo máximo de posição
+```
 
-# Grid (básico)
-GRID_LEVELS=8
-GRID_SPACING_PERCENT=0.2
-GRID_DISTRIBUTION=symmetric
-GRID_MODE=maker
+#### **Camada 2: Risk Manager (Ciclos/Sessões)**
+```ini
+# Proteção por Ciclo
+ENABLE_CYCLE_PROTECTION=true
+GRID_CYCLE_STOP_LOSS_PERCENT=5.0
+GRID_CYCLE_TAKE_PROFIT_PERCENT=8.0
 
-# Risco e Auto-Close
-MARGIN_SAFETY_PERCENT=20
-MAX_OPEN_ORDERS=20
-MAX_POSITION_SIZE_USD=1000
+# Proteção de Sessão  
+ENABLE_SESSION_PROTECTION=true
+GRID_SESSION_MAX_LOSS_USD=80.0
+GRID_SESSION_PROFIT_TARGET_PERCENT=40.0
 
-# Sistema AUTO_CLOSE (Proteção Automática)
-AUTO_CLOSE_ON_MAX_POSITION=true
-AUTO_CLOSE_STRATEGY=hybrid  # hybrid|cancel_orders|force_sell|stop_buy
-AUTO_CLOSE_PERCENTAGE=20
+# Ações de Proteção
+GRID_ACTION_ON_LIMIT=pause          # pause ou shutdown
+GRID_PAUSE_DURATION_MINUTES=120
+```
 
-# Operação
-CHECK_BALANCE_BEFORE_ORDER=true
-CLEAN_ORDERS_ON_START=false
-LOG_LEVEL=INFO
-REBALANCE_INTERVAL_SECONDS=60
+#### **Camada 3: Sistema de Emergência**
+```ini
+# Proteção de última instância
+EMERGENCY_SL_PERCENT=3.0            # Perda crítica
+EMERGENCY_TP_PERCENT=5.0            # Lucro extremo
+EMERGENCY_MAX_LOSS_TIME_MINUTES=15  # Tempo máximo em perda
+EMERGENCY_CHECK_INTERVAL_SECONDS=10 # Frequência de verificação
+```
 
-# 🔄 Reset Periódico do Grid (NOVO!)
-ENABLE_PERIODIC_GRID_RESET=false    # Habilitar reset completo periódico
-GRID_RESET_INTERVAL_MINUTES=60      # Intervalo em minutos (60 = 1 hora)
+### 🎯 Configurações Específicas por Estratégia
+
+#### **🌐 Multi-Asset (multi_asset e multi_asset_enhanced)**
+```ini
+SYMBOLS=BTC,ETH,SOL,AVAX           # Símbolos específicos
+# SYMBOLS=AUTO                     # Busca todos disponíveis
+
+# Blacklist para filtrar símbolos indesejados
+SYMBOLS_USE_BLACKLIST=true
+SYMBOLS_BLACKLIST=PUMP,kPEPE,FARTCOIN
+SYMBOLS_MAX_COUNT=0                # 0 = sem limite
+
+POSITION_SIZE_USD=20               # Tamanho por posição
+MAX_CONCURRENT_TRADES=3            # Trades simultâneos
+PRICE_CHANGE_THRESHOLD=0.3         # Threshold de entrada
+```
+
+#### **🧠 Enhanced Strategy - Indicadores Técnicos**
+```ini
+# Configurações de qualidade do sinal (0-100)
+ENHANCED_MIN_SIGNAL_QUALITY=65     # Qualidade mínima
+ENHANCED_MIN_CONFIDENCE=75         # Confiança mínima
+ENHANCED_USE_RSI_FILTER=true       # Filtro RSI
+ENHANCED_MAX_VOLATILITY=4.0        # Volatilidade máxima (%)
+ENHANCED_MIN_HISTORY=25            # Períodos mínimos
+```
+
+#### **🚀 Dynamic Grid - Configurações Avançadas**
+```ini
+# Ajustes dinâmicos do grid
+DYNAMIC_THRESHOLD_PERCENT=1.0      # Threshold para ajustes
+MAX_ADJUSTMENT_DISTANCE_PERCENT=5.0 # Distância máxima
+VOLUME_BOOST_ENABLED=true          # Boost de volume
+
+# Reset periódico (NOVO!)
+ENABLE_PERIODIC_GRID_RESET=true
+GRID_RESET_INTERVAL_MINUTES=60
+```
+
+#### **📊 Grid Trading (pure_grid, market_making)**
+```ini
+# Configurações do Grid
+GRID_LEVELS=8                      # Níveis do grid
+ORDER_SIZE_USD=35                  # Tamanho das ordens
+GRID_SPACING_PERCENT=0.2           # Espaçamento %
+GRID_DISTRIBUTION=symmetric        # symmetric/bullish/bearish
+
+# Grid Adaptativo
+ADAPTIVE_GRID=true
+VOLATILITY_WINDOW=20
+VOLATILITY_MULT_MIN=0.7
+VOLATILITY_MULT_MAX=1.5
+
+# Pure Grid - Range Fixo
+RANGE_MIN=90000                    # Apenas para pure_grid
+RANGE_MAX=110000
+RANGE_EXIT=true
+```
+
+### 📱 Sistema Telegram Avançado
+
+#### **Configuração Básica**
+```ini
+TELEGRAM_ENABLED=false
+TELEGRAM_BOT_TOKEN=                # Token do @BotFather
+TELEGRAM_CHAT_ID=                  # Seu Chat ID
+```
+
+#### **Configurações de Performance**
+```ini
+TELEGRAM_TIMEOUT_SECONDS=45        # Timeout das requisições
+TELEGRAM_CONNECT_TIMEOUT=20        # Timeout de conexão  
+TELEGRAM_MAX_RETRIES=5             # Máximo de tentativas
+TELEGRAM_RETRY_DELAY_SECONDS=3.0   # Delay entre tentativas
+TELEGRAM_RATE_LIMIT_SECONDS=2.0    # Limite de taxa
+```
+
+### � Configurações Avançadas e Debug
+
+```ini
+# Logs e Debug
+LOG_LEVEL=INFO                     # DEBUG, INFO, WARNING, ERROR
+DEBUG_MODE=false
+RISK_MANAGER_DEBUG_MODE=false
+
+# Limpeza e Manutenção
+CLEAN_ORDERS_ON_START=false        # Limpar ordens ao iniciar
+GRID_SAVE_PNL_HISTORY=true        # Salvar histórico P&L
+GRID_LOG_PNL_EVERY_MINUTES=15     # Log periódico do P&L
 ```
 
 > **Dica**: Comece conservador (menos níveis, maior espaçamento, ordem menor) e aumente aos poucos.
+
+## 📱 Sistema de Notificações Telegram
+
+O bot inclui um **sistema robusto de notificações** via Telegram que mantém você informado sobre todas as operações importantes, mesmo quando não está monitorando o bot.
+
+> 📖 **[Guia Completo de Notificações Telegram](docs/telegram_guide.md)** - Documentação detalhada com exemplos e troubleshooting
+
+### 🔧 Configuração Rápida
+
+1. **Criar Bot no Telegram:**
+   - Abra o Telegram e busque `@BotFather`
+   - Digite: `/newbot`
+   - Escolha nome: "Pacifica Grid Monitor"
+   - Escolha username: "PacificaGridBot"
+   - **Copie o TOKEN** gerado
+
+2. **Obter seu Chat ID:**
+   - Busque `@userinfobot` no Telegram
+   - Inicie conversa com ele
+   - Ele enviará seu **CHAT_ID** (número)
+
+3. **Configurar no .env:**
+```ini
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ
+TELEGRAM_CHAT_ID=123456789
+```
+
+4. **Testar Conexão:**
+```bash
+python test_telegram.py
+```
+
+### 🎯 Tipos de Notificações
+
+O sistema envia notificações específicas para diferentes eventos:
+
+#### 💹 **Notificações de Trading**
+- **Trades executados**: Compras/vendas com preço, quantidade e PnL
+- **Fechamento de ciclos**: Resultado completo de ciclos de grid
+- **Take Profit/Stop Loss**: Alertas quando TP/SL são acionados
+
+#### ⚠️ **Alertas de Risco**
+- **Stop Loss**: Quando posições são fechadas por stop loss
+- **Limites de margem**: Avisos sobre margem baixa
+- **Posições grandes**: Alertas quando posição excede limites
+
+#### 📊 **Status do Bot**
+- **Inicialização**: Confirmação de que o bot está ativo
+- **Pausas/Retomadas**: Quando bot é pausado ou retomado
+- **Heartbeat**: Status periódico opcional (configurável)
+
+### ⚙️ Configurações Avançadas
+
+```ini
+# Controle granular de notificações
+TELEGRAM_NOTIFY_CYCLE_CLOSE=true         # Fechamento de ciclos
+TELEGRAM_NOTIFY_STOP_LOSS=true           # Stop loss acionado
+TELEGRAM_NOTIFY_TAKE_PROFIT=true         # Take profit acionado
+TELEGRAM_NOTIFY_SESSION_LIMIT=true       # Limites de sessão
+TELEGRAM_NOTIFY_PAUSE_RESUME=true        # Pausas e retomadas
+TELEGRAM_NOTIFY_HEARTBEAT=false          # Heartbeat periódico
+
+# Configurações de performance
+TELEGRAM_TIMEOUT_SECONDS=30              # Timeout de envio
+TELEGRAM_MAX_RETRIES=3                   # Tentativas de reenvio
+TELEGRAM_RATE_LIMIT_SECONDS=1.0          # Intervalo entre mensagens
+```
+
+### 🛡️ Sistema de Fallback
+
+O sistema inclui **múltiplas camadas de proteção**:
+
+- **🔄 Retry Automático**: Tentativas múltiplas em caso de falha
+- **📦 Fila de Mensagens**: Mensagens são salvas e reenviadas
+- **💾 Backup Local**: Backup em arquivo para mensagens perdidas
+- **⏱️ Rate Limiting**: Controle para evitar spam
+
+### 📋 Exemplos de Mensagens
+
+```
+✅ Trade Executado (15:30:25)
+🟢 COMPRA - SOL
+💰 Preço: $150.75
+📊 Quantidade: 10.0
+📈 PnL: +$25.50
+
+🎯 Ciclo Completo (15:45:12)
+Ciclo de Grid Finalizado
+💹 Trades: 8
+⏱️ Duração: 120min
+💰 Resultado: $45.75
+
+⚠️ Risk Manager (16:00:05)
+🛑 Alerta de Risco
+🔔 Tipo: STOP_LOSS
+• symbol: SOL
+• current_loss: 15.50
+• action: Stop loss ativado
+```
+
+### 🧪 Teste e Validação
+
+```bash
+# Testar conectividade
+python test_telegram.py
+
+# Verificar fila de mensagens
+python -c "
+from src.telegram_notifier import TelegramNotifier
+notifier = TelegramNotifier()
+stats = notifier.get_queue_stats()
+print(f'Mensagens na fila: {stats[\"total_messages\"]}')
+"
+
+# Processar mensagens pendentes
+python -c "
+from src.telegram_notifier import TelegramNotifier
+notifier = TelegramNotifier()
+sent = notifier.process_message_queue()
+print(f'Mensagens enviadas: {sent}')
+"
+```
+
+> **💡 Dica**: Mantenha o bot do Telegram ativo e configure apenas as notificações que realmente precisa para evitar spam.
 
 ## Video com passo a passo para instalar o BOT, depois de instalado o PYTHON 
 
@@ -487,90 +801,9 @@ Estratégia especializada para cenários de alta volatilidade:
 
 ## 🧪 Troubleshooting e Validação
 
-### Interpretação dos Resultados
+### 🔍 Diagnóstico Rápido
 
-**✅ Sistema Funcionando:**
-```
-🎯 SCORE DE VALIDAÇÃO: 6/6  
-🎉 SISTEMA AUTO_CLOSE HYBRID TOTALMENTE FUNCIONAL!
-```
-
-**❌ Problemas Comuns:**
-
-| Erro | Causa Provável | Solução |
-|------|----------------|---------|
-| Score < 6/6 | Configuração .env incorreta | Verificar variáveis AUTO_CLOSE |
-| API Error 401 | Chave privada inválida | Regenerar AGENT_PRIVATE_KEY_B58 |
-| "Estratégia desconhecida" | Nome incorreto | Usar: hybrid, cancel_orders, force_sell, stop_buy |
-| "Posição não calculada" | Sem posições ativas | Normal se não estiver tradando |
-
-### Troubleshooting Rápido
-
-- **Bot não inicia**: Verifique `.env` - MAIN_PUBLIC_KEY e AGENT_PRIVATE_KEY_B58
-- **Ordens não executam**: Cheque margem disponível e configuração de símbolos
-- **AUTO_CLOSE não ativa**: Verifique se AUTO_CLOSE_ENABLED=true
-- **Multi-asset básico não funciona**: Confirme SYMBOLS válidos e STRATEGY_TYPE=multi_asset
-- **Enhanced Strategy com score baixo**: Ajuste ENHANCED_MIN_SCORE (padrão: 60)
-- **Poucos sinais Enhanced**: Diminua ENHANCED_CONFIDENCE_THRESHOLD (padrão: 0.7)
-- **Logs não aparecem**: Verifique se strategy_logger.py está no diretório src/
-- **Performance metrics erro**: Execute python test_performance_fix.py
-- **🚀 Dynamic Grid**: Se ordens não se adaptam, verifique CLEAN_ORDERS_ON_START=true
-
----
-
-## 🚀 **NOVIDADES RECENTES - SETEMBRO 2025**
-
-### ✨ **Dynamic Grid Strategy - NOVO!**
-- **🎯 Problema Resolvido**: Grid tradicional não adaptava quando preço mudava
-- **🚀 Solução**: Nova estratégia `STRATEGY_TYPE=dynamic_grid`
-- **⚡ Principais Features**:
-  - ✅ **Auto-detecção** de execução de ordens
-  - ✅ **Reposicionamento inteligente** seguindo tendência
-  - ✅ **Cancelamento automático** de ordens obsoletas
-  - ✅ **Adaptação dinâmica** ao movimento de preço
-
-### 🔧 **CLEAN_ORDERS_ON_START - CORRIGIDO!**
-- **📋 Problema**: Cancelamento falhava com "Verification failed"  
-- **✅ Correção**: API Pacifica agora funciona 100%
-- **🎯 Resultado**: Teste com 11 ordens = 100% de sucesso
-
-### 🔄 **RESET PERIÓDICO DO GRID - NOVO!**
-- **� Funcionalidade**: Apaga TODAS as ordens e recria o grid do zero periodicamente
-- **⏰ Configurável**: Define de quanto em quanto tempo fazer o reset
-- **🔧 Robusto**: Aguarda cancelamentos e verifica estado antes de recriar
-- **📊 Status**: Mostra progresso e resultado do reset no log
-
-### �🎉 **Como Usar as Novidades**
-```ini
-# No seu arquivo .env
-STRATEGY_TYPE=dynamic_grid              # Nova estratégia adaptativa
-CLEAN_ORDERS_ON_START=true              # Agora funcional
-ENABLE_PERIODIC_GRID_RESET=true         # 🆕 Reset periódico
-GRID_RESET_INTERVAL_MINUTES=60          # 🆕 Reset a cada 1 hora
-SYMBOL=HYPE                             # Símbolo principal
-```
-
-**🚀 Status**: Bot agora com **grid inteligente** que se adapta automaticamente e se renova periodicamente!
-
----
-
-### 🔍 Diagnóstico Avançado
-
-**Verificar Strategy Type:**
-```bash
-python -c "
-import os
-from dotenv import load_dotenv
-load_dotenv()
-print(f'STRATEGY_TYPE: {os.getenv(\"STRATEGY_TYPE\", \"NÃO DEFINIDO\")}')"
-```
-
-**Testar Enhanced Strategy:**
-```bash
-python test_enhanced_strategy.py
-```
-
-**Validar Configuração Completa:**
+**Verificar Configuração Principal:**
 ```bash
 python -c "
 import os
@@ -581,6 +814,183 @@ for key in required:
     value = os.getenv(key)
     print(f'{key}: {\"✅ OK\" if value else \"❌ FALTANDO\"}')"
 ```
+
+**Testar Conectividade:**
+```bash
+python -c "
+from src.pacifica_auth import PacificaAuth
+client = PacificaAuth()
+result = client.get_account_info()
+print('✅ API funcionando!' if result else '❌ Erro de API')"
+```
+
+**Validar Todas as 71 Variáveis:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Categorias principais
+api_vars = ['MAIN_PUBLIC_KEY', 'AGENT_PRIVATE_KEY_B58', 'API_ADDRESS', 'WS_BASE_URL']
+strategy_vars = ['STRATEGY_TYPE', 'SYMBOL', 'LEVERAGE']
+risk_vars = ['EMERGENCY_SL_PERCENT', 'GRID_CYCLE_STOP_LOSS_PERCENT']
+telegram_vars = ['TELEGRAM_ENABLED', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']
+
+categories = {
+    'API': api_vars,
+    'Estratégia': strategy_vars, 
+    'Risco': risk_vars,
+    'Telegram': telegram_vars
+}
+
+for category, vars_list in categories.items():
+    print(f'\n📋 {category}:')
+    for var in vars_list:
+        value = os.getenv(var)
+        status = '✅ OK' if value else '❌ FALTANDO'
+        print(f'  {var}: {status}')"
+```
+
+### 🚨 Problemas Comuns e Soluções
+
+| **Erro** | **Causa Provável** | **Solução** |
+|----------|-------------------|-------------|
+| `ModuleNotFoundError` | Ambiente virtual não ativado | Execute `.\.venv\Scripts\Activate.ps1` |
+| `API Error 401` | Chave privada inválida | Regenerar `AGENT_PRIVATE_KEY_B58` na Pacifica |
+| `Estratégia desconhecida` | `STRATEGY_TYPE` incorreto | Use: `pure_grid`, `market_making`, `dynamic_grid`, `multi_asset`, `multi_asset_enhanced` |
+| `Sem símbolos válidos` | `SYMBOLS` incorreto | Use `AUTO` ou símbolos válidos: `BTC,ETH,SOL` |
+| `Emergency SL não ativa` | Configuração faltando | Adicione `EMERGENCY_SL_PERCENT=3.0` |
+| `Risk Manager erro` | Proteção não configurada | Configure `ENABLE_CYCLE_PROTECTION=true` |
+| `Grid não se adapta` | Dynamic Grid mal configurado | Use `DYNAMIC_THRESHOLD_PERCENT=1.0` |
+| `Enhanced Score baixo` | Configuração muito restritiva | Diminua `ENHANCED_MIN_SIGNAL_QUALITY=50` |
+
+### 📱 Troubleshooting Telegram Avançado
+
+| **Problema** | **Causa Provável** | **Solução** |
+|-------------|-------------------|-------------|
+| **Rate limit atingido** | Muitas mensagens | Configure `TELEGRAM_RATE_LIMIT_SECONDS=3.0` |
+| **Timeout constante** | Conexão instável | Aumente `TELEGRAM_TIMEOUT_SECONDS=60` |
+| **Fila de mensagens crescendo** | API Telegram indisponível | Execute: `python -c "from src.telegram_notifier_resilient import TelegramNotifier; TelegramNotifier().process_message_queue()"` |
+| **Mensagens cortadas** | Texto muito longo | Sistema limita automaticamente em 4000 caracteres |
+| **Bot não responde** | Token/Chat ID incorreto | Refaça configuração com `@BotFather` |
+
+**🧪 Teste Completo do Telegram:**
+```bash
+python test_telegram.py
+```
+
+### � Validação de Estratégias Específicas
+
+**🧠 Enhanced Strategy:**
+```bash
+python -c "
+from src.enhanced_signal_detector import EnhancedSignalDetector
+detector = EnhancedSignalDetector()
+print('✅ Enhanced Strategy configurada corretamente!')"
+```
+
+**🚀 Dynamic Grid:**
+```bash
+python -c "
+from src.dynamic_grid_strategy import DynamicGridStrategy
+from src.grid_calculator import GridCalculator
+from src.position_manager import PositionManager
+from src.pacifica_auth import PacificaAuth
+
+auth = PacificaAuth()
+calc = GridCalculator()
+pos_mgr = PositionManager(auth)
+strategy = DynamicGridStrategy(auth, calc, pos_mgr)
+print('✅ Dynamic Grid Strategy configurada!')"
+```
+
+**� Multi-Asset:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+symbols = os.getenv('SYMBOLS', 'AUTO')
+if symbols == 'AUTO':
+    print('✅ Configurado para buscar todos os símbolos')
+else:
+    symbol_list = symbols.split(',')
+    print(f'✅ Configurado para {len(symbol_list)} símbolos: {symbol_list}')"
+```
+
+### � Diagnóstico Avançado
+
+**Verificar Sistema de Risco Completo:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Verificar 3 camadas de proteção
+layer1 = bool(os.getenv('AUTO_CLOSE_ENABLED', 'false').lower() == 'true')
+layer2 = bool(os.getenv('ENABLE_CYCLE_PROTECTION', 'false').lower() == 'true')
+layer3 = bool(os.getenv('EMERGENCY_SL_PERCENT'))
+
+print(f'🛡️ Sistema de Proteção:')
+print(f'  Camada 1 (TP/SL): {\"✅\" if layer1 else \"❌\"}')
+print(f'  Camada 2 (Risk Manager): {\"✅\" if layer2 else \"❌\"}') 
+print(f'  Camada 3 (Emergency): {\"✅\" if layer3 else \"❌\"}')
+print(f'  Status: {\"🟢 COMPLETO\" if all([layer1, layer2, layer3]) else \"� PARCIAL\"}')"
+```
+
+**Verificar Configuração de Performance:**
+```bash
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+configs = {
+    'REBALANCE_INTERVAL_SECONDS': 'Intervalo de rebalanceamento',
+    'GRID_CHECK_INTERVAL_SECONDS': 'Verificação do grid',
+    'EMERGENCY_CHECK_INTERVAL_SECONDS': 'Verificação de emergência',
+    'TELEGRAM_RATE_LIMIT_SECONDS': 'Limite do Telegram'
+}
+
+print('⚡ Configurações de Performance:')
+for var, desc in configs.items():
+    value = os.getenv(var, 'NÃO DEFINIDO')
+    print(f'  {desc}: {value}s')"
+```
+
+### ✅ Interpretação dos Resultados
+
+**🟢 Sistema Funcionando:**
+- Todas as variáveis principais configuradas
+- API conectando sem erros
+- Estratégia carregada corretamente
+- Sistema de risco ativo
+
+**🟡 Atenção Necessária:**
+- Algumas configurações opcionais faltando
+- Telegram não configurado
+- Apenas 1-2 camadas de proteção ativas
+
+**🔴 Problemas Críticos:**
+- API não conecta
+- Estratégia não reconhecida
+- Nenhuma proteção configurada
+- Erros de módulo/dependências
+
+### 🛡️ Lista de Verificação Final
+
+- [ ] ✅ Python 3.10+ instalado
+- [ ] ✅ Ambiente virtual ativado  
+- [ ] ✅ Dependências instaladas
+- [ ] ✅ `.env` criado e configurado
+- [ ] ✅ API Pacifica funcionando
+- [ ] ✅ Estratégia selecionada
+- [ ] ✅ Sistema de risco configurado
+- [ ] ✅ Telegram testado (opcional)
+- [ ] ✅ Primeira execução sem erros
 
 ## 🛡️ Boas práticas de segurança
 
