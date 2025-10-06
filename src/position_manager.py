@@ -586,11 +586,44 @@ class PositionManager:
         projected_exposure = current_exposure + order_value
 
         if projected_exposure > self.max_position_size:
-            return False, (
-                f"Exposição máxima excedida: "
-                f"${projected_exposure:.2f} > ${self.max_position_size:.2f} "
-                f"(atual: ${current_exposure:.2f} + nova: ${order_value:.2f})"
-            )
+            # 🆕 TENTAR AUTO-CLOSE SE HABILITADO
+            if self.auto_close_on_limit and current_exposure > self.max_position_size:
+                self.logger.warning(f"⚠️ Posição já excede limite: ${current_exposure:.2f} > ${self.max_position_size:.2f}")
+                self.logger.info("🔧 Tentando reduzir posição automaticamente...")
+                
+                # Tentar reduzir posição
+                excess_amount = current_exposure - self.max_position_size
+                freed_amount = self._auto_close_positions(excess_amount)
+                
+                if freed_amount > 0:
+                    self.logger.info(f"✅ Auto-close liberou ${freed_amount:.2f}")
+                    
+                    # Recalcular exposição após redução
+                    new_exposure = self.get_current_exposure(symbol if 'symbol' in locals() else None)
+                    new_projected = new_exposure + order_value
+                    
+                    if new_projected <= self.max_position_size:
+                        self.logger.info(f"✅ Ordem agora permitida após redução: ${new_projected:.2f} <= ${self.max_position_size:.2f}")
+                        current_exposure = new_exposure  # Atualizar para o cálculo final
+                        projected_exposure = new_projected
+                    else:
+                        return False, (
+                            f"Exposição ainda excedida mesmo após auto-close: "
+                            f"${new_projected:.2f} > ${self.max_position_size:.2f} "
+                            f"(atual: ${new_exposure:.2f} + nova: ${order_value:.2f})"
+                        )
+                else:
+                    return False, (
+                        f"Exposição máxima excedida e auto-close falhou: "
+                        f"${projected_exposure:.2f} > ${self.max_position_size:.2f} "
+                        f"(atual: ${current_exposure:.2f} + nova: ${order_value:.2f})"
+                    )
+            else:
+                return False, (
+                    f"Exposição máxima excedida: "
+                    f"${projected_exposure:.2f} > ${self.max_position_size:.2f} "
+                    f"(atual: ${current_exposure:.2f} + nova: ${order_value:.2f})"
+                )
 
         # ✅ Pode colocar ordem
         self.logger.debug(
@@ -1350,31 +1383,17 @@ class PositionManager:
             return 0
 
     def _force_partial_sell(self) -> float:
-        """Força venda de parte da posição para liberar espaço"""
+        """Força redução de parte da posição para liberar espaço (funciona com long e short)"""
         
         try:
             symbol = os.getenv('SYMBOL', 'SOL')
-            
-            # 🔧 SINCRONIZAR COM API ANTES DE TENTAR VENDA
-            self.logger.info("🔄 Sincronizando posições com API antes da venda...")
-            self._sync_internal_state_with_api()
-            
-            if symbol not in self.positions:
-                self.logger.warning(f"⚠️ Nenhuma posição em {symbol} para vender")
-                return 0.0
-            
-            pos = self.positions[symbol]
-            current_qty = pos.get('quantity', 0)
-            
-            if current_qty <= 0:
-                self.logger.warning(f"⚠️ Posição {symbol} já zerada ou short")
-                return 0.0
             
             # 🔧 VERIFICAR SE REALMENTE EXISTE POSIÇÃO NA API
             self.logger.info(f"🔍 Verificando posição real na API para {symbol}...")
             api_positions = self.auth.get_positions()
             api_has_position = False
             api_quantity = 0.0
+            position_side = None
             
             if api_positions and isinstance(api_positions, list):
                 for api_pos in api_positions:
@@ -1385,70 +1404,65 @@ class PositionManager:
                         # Aceitar tanto long (bid) quanto short (ask)
                         if abs(api_amt) > 0:
                             api_has_position = True
-                            api_quantity = abs(api_amt)
+                            api_quantity = abs(api_amt)  # Sempre usar valor absoluto
                             position_side = api_side  # 'bid' (long) ou 'ask' (short)
                             break
             
             if not api_has_position or api_quantity <= 0:
                 self.logger.warning(f"⚠️ API não confirma posição aberta em {symbol} (amount: {api_quantity})")
-                self.logger.warning(f"⚠️ Removendo posição interna inconsistente")
-                # Limpar posição interna inconsistente
-                if symbol in self.positions:
-                    del self.positions[symbol]
                 return 0.0
             
             # 🔧 USAR QUANTIDADE REAL DA API PARA CÁLCULOS
-            self.logger.info(f"✅ Posição confirmada na API: {api_quantity} {symbol}")
+            self.logger.info(f"✅ Posição confirmada na API: {api_quantity} {symbol} ({position_side})")
             
-            # Calcular quantidade a vender (percentual configurado)
-            sell_percentage = self.auto_close_percentage / 100
-            qty_to_sell = api_quantity * sell_percentage
-            # Determinar o lado da ordem para reduzir posição
-            # Se posição é short (ask), ordem de compra ('bid')
-            # Se posição é long (bid), ordem de venda ('ask')
+            # Calcular quantidade a reduzir (percentual configurado)
+            reduce_percentage = self.auto_close_percentage / 100
+            qty_to_reduce = api_quantity * reduce_percentage
+            
+            # 🚀 CORRIGIDO: Determinar o lado da ordem para reduzir posição
+            # Se posição é short (ask), ordem de compra ('bid') para reduzir
+            # Se posição é long (bid), ordem de venda ('ask') para reduzir
             order_side = 'bid' if position_side == 'ask' else 'ask'
-            if qty_to_sell < 0.001:
-                self.logger.warning(f"⚠️ Quantidade a reduzir muito pequena: {qty_to_sell}")
+            
+            if qty_to_reduce < 0.001:
+                self.logger.warning(f"⚠️ Quantidade a reduzir muito pequena: {qty_to_reduce}")
                 return 0.0
             
-            # Obter preço atual do mercado (mais preciso que estimativas)
+            # Obter preço atual do mercado
             current_price = self._get_current_price(symbol)
-            if current_price <= 0:
-                # Tentar usar preço da posição interna como fallback
-                pos = self.positions.get(symbol, {})
-                current_price = pos.get('entry_price', 0)
-            
             if current_price <= 0:
                 self.logger.warning(f"⚠️ Não foi possível obter preço para {symbol}")
                 return 0.0
             
-            freed_value = qty_to_sell * current_price
+            freed_value = qty_to_reduce * current_price
             
-            # Log da operação
-            self.logger.info(f"💰 Vendendo {self.auto_close_percentage}% da posição: {qty_to_sell:.6f} {symbol}")
+            # 🚀 CORRIGIDO: Log da operação considerando tipo de posição
+            position_type = "SHORT" if position_side == 'ask' else "LONG"
+            action_type = "comprando" if order_side == 'bid' else "vendendo"
+            
+            self.logger.info(f"📊 Reduzindo posição {position_type} {self.auto_close_percentage}%: {action_type} {qty_to_reduce:.6f} {symbol}")
             self.logger.info(f"💰 Preço atual: ${current_price:.2f} - Valor a liberar: ${freed_value:.2f}")
             
-            # 🔥 EXECUÇÃO REAL DA VENDA (ativada)
+            # 🔥 EXECUÇÃO REAL DA REDUÇÃO
             try:
-                # Criar ordem para venda imediata  
-                # Usar preço ligeiramente abaixo do mercado para garantir execução
-                market_price = current_price * 0.999  # -0.1% do preço atual
+                # Calcular preço da ordem para execução imediata
+                if order_side == 'bid':  # Comprando (para reduzir short)
+                    market_price = current_price * 1.001  # +0.1% do preço atual
+                else:  # Vendendo (para reduzir long)
+                    market_price = current_price * 0.999  # -0.1% do preço atual
                 
-                # 🔧 ARREDONDAR PREÇO PARA TICK_SIZE usando função do auth
+                # 🔧 ARREDONDAR PREÇO PARA TICK_SIZE
                 tick_size = self.auth._get_tick_size(symbol)
                 market_price = self.auth._round_to_tick_size(market_price, tick_size)
                 
                 # 🔧 ARREDONDAR QUANTIDADE PARA LOT_SIZE  
                 lot_size = self.auth._get_lot_size(symbol)
-                qty_to_sell = self.auth._round_to_lot_size(qty_to_sell, lot_size)
+                qty_to_reduce = self.auth._round_to_lot_size(qty_to_reduce, lot_size)
                 
-                self.logger.info(f"🔧 Quantidade ajustada para lot_size {lot_size}: {qty_to_sell} {symbol}")
-                qty_to_sell = round(qty_to_sell, 2)  # Máximo 2 casas decimais para exibição
-                
-                self.logger.info(f"📄 Criando ordem: ask {qty_to_sell} {symbol} @ ${market_price}")
+                self.logger.info(f"🔧 Quantidade ajustada para lot_size {lot_size}: {qty_to_reduce} {symbol}")
+                self.logger.info(f"📄 Criando ordem: {order_side} {qty_to_reduce} {symbol} @ ${market_price}")
                 
                 # 🔧 VERIFICAÇÃO FINAL ANTES DE ENVIAR ORDEM
-                # Dupla verificação para evitar erro "No position found for reduce-only order"
                 final_check = self.auth.get_positions()
                 has_final_position = False
                 if final_check and isinstance(final_check, list):
@@ -1456,22 +1470,18 @@ class PositionManager:
                         if pos_check.get('symbol') == symbol:
                             amt_final = float(pos_check.get('amount', 0))
                             side_final = pos_check.get('side', '').lower()
-                            # Para short, precisa de pelo menos qty_to_sell em posição 'ask'; para long, em 'bid'
-                            if position_side == 'ask' and abs(amt_final) >= qty_to_sell and side_final == 'ask':
+                            if abs(amt_final) >= qty_to_reduce and side_final == position_side:
                                 has_final_position = True
                                 break
-                            elif position_side == 'bid' and abs(amt_final) >= qty_to_sell and side_final == 'bid':
-                                has_final_position = True
-                                break
+                
                 if not has_final_position:
                     self.logger.warning(f"⚠️ ABORTAR: Posição insuficiente na verificação final")
-                    self.logger.warning(f"⚠️ Necessário: {qty_to_sell}, mas posição pode ter mudado")
                     return 0.0
                 
                 result = self.auth.create_order(
                     symbol=symbol,
-                    side=order_side,  # lado correto para reduzir posição
-                    amount=str(qty_to_sell),
+                    side=order_side,
+                    amount=str(qty_to_reduce),
                     price=str(market_price),
                     order_type="GTC",
                     reduce_only=True  # Para reduzir posição existente
@@ -1479,47 +1489,18 @@ class PositionManager:
                 
                 if result and result.get('success'):
                     order_id = result.get('order_id', 'N/A')
-                    self.logger.info(f"✅ Ordem de venda parcial criada!")
+                    self.logger.info(f"✅ Ordem de redução criada!")
                     self.logger.info(f"✅ ID: {order_id} - Preço: ${market_price:.2f}")
+                    return freed_value
                 else:
                     error_msg = result.get('error', 'Erro desconhecido') if result else 'Resposta nula'
                     self.logger.error(f"❌ Falha na ordem reduce_only: {error_msg}")
-                    
-                    # 🔧 FALLBACK: Tentar sem reduce_only se o erro for de posição não encontrada
-                    if "No position found" in str(error_msg):
-                        self.logger.warning(f"🔄 Tentando ordem sem reduce_only como fallback...")
-                        fallback_result = self.auth.create_order(
-                            symbol=symbol,
-                            side='ask',
-                            amount=str(qty_to_sell),
-                            price=str(market_price),
-                            order_type="GTC",
-                            reduce_only=False  # Sem reduce_only
-                        )
-                        
-                        if fallback_result and fallback_result.get('success'):
-                            order_id = fallback_result.get('order_id', 'N/A')
-                            self.logger.info(f"✅ Ordem fallback criada: {order_id}")
-                        else:
-                            fallback_error = fallback_result.get('error', 'Erro desconhecido') if fallback_result else 'Resposta nula'
-                            self.logger.error(f"❌ Fallback também falhou: {fallback_error}")
-                            return 0.0
-                    else:
-                        return 0.0
+                    return 0.0
                         
             except Exception as e:
-                self.logger.error(f"❌ Erro ao executar venda: {e}")
+                self.logger.error(f"❌ Erro ao executar redução: {e}")
                 return 0.0
             
-            # Atualizar posição internamente
-            pos['quantity'] -= qty_to_sell
-            if pos['quantity'] < 0.001:
-                pos['quantity'] = 0  # Zerar se muito pequeno
-            
-            self.logger.info(f"📊 Nova posição {symbol}: {pos['quantity']:.6f}")
-            
-            return freed_value
-            
         except Exception as e:
-            self.logger.error(f"❌ Erro na venda parcial: {e}")
+            self.logger.error(f"❌ Erro na redução da posição: {e}")
             return 0.0
