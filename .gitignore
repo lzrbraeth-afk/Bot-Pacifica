@@ -23,6 +23,7 @@ logs/
 tests
 update
 data/
+bot.pid
 
 # OS
 .DS_Store

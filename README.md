@@ -387,6 +387,29 @@ EMERGENCY_MAX_LOSS_TIME_MINUTES=15  # Tempo máximo em perda
 EMERGENCY_CHECK_INTERVAL_SECONDS=10 # Frequência de verificação
 ```
 
+#### **🆕 Proteção por Tendência de Margem (Universal)**
+```ini
+# Sistema universal para todas as estratégias
+ENABLE_MARGIN_TREND_PROTECTION=true
+MARGIN_TREND_PERIOD_MINUTES=3      # Período de análise
+MARGIN_DROP_THRESHOLD_PERCENT=15.0 # Threshold de queda
+MARGIN_TREND_ACTION=cancel_orders   # cancel_orders/reduce_positions/pause/shutdown
+```
+
+**Como Funciona:**
+- **Monitora margem** continuamente criando snapshots temporais
+- **Detecta quedas súbitas** comparando margem atual vs início do período
+- **Ações configuráveis**: 4 níveis de resposta baseados na severidade
+- **Universal**: Funciona com qualquer estratégia (Grid, Multi-Asset, etc.)
+- **Não invasivo**: Usa padrão adapter, mantém código principal limpo
+
+**Exemplo de Uso:**
+```
+Cenário: Margem cai de $1000 → $850 em 3 minutos (-15%)
+Ação: Cancela todas as ordens abertas automaticamente
+Benefício: Evita deterioração adicional da margem
+```
+
 ### 🎯 Configurações Específicas por Estratégia
 
 #### **🌐 Multi-Asset (multi_asset e multi_asset_enhanced)**

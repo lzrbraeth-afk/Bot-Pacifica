@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Pacifica Trading Bot - Dashboard v2.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .log-line { font-family: monospace; font-size: 0.875rem; }
+        .log-error { color: #ef4444; }
+        .log-warning { color: #f59e0b; }
+        .log-info { color: #3b82f6; }
+        .log-debug { color: #6b7280; }
+        .log-success { color: #10b981; }
+        
+        .pulse-dot { 
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; 
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .btn-disabled { 
+            opacity: 0.5; 
+            cursor: not-allowed; 
+        }
+        
+        .metric-card {
+            transition: transform 0.2s;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .alert-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+        
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+        
+        .trade-row-profit { background-color: rgba(16, 185, 129, 0.1); }
+        .trade-row-loss { background-color: rgba(239, 68, 68, 0.1); }
+        
+        .ws-connected { color: #10b981; }
+        .ws-disconnected { color: #ef4444; }
+        
+        .position-long { border-left: 4px solid #10b981; }
+        .position-short { border-left: 4px solid #ef4444; }
+        
+        .order-buy { border-left: 4px solid #3b82f6; }
+        .order-sell { border-left: 4px solid #f59e0b; }
+        
+        #logs-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #logs-container::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        
+        #logs-container::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        
+        #logs-container::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Alertas Toast -->
+    <div id="alerts-container"></div>
+    
+    <div class="container mx-auto p-6 max-w-7xl">
+        <!-- Header -->
+        <div class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-4xl font-bold mb-2">🤖 Pacifica Trading Bot</h1>
+                <p class="text-gray-400">Dashboard v2.1 - Real-time Monitoring + Positions</p>
+            </div>
+            <div class="text-right">
+                <div class="flex items-center gap-2 justify-end mb-2">
+                    <span class="text-gray-400 text-sm">WebSocket:</span>
+                    <div id="ws-status" class="flex items-center gap-2">
+                        <span class="ws-disconnected">●</span>
+                        <span class="text-sm">Desconectado</span>
+                    </div>
+                </div>
+                <div class="text-sm text-gray-500" id="last-update">Última atualização: -</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-4 mb-6 border-b border-gray-700 overflow-x-auto">
+            <button onclick="showTab('dashboard')" id="tab-dashboard" 
+                    class="px-4 py-2 border-b-2 border-blue-500 text-blue-500 whitespace-nowrap">
+                📊 Dashboard
+            </button>
+            <button onclick="showTab('positions')" id="tab-positions" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                📈 Posições & Ordens
+            </button>
+            <button onclick="showTab('charts')" id="tab-charts" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                📉 Gráficos
+            </button>
+            <button onclick="showTab('trades')" id="tab-trades" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                📋 Histórico
+            </button>
+            <button onclick="showTab('logs')" id="tab-logs" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                📜 Logs
+            </button>
+            <button onclick="showTab('config')" id="tab-config" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                ⚙️ Config
+            </button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="content-dashboard">
+            <!-- Status Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-gray-800 rounded-lg p-6 metric-card">
+                    <p class="text-gray-400 text-sm mb-2">Status</p>
+                    <p id="status-text" class="text-2xl font-bold">🔴 Parado</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-6 metric-card">
+                    <p class="text-gray-400 text-sm mb-2">PNL Acumulado</p>
+                    <p id="pnl-text" class="text-2xl font-bold">$0.00</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-6 metric-card">
+                    <p class="text-gray-400 text-sm mb-2">Ciclos Fechados</p>
+                    <p id="cycles-text" class="text-2xl font-bold">0</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-6 metric-card">
+                    <p class="text-gray-400 text-sm mb-2">Win Rate</p>
+                    <p id="winrate-text" class="text-2xl font-bold">0%</p>
+                </div>
+            </div>
+
+            <!-- Métricas Detalhadas -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="text-lg font-semibold mb-4">💰 Performance</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Total Trades:</span>
+                            <span id="total-trades">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Trades Ganhos:</span>
+                            <span id="winning-trades" class="text-green-400">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Trades Perdidos:</span>
+                            <span id="losing-trades" class="text-red-400">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="text-lg font-semibold mb-4">📊 Médias</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Média de Ganho:</span>
+                            <span id="avg-win" class="text-green-400">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Média de Perda:</span>
+                            <span id="avg-loss" class="text-red-400">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Profit Factor:</span>
+                            <span id="profit-factor">0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="text-lg font-semibold mb-4">🎯 Extremos</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Maior Ganho:</span>
+                            <span id="largest-win" class="text-green-400">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Maior Perda:</span>
+                            <span id="largest-loss" class="text-red-400">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Capital Atual:</span>
+                            <span id="current-balance">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">🎮 Controles</h2>
+                <div class="flex gap-4 flex-wrap">
+                    <button id="btn-start" onclick="startBot()" 
+                            class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-semibold flex items-center gap-2">
+                        ▶️ Iniciar Bot
+                    </button>
+                    <button id="btn-stop" onclick="stopBot(false)" disabled
+                            class="bg-yellow-600 hover:bg-yellow-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
+                        ⏸️ Parar (Gracioso)
+                    </button>
+                    <button id="btn-stop-force" onclick="stopBot(true)" disabled
+                            class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
+                        🛑 Parar (Forçado)
+                    </button>
+                    <button id="btn-restart" onclick="restartBot()" disabled
+                            class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
+                        🔄 Reiniciar
+                    </button>
+                </div>
+            </div>
+
+            <!-- System Info -->
+            <div id="system-info" class="bg-gray-800 rounded-lg p-6 hidden">
+                <h2 class="text-xl font-semibold mb-4">💻 Informações do Sistema</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-gray-400 text-sm">PID</p>
+                        <p id="pid-text" class="text-xl font-mono">-</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">CPU</p>
+                        <p id="cpu-text" class="text-xl">0%</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Memória</p>
+                        <p id="memory-text" class="text-xl">0 MB</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Uptime</p>
+                        <p id="uptime-text" class="text-xl">0m</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions & Orders Tab (NOVA) -->
+        <div id="content-positions" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Posições Ativas -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📈 Posições Ativas</h2>
+                        <span id="positions-count" class="bg-blue-600 px-3 py-1 rounded text-sm">0</span>
+                    </div>
+                    <div id="positions-container" class="space-y-3">
+                        <p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>
+                    </div>
+                </div>
+                
+                <!-- Ordens Abertas -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📋 Ordens Abertas</h2>
+                        <span id="orders-count" class="bg-yellow-600 px-3 py-1 rounded text-sm">0</span>
+                    </div>
+                    <div id="orders-container" class="space-y-3">
+                        <p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Resumo de Posições -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">📊 Resumo</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-gray-400 text-sm">PNL Total Posições</p>
+                        <p id="positions-total-pnl" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Exposição Total</p>
+                        <p id="positions-exposure" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Ordens Pendentes</p>
+                        <p id="orders-pending-value" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Grid Preenchido</p>
+                        <p id="grid-fill-percent" class="text-2xl font-bold">0%</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Tab -->
+        <div id="content-charts" class="hidden">
+            <div class="grid grid-cols-1 gap-6">
+                <!-- PNL Chart -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📈 PNL Acumulado (24h)</h2>
+                        <div class="flex gap-2">
+                            <button onclick="updatePNLChart(24)" class="px-3 py-1 bg-blue-600 rounded text-sm">24h</button>
+                            <button onclick="updatePNLChart(168)" class="px-3 py-1 bg-gray-700 rounded text-sm">7d</button>
+                            <button onclick="updatePNLChart(720)" class="px-3 py-1 bg-gray-700 rounded text-sm">30d</button>
+                        </div>
+                    </div>
+                    <canvas id="pnl-chart" height="100"></canvas>
+                </div>
+                
+                <!-- Trades Distribution -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h2 class="text-xl font-semibold mb-4">📊 Distribuição de Trades</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <canvas id="winrate-chart"></canvas>
+                        <canvas id="pnl-distribution-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trades Tab -->
+        <div id="content-trades" class="hidden">
+            <div class="bg-gray-800 rounded-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">📋 Histórico de Trades</h2>
+                    <div class="flex gap-2">
+                        <button onclick="exportCSV()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded flex items-center gap-2">
+                            📥 CSV
+                        </button>
+                        <button onclick="refreshTrades()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                            🔄
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-700">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Data/Hora</th>
+                                <th class="px-4 py-3 text-left">Símbolo</th>
+                                <th class="px-4 py-3 text-right">PNL USD</th>
+                                <th class="px-4 py-3 text-right">PNL %</th>
+                                <th class="px-4 py-3 text-right">Duração</th>
+                                <th class="px-4 py-3 text-left">Motivo</th>
+                                <th class="px-4 py-3 text-right">PNL Acum.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-table-body" class="divide-y divide-gray-700">
+                            <tr>
+                                <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                    Carregando histórico...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 text-center">
+                    <button onclick="loadMoreTrades()" id="btn-load-more" 
+                            class="bg-gray-700 hover:bg-gray-600 px-6 py-2 rounded">
+                        Carregar Mais
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Tab (MELHORADO) -->
+        <div id="content-logs" class="hidden">
+            <div class="bg-gray-800 rounded-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">📜 Logs (Auto-refresh)</h2>
+                    <div class="flex gap-2">
+                        <button id="btn-pause-logs" onclick="toggleLogsPause()" 
+                                class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded flex items-center gap-2">
+                            ⏸️ Pausar
+                        </button>
+                        <button onclick="refreshLogs()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                            🔄 Atualizar
+                        </button>
+                        <button onclick="clearLogsDisplay()" class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded">
+                            🗑️ Limpar
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-yellow-500/10 border border-yellow-500 rounded-lg p-3 mb-4 flex items-center gap-2">
+                    <span class="text-yellow-500">⚡</span>
+                    <span class="text-sm text-yellow-200" id="logs-status">
+                        Auto-refresh ativo (a cada 3s)
+                    </span>
+                </div>
+                <div id="logs-container" class="bg-gray-900 rounded p-4 h-96 overflow-y-auto font-mono text-sm">
+                    <p class="text-gray-500">Carregando logs...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Config Tab -->
+        <div id="content-config" class="hidden">
+            <div class="bg-gray-800 rounded-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">⚙️ Configurações</h2>
+                    <button onclick="saveConfig()" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded">
+                        💾 Salvar
+                    </button>
+                </div>
+                <div id="config-container" class="space-y-4">
+                    <p class="text-gray-500">Carregando configurações...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Estado Global
+        const API_BASE = window.location.origin;
+        let socket = null;
+        let currentTab = 'dashboard';
+        let pnlChart = null;
+        let winrateChart = null;
+        let pnlDistChart = null;
+        let tradesLimit = 50;
+        let logsPaused = false;
+        let logsAutoScroll = true;
+        
+        console.log('🚀 Dashboard v2.1 iniciado');
+
+        // ========== WEBSOCKET ==========
+        
+        function initWebSocket() {
+            socket = io(API_BASE, {
+                transports: ['polling'],
+                upgrade: false,
+                rememberUpgrade: false,
+                timeout: 20000,
+                forceNew: true
+            });
+            
+            socket.on('connect', () => {
+                console.log('✅ WebSocket conectado');
+                updateWSStatus(true);
+                showAlert('success', '🔌 Conectado ao servidor');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('❌ WebSocket desconectado');
+                updateWSStatus(false);
+                showAlert('error', '🔌 Desconectado do servidor');
+            });
+            
+            socket.on('bot_status_update', (data) => {
+                updateBotStatus(data);
+            });
+            
+            socket.on('metrics_update', (data) => {
+                updateMetrics(data);
+            });
+            
+            socket.on('pnl_history_update', (data) => {
+                updatePNLChartData(data);
+            });
+            
+            // NOVO: Posições e Ordens
+            socket.on('positions_update', (data) => {
+                updatePositions(data);
+            });
+            
+            socket.on('orders_update', (data) => {
+                updateOrders(data);
+            });
+            
+            // NOVO: Logs auto-refresh
+            socket.on('logs_update', (data) => {
+                if (!logsPaused) {
+                    updateLogsDisplay(data);
+                }
+            });
+            
+            socket.on('alert', (data) => {
+                showAlert(data.type, data.message);
+            });
+        }
+        
+        function updateWSStatus(connected) {
+            const statusEl = document.getElementById('ws-status');
+            if (connected) {
+                statusEl.innerHTML = '<span class="ws-connected">●</span><span class="text-sm">Conectado</span>';
+            } else {
+                statusEl.innerHTML = '<span class="ws-disconnected">●</span><span class="text-sm">Desconectado</span>';
+            }
+        }
+
+        // ========== ALERTS ==========
+        
+        function showAlert(type, message) {
+            const container = document.getElementById('alerts-container');
+            const id = 'alert-' + Date.now();
+            
+            const colors = {
+                success: 'bg-green-600',
+                error: 'bg-red-600',
+                warning: 'bg-yellow-600',
+                info: 'bg-blue-600'
+            };
+            
+            const alert = document.createElement('div');
+            alert.id = id;
+            alert.className = `alert-toast ${colors[type] || colors.info} text-white px-6 py-4 rounded-lg shadow-lg mb-2`;
+            alert.innerHTML = `
+                <div class="flex items-center justify-between gap-4">
+                    <span>${message}</span>
+                    <button onclick="closeAlert('${id}')" class="text-white hover:text-gray-200">✕</button>
+                </div>
+            `;
+            
+            container.appendChild(alert);
+            
+            setTimeout(() => {
+                closeAlert(id);
+            }, 5000);
+        }
+        
+        function closeAlert(id) {
+            const alert = document.getElementById(id);
+            if (alert) {
+                alert.classList.add('fade-out');
+                setTimeout(() => alert.remove(), 300);
+            }
+        }
+
+        // ========== TABS ==========
+        
+        function showTab(tab) {
+            currentTab = tab;
+            
+            ['dashboard', 'positions', 'charts', 'trades', 'logs', 'config'].forEach(t => {
+                document.getElementById(`content-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}`).classList.remove('border-blue-500', 'text-blue-500');
+                document.getElementById(`tab-${t}`).classList.add('text-gray-400');
+            });
+            
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('border-blue-500', 'text-blue-500');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
+            
+            if (tab === 'dashboard') {
+                loadPositionsAndOrders();
+            } else if (tab === 'charts') {
+                initCharts();
+                loadPNLHistory(24);
+            } else if (tab === 'trades') {
+                loadTrades();
+            } else if (tab === 'logs') {
+                refreshLogs();
+            } else if (tab === 'config') {
+                loadConfig();
+            } else if (tab === 'positions') {
+                loadPositionsAndOrders();
+            }
+        }
+
+        // ========== BOT CONTROLS ==========
+        
+        async function startBot() {
+            try {
+                showAlert('info', '⏳ Iniciando bot...');
+                const response = await fetch(`${API_BASE}/api/bot/start`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showAlert('success', result.message);
+                } else {
+                    showAlert('error', result.message);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao iniciar bot:', error);
+                showAlert('error', 'Erro ao iniciar bot: ' + error.message);
+            }
+        }
+        
+        async function stopBot(force) {
+            try {
+                showAlert('info', force ? '⏳ Parando bot (forçado)...' : '⏳ Parando bot...');
+                const response = await fetch(`${API_BASE}/api/bot/stop`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({force})
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showAlert('success', result.message);
+                } else {
+                    showAlert('error', result.message);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao parar bot:', error);
+                showAlert('error', 'Erro ao parar bot: ' + error.message);
+            }
+        }
+        
+        async function restartBot() {
+            try {
+                showAlert('info', '⏳ Reiniciando bot...');
+                const response = await fetch(`${API_BASE}/api/bot/restart`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showAlert('success', result.message);
+                } else {
+                    showAlert('error', result.message);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao reiniciar bot:', error);
+                showAlert('error', 'Erro ao reiniciar bot: ' + error.message);
+            }
+        }
+
+        // ========== UPDATE FUNCTIONS ==========
+        
+        function updateBotStatus(data) {
+            const statusText = document.getElementById('status-text');
+            const btnStart = document.getElementById('btn-start');
+            const btnStop = document.getElementById('btn-stop');
+            const btnStopForce = document.getElementById('btn-stop-force');
+            const btnRestart = document.getElementById('btn-restart');
+            const systemInfo = document.getElementById('system-info');
+            
+            if (data.running) {
+                statusText.innerHTML = '🟢 Rodando <span class="pulse-dot">●</span>';
+                btnStart.disabled = true;
+                btnStart.classList.add('btn-disabled');
+                btnStop.disabled = false;
+                btnStop.classList.remove('btn-disabled');
+                btnStopForce.disabled = false;
+                btnStopForce.classList.remove('btn-disabled');
+                btnRestart.disabled = false;
+                btnRestart.classList.remove('btn-disabled');
+                systemInfo.classList.remove('hidden');
+                
+                document.getElementById('pid-text').textContent = data.pid || '-';
+                document.getElementById('cpu-text').textContent = (data.cpu_percent || 0).toFixed(1) + '%';
+                document.getElementById('memory-text').textContent = (data.memory_mb || 0).toFixed(0) + ' MB';
+                document.getElementById('uptime-text').textContent = formatUptime(data.uptime_seconds || 0);
+            } else {
+                statusText.textContent = '🔴 Parado';
+                btnStart.disabled = false;
+                btnStart.classList.remove('btn-disabled');
+                btnStop.disabled = true;
+                btnStop.classList.add('btn-disabled');
+                btnStopForce.disabled = true;
+                btnStopForce.classList.add('btn-disabled');
+                btnRestart.disabled = true;
+                btnRestart.classList.add('btn-disabled');
+                systemInfo.classList.add('hidden');
+            }
+            
+            document.getElementById('last-update').textContent = 
+                'Última atualização: ' + new Date().toLocaleTimeString('pt-BR');
+        }
+        
+        function updateMetrics(data) {
+            document.getElementById('pnl-text').textContent = `$${data.accumulated_pnl.toFixed(2)}`;
+            document.getElementById('pnl-text').className = `text-2xl font-bold ${data.accumulated_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            
+            document.getElementById('cycles-text').textContent = data.cycles_closed || 0;
+            document.getElementById('winrate-text').textContent = `${data.win_rate || 0}%`;
+            document.getElementById('winrate-text').className = `text-2xl font-bold ${data.win_rate >= 50 ? 'text-green-400' : 'text-yellow-400'}`;
+            
+            document.getElementById('total-trades').textContent = data.total_trades || 0;
+            document.getElementById('winning-trades').textContent = data.winning_trades || 0;
+            document.getElementById('losing-trades').textContent = data.losing_trades || 0;
+            
+            document.getElementById('avg-win').textContent = `$${(data.avg_win || 0).toFixed(2)}`;
+            document.getElementById('avg-loss').textContent = `$${(data.avg_loss || 0).toFixed(2)}`;
+            document.getElementById('profit-factor').textContent = (data.profit_factor || 0).toFixed(2);
+            document.getElementById('profit-factor').className = data.profit_factor >= 1 ? 'text-green-400' : 'text-red-400';
+            
+            document.getElementById('largest-win').textContent = `$${(data.largest_win || 0).toFixed(2)}`;
+            document.getElementById('largest-loss').textContent = `$${(data.largest_loss || 0).toFixed(2)}`;
+            document.getElementById('current-balance').textContent = `$${(data.current_balance || 0).toFixed(2)}`;
+            
+            if (currentTab === 'charts') {
+                updateDistributionCharts(data);
+            }
+        }
+        
+        function formatUptime(seconds) {
+            if (seconds < 60) return `${seconds}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+            return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
+        }
+
+        // ========== POSIÇÕES E ORDENS (NOVO) ==========
+        
+        async function loadPositionsAndOrders() {
+            try {
+                console.log('🔄 Carregando posições e ordens...');
+                const [posRes, ordRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/positions`),
+                    fetch(`${API_BASE}/api/orders`)
+                ]);
+                
+                const positions = await posRes.json();
+                const orders = await ordRes.json();
+                
+                console.log('📊 Posições recebidas:', positions.length, positions);
+                console.log('📋 Ordens recebidas:', orders.length, orders);
+                
+                updatePositions(positions);
+                updateOrders(orders);
+            } catch (error) {
+                console.error('❌ Erro ao carregar posições e ordens:', error);
+            }
+        }
+        
+        function updatePositions(positions) {
+            console.log('🔄 updatePositions chamada com:', positions.length, 'posições');
+            const container = document.getElementById('positions-container');
+            const countEl = document.getElementById('positions-count');
+            
+            countEl.textContent = positions.length;
+            
+            if (positions.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>';
+                document.getElementById('positions-total-pnl').textContent = '$0.00';
+                document.getElementById('positions-exposure').textContent = '$0.00';
+                return;
+            }
+            
+            let totalPnl = 0;
+            let totalExposure = 0;
+            
+            container.innerHTML = positions.map(pos => {
+                // Converter strings para números
+                const pnl = parseFloat(pos.pnl_usd || pos.unrealized_pnl || 0);
+                const size = parseFloat(pos.size || pos.amount || 0);
+                const entryPrice = parseFloat(pos.entry_price || pos.avg_price || 0);
+                const currentPrice = parseFloat(pos.current_price || entryPrice || 0);
+                const pnlPercent = parseFloat(pos.pnl_percent || 0);
+                
+                totalPnl += pnl;
+                totalExposure += entryPrice * size;
+                
+                const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+                const sideClass = (pos.side || '').toLowerCase().includes('long') ? 'position-long' : 'position-short';
+                const sideLabel = (pos.side || '').toLowerCase().includes('long') ? '🟢 LONG' : '🔴 SHORT';
+                
+                return `
+                    <div class="bg-gray-700 rounded-lg p-4 ${sideClass}">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="font-bold text-lg">${pos.symbol || '-'}</span>
+                                <span class="ml-2 text-sm">${sideLabel}</span>
+                            </div>
+                            <span class="${pnlClass} font-bold">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                                <span class="text-gray-400">Tamanho:</span>
+                                <span class="ml-1">${size.toFixed(4)}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-400">Entrada:</span>
+                                <span class="ml-1">$${entryPrice.toFixed(2)}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-400">Atual:</span>
+                                <span class="ml-1">$${currentPrice.toFixed(2)}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-400">Ativo há:</span>
+                                <span class="ml-1">${pos.duration_str || '-'}</span>
+                            </div>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-gray-600">
+                            <span class="text-gray-400 text-xs">PNL: </span>
+                            <span class="${pnlClass} text-sm font-semibold">
+                                ${pnlPercent.toFixed(2)}%
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('positions-total-pnl').textContent = `$${totalPnl.toFixed(2)}`;
+            document.getElementById('positions-total-pnl').className = `text-2xl font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            document.getElementById('positions-exposure').textContent = `$${totalExposure.toFixed(2)}`;
+        }
+        
+        function updateOrders(orders) {
+            console.log('🔄 updateOrders chamada com:', orders.length, 'ordens');
+            const container = document.getElementById('orders-container');
+            const countEl = document.getElementById('orders-count');
+            
+            countEl.textContent = orders.length;
+            
+            if (orders.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>';
+                document.getElementById('orders-pending-value').textContent = '$0.00';
+                return;
+            }
+            
+            let totalValue = 0;
+            let buyOrders = 0;
+            let sellOrders = 0;
+            
+            container.innerHTML = orders.map(order => {
+                // Converter strings para números
+                const price = parseFloat(order.price || 0);
+                const size = parseFloat(order.size || order.initial_amount || 0);
+                const value = price * size;
+                totalValue += value;
+                
+                const side = (order.side || '').toLowerCase();
+                if (side.includes('buy') || side === 'bid') {
+                    buyOrders++;
+                } else {
+                    sellOrders++;
+                }
+                
+                const sideClass = side.includes('buy') || side === 'bid' ? 'order-buy' : 'order-sell';
+                const sideLabel = side.includes('buy') || side === 'bid' ? '🔵 BUY' : '🟠 SELL';
+                
+                return `
+                    <div class="bg-gray-700 rounded-lg p-4 ${sideClass}">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="font-bold">${order.symbol || '-'}</span>
+                                <span class="ml-2 text-sm">${sideLabel}</span>
+                            </div>
+                            <span class="text-gray-400 text-sm">${order.age_str || '-'}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                                <span class="text-gray-400">Preço:</span>
+                                <span class="ml-1">$${price.toFixed(2)}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-400">Tamanho:</span>
+                                <span class="ml-1">${size.toFixed(4)}</span>
+                            </div>
+                            <div class="col-span-2">
+                                <span class="text-gray-400">Valor:</span>
+                                <span class="ml-1 font-semibold">$${value.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('orders-pending-value').textContent = `$${totalValue.toFixed(2)}`;
+            
+            // Calcular % do grid preenchido (buy + sell orders)
+            const totalOrders = buyOrders + sellOrders;
+            const gridFillPercent = totalOrders > 0 ? ((buyOrders + sellOrders) / (totalOrders * 2)) * 100 : 0;
+            document.getElementById('grid-fill-percent').textContent = `${gridFillPercent.toFixed(0)}%`;
+        }
+
+        // ========== LOGS COM AUTO-REFRESH (MELHORADO) ==========
+        
+        function toggleLogsPause() {
+            logsPaused = !logsPaused;
+            const btn = document.getElementById('btn-pause-logs');
+            const status = document.getElementById('logs-status');
+            
+            if (logsPaused) {
+                btn.innerHTML = '▶️ Retomar';
+                btn.className = 'bg-green-600 hover:bg-green-700 px-4 py-2 rounded flex items-center gap-2';
+                status.textContent = 'Auto-refresh PAUSADO';
+            } else {
+                btn.innerHTML = '⏸️ Pausar';
+                btn.className = 'bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded flex items-center gap-2';
+                status.textContent = 'Auto-refresh ativo (a cada 3s)';
+                refreshLogs(); // Atualizar imediatamente ao retomar
+            }
+        }
+        
+        async function refreshLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/api/logs?lines=200`);
+                const data = await response.json();
+                updateLogsDisplay(data);
+            } catch (error) {
+                console.error('Erro ao carregar logs:', error);
+            }
+        }
+        
+        function updateLogsDisplay(data) {
+            const container = document.getElementById('logs-container');
+            
+            // Verificar se usuário está no final (para auto-scroll inteligente)
+            const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+            
+            container.innerHTML = data.logs.map(line => {
+                let className = 'log-line';
+                if (line.includes('ERROR') || line.includes('❌')) className += ' log-error';
+                else if (line.includes('WARNING') || line.includes('⚠️')) className += ' log-warning';
+                else if (line.includes('INFO') || line.includes('✅')) className += ' log-info';
+                else if (line.includes('DEBUG')) className += ' log-debug';
+                
+                return `<div class="${className}">${line}</div>`;
+            }).join('');
+            
+            // Auto-scroll INTELIGENTE: só faz scroll se usuário estava no final
+            if (wasAtBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+        
+        function clearLogsDisplay() {
+            document.getElementById('logs-container').innerHTML = '<p class="text-gray-500">Logs limpos. Clique em Atualizar para recarregar.</p>';
+        }
+
+        // ========== CHARTS ==========
+        
+        function initCharts() {
+            if (!pnlChart) {
+                const ctx = document.getElementById('pnl-chart').getContext('2d');
+                pnlChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'PNL Acumulado',
+                            data: [],
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: '#fff' } }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#9ca3af' },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            },
+                            y: {
+                                ticks: { color: '#9ca3af' },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            if (!winrateChart) {
+                const ctx2 = document.getElementById('winrate-chart').getContext('2d');
+                winrateChart = new Chart(ctx2, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Ganhos', 'Perdas'],
+                        datasets: [{
+                            data: [0, 0],
+                            backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(239, 68, 68, 0.8)']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { labels: { color: '#fff' } },
+                            title: {
+                                display: true,
+                                text: 'Win Rate',
+                                color: '#fff'
+                            }
+                        }
+                    }
+                });
+            }
+            
+            if (!pnlDistChart) {
+                const ctx3 = document.getElementById('pnl-distribution-chart').getContext('2d');
+                pnlDistChart = new Chart(ctx3, {
+                    type: 'bar',
+                    data: {
+                        labels: ['< -$10', '-$10 a -$5', '-$5 a $0', '$0 a $5', '$5 a $10', '> $10'],
+                        datasets: [{
+                            label: 'Número de Trades',
+                            data: [0, 0, 0, 0, 0, 0],
+                            backgroundColor: [
+                                'rgba(239, 68, 68, 0.8)',
+                                'rgba(251, 146, 60, 0.8)',
+                                'rgba(250, 204, 21, 0.8)',
+                                'rgba(132, 204, 22, 0.8)',
+                                'rgba(34, 197, 94, 0.8)',
+                                'rgba(16, 185, 129, 0.8)'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { labels: { color: '#fff' } },
+                            title: {
+                                display: true,
+                                text: 'Distribuição de PNL',
+                                color: '#fff'
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#9ca3af' },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            },
+                            y: {
+                                ticks: { color: '#9ca3af' },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        function updatePNLChartData(data) {
+            if (!pnlChart) return;
+            
+            const labels = data.map(d => {
+                const date = new Date(d.timestamp);
+                return date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+            });
+            
+            const values = data.map(d => d.accumulated);
+            
+            pnlChart.data.labels = labels;
+            pnlChart.data.datasets[0].data = values;
+            pnlChart.update();
+        }
+        
+        function updateDistributionCharts(metrics) {
+            if (winrateChart) {
+                winrateChart.data.datasets[0].data = [
+                    metrics.winning_trades || 0,
+                    metrics.losing_trades || 0
+                ];
+                winrateChart.update();
+            }
+        }
+        
+        async function updatePNLChart(hours) {
+            try {
+                const response = await fetch(`${API_BASE}/api/pnl-history?hours=${hours}`);
+                const data = await response.json();
+                updatePNLChartData(data);
+            } catch (error) {
+                console.error('Erro ao atualizar gráfico PNL:', error);
+            }
+        }
+        
+        async function loadPNLHistory(hours) {
+            try {
+                const response = await fetch(`${API_BASE}/api/pnl-history?hours=${hours}`);
+                const data = await response.json();
+                updatePNLChartData(data);
+            } catch (error) {
+                console.error('Erro ao carregar histórico PNL:', error);
+            }
+        }
+
+        // ========== TRADES ==========
+        
+        async function loadTrades() {
+            try {
+                const response = await fetch(`${API_BASE}/api/trades?limit=${tradesLimit}`);
+                const trades = await response.json();
+                
+                const tbody = document.getElementById('trades-table-body');
+                
+                if (trades.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">Nenhum trade registrado</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = trades.map(trade => {
+                    const timestamp = new Date(trade.timestamp).toLocaleString('pt-BR');
+                    const pnl = trade.pnl_usd || 0;
+                    const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+                    const rowClass = pnl >= 0 ? 'trade-row-profit' : 'trade-row-loss';
+                    
+                    return `
+                        <tr class="${rowClass}">
+                            <td class="px-4 py-3">${timestamp}</td>
+                            <td class="px-4 py-3">${trade.symbol || '-'}</td>
+                            <td class="px-4 py-3 text-right ${pnlClass} font-semibold">$${pnl.toFixed(2)}</td>
+                            <td class="px-4 py-3 text-right ${pnlClass}">${(trade.pnl_percent || 0).toFixed(2)}%</td>
+                            <td class="px-4 py-3 text-right">${(trade.duration_minutes || 0).toFixed(1)}min</td>
+                            <td class="px-4 py-3">${trade.reason || '-'}</td>
+                            <td class="px-4 py-3 text-right">${(trade.accumulated_pnl || 0).toFixed(2)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Erro ao carregar trades:', error);
+                showAlert('error', 'Erro ao carregar histórico de trades');
+            }
+        }
+        
+        function refreshTrades() {
+            tradesLimit = 50;
+            loadTrades();
+        }
+        
+        function loadMoreTrades() {
+            tradesLimit += 50;
+            loadTrades();
+        }
+
+        // ========== CONFIG ==========
+        
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config`);
+                const config = await response.json();
+                
+                const container = document.getElementById('config-container');
+                
+                if (Object.keys(config).length === 0) {
+                    container.innerHTML = `
+                        <div class="bg-yellow-500/10 border border-yellow-500 rounded-lg p-4">
+                            <p class="text-yellow-500 font-bold mb-2">⚠️ Arquivo .env não encontrado</p>
+                            <p class="text-gray-300 text-sm">Crie um arquivo .env na raiz do projeto.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = Object.entries(config).map(([key, value]) => {
+                    const isSecret = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET');
+                    return `
+                        <div class="grid grid-cols-3 gap-4 items-center">
+                            <label class="text-gray-400">${key}</label>
+                            <input 
+                                type="${isSecret ? 'password' : 'text'}"
+                                id="config-${key}"
+                                value="${value}"
+                                class="col-span-2 bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Erro ao carregar config:', error);
+                showAlert('error', 'Erro ao carregar configurações');
+            }
+        }
+        
+        async function saveConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config`);
+                const config = await response.json();
+                
+                const updates = {};
+                for (const key of Object.keys(config)) {
+                    const input = document.getElementById(`config-${key}`);
+                    if (input) {
+                        updates[key] = input.value;
+                    }
+                }
+                
+                const saveResponse = await fetch(`${API_BASE}/api/config/update`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                const result = await saveResponse.json();
+                
+                if (result.status === 'success') {
+                    showAlert('success', '✅ Configurações salvas! Reinicie o bot para aplicar.');
+                } else {
+                    showAlert('error', result.message);
+                }
+            } catch (error) {
+                console.error('Erro ao salvar config:', error);
+                showAlert('error', 'Erro ao salvar configurações');
+            }
+        }
+
+        // ========== EXPORT ==========
+        
+        function exportCSV() {
+            window.open(`${API_BASE}/api/export/csv`, '_blank');
+            showAlert('success', '📥 Exportando CSV...');
+        }
+
+        // ========== INIT ==========
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ DOM carregado');
+            initWebSocket();
+            showTab('dashboard');
+            
+            // Carregar dados iniciais
+            loadPositionsAndOrders();
+            
+            // Polling periódico para dados (fallback se WebSocket falhar)
+            setInterval(() => {
+                loadPositionsAndOrders();
+            }, 30000); // A cada 30 segundos
+        });
+    </script>
+</body>
+</html>

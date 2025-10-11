@@ -8,6 +8,7 @@ import sys
 import time
 import signal
 import logging
+import json
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -24,11 +25,25 @@ from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger, get_strategy_specific_messages
 from src.telegram_notifier import TelegramNotifier
 from src.grid_risk_manager import GridRiskManager
+from src.margin_trend_protector import create_margin_trend_adapter
+
+# Força UTF-8 no Windows para suportar emojis
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    try:
+        os.system('chcp 65001 >nul 2>&1')
+    except:
+        pass
 
 class GridTradingBot:
     def __init__(self):
         # Carregar configurações
         load_dotenv()
+        
+        # Criar dicionário config com todas as variáveis de ambiente
+        self.config = dict(os.environ)
         
         # Determinar tipo de estratégia - APENAS UMA VARIÁVEL: STRATEGY_TYPE
         strategy_type_env = os.getenv('STRATEGY_TYPE', 'market_making').lower()
@@ -65,6 +80,10 @@ class GridTradingBot:
         self.enable_periodic_reset = os.getenv('ENABLE_PERIODIC_GRID_RESET', 'false').lower() == 'true'
         self.grid_reset_interval = int(os.getenv('GRID_RESET_INTERVAL_MINUTES', '60')) * 60  # Converter para segundos
 
+        # 📄 NOVA FUNCIONALIDADE: Snapshots de posições e ordens
+        self.enable_snapshots = os.getenv('ENABLE_SNAPSHOTS', 'true').lower() == 'true'
+        self.snapshot_interval_seconds = int(os.getenv('SNAPSHOT_INTERVAL_SECONDS', '30'))
+
         # Configurações de controle de sessão
         self.session_stop_loss = float(os.getenv('SESSION_STOP_LOSS_USD', '100'))
         self.session_take_profit = float(os.getenv('SESSION_TAKE_PROFIT_USD', '200'))
@@ -82,6 +101,9 @@ class GridTradingBot:
         self.telegram = None
         self.risk_manager = None
         self.strategy = None
+
+        # Protetor de margem será inicializado depois dos componentes
+        self.margin_adapter = None
 
         # Setup signal handlers para shutdown gracioso
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -246,6 +268,15 @@ class GridTradingBot:
                     self.strategy = GridStrategy(self.auth, self.calculator, self.position_mgr)
             
             self.logger.info("✅ Componentes inicializados com sucesso")
+            
+            # 8. Inicializar protetor de margem (após todos os componentes)
+            try:
+                self.margin_adapter = create_margin_trend_adapter(self, self.config)
+                self.logger.info("✅ Proteção de margem inicializada")
+            except Exception as margin_error:
+                self.logger.error(f"❌ Erro ao inicializar proteção de margem: {margin_error}")
+                self.margin_adapter = None
+            
             return True
             
         except Exception as e:
@@ -384,6 +415,44 @@ class GridTradingBot:
             import traceback
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
             return 0
+    
+    def _save_positions_snapshot(self, positions):
+        """Salva snapshot das posições ativas em arquivo JSON"""
+        try:
+            os.makedirs("data", exist_ok=True)
+            
+            # Preparar dados das posições para o snapshot
+            snapshot_data = {
+                "timestamp": datetime.now().isoformat(),
+                "positions": positions if positions else [],
+                "total_positions": len(positions) if positions else 0
+            }
+            
+            with open("data/active_positions.json", "w", encoding="utf-8") as f:
+                json.dump(snapshot_data, f, ensure_ascii=False, indent=2)
+                
+            self.logger.debug(f"📄 Snapshot de posições salvo: {len(positions) if positions else 0} posições")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erro ao salvar posições: {e}")
+
+    def _save_orders_snapshot(self, orders):
+        """Salva snapshot das ordens ativas em arquivo JSON"""
+        try:
+            os.makedirs("data", exist_ok=True)
+            
+            # Preparar dados das ordens para o snapshot
+            snapshot_data = {
+                "timestamp": datetime.now().isoformat(),
+                "orders": orders if orders else [],
+                "total_orders": len(orders) if orders else 0
+            }
+            
+            with open("data/active_orders.json", "w", encoding="utf-8") as f:
+                json.dump(snapshot_data, f, ensure_ascii=False, indent=2)
+                
+            self.logger.debug(f"📄 Snapshot de ordens salvo: {len(orders) if orders else 0} ordens")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erro ao salvar ordens: {e}")
     
     def run(self):
         """Loop principal do bot"""
@@ -713,6 +782,18 @@ class GridTradingBot:
                     # Verificar margem ANTES de rebalancear
                     self.position_mgr.update_account_state()
                     
+                    # ===== PROTEÇÃO DE MARGEM (LINHA ÚNICA) =====
+                    if self.margin_adapter:
+                        margin_result = self.margin_adapter.monitor_and_protect()
+                        
+                        # Log status detalhado a cada 100 iterações (para debug)
+                        if iteration % 100 == 0:
+                            self.margin_adapter.log_detailed_status()
+                        
+                        if margin_result.get("status") in ["protection_triggered", "paused"]:
+                            last_rebalance = current_time
+                            continue
+                    
                     if self.position_mgr.account_balance > 0:
                         margin_percent = (self.position_mgr.margin_available / 
                                         self.position_mgr.account_balance * 100)
@@ -787,6 +868,25 @@ class GridTradingBot:
                 # Status periódico
                 if iteration % 60 == 0:  # 🔧 A cada 60 iterações (1 minuto)
                     self.print_status()
+
+                # 📄 Salvar snapshots das posições e ordens periodicamente
+                if self.enable_snapshots and iteration % self.snapshot_interval_seconds == 0:
+                    try:
+                        # Obter posições atuais da API
+                        positions = self.auth.get_positions()
+                        self._save_positions_snapshot(positions)
+                        
+                        # Obter ordens abertas da API  
+                        orders = self.auth.get_open_orders()
+                        self._save_orders_snapshot(orders)
+                        
+                        if iteration % 300 == 0:  # Log a cada 5 minutos apenas
+                            pos_count = len(positions) if positions else 0
+                            ord_count = len(orders) if orders else 0
+                            self.logger.info(f"📄 Snapshots salvos: {pos_count} posições, {ord_count} ordens")
+                            
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Erro ao salvar snapshots: {e}")
 
                 # Relatório detalhado a cada 10 minutos
                 if iteration % 600 == 0:

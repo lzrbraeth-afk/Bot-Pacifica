@@ -2,3 +2,21 @@ python-dotenv>=1.0.1
 requests>=2.32.0
 base58>=2.1.1
 solders>=0.20.0
+
+# Dependências da Interface Web Melhorada - Pacifica Bot
+# Instalar com: pip install -r requirements_web.txt
+
+# Web Framework
+Flask==3.0.0
+flask-cors==4.0.0
+flask-socketio==5.3.5
+
+# WebSocket
+python-socketio==5.10.0
+eventlet==0.33.3
+
+# Sistema e Processos
+psutil==5.9.6
+
+# Export PDF
+reportlab==4.0.7

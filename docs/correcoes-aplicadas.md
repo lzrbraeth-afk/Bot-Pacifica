@@ -41,6 +41,7 @@ Este documento registra os principais problemas identificados e as correções a
 32. **🆕 Target de profit de sessão** → Nova configuração para controle de lucro acumulado
 33. **🆕 Lot_size fixo multi-ativo** → Sistema dinâmico baseado no símbolo
 34. **🆕 Arredondamento incorreto para BTC** → Suporte para notação científica em lot_size
+35. **🆕 Sistema de proteção por tendência de margem** → Proteção universal contra quedas súbitas de margem
 
 ### 📊 **Resumo de Impacto**
 - ✅ **100% Estabilidade**: Eliminação de todos os crashes conhecidos
@@ -2068,4 +2069,243 @@ resultado = 0.00000012 ✅
 
 ---
 
-*Documento atualizado em 05/10/2025*
+## 🆕 **Problema 35: Sistema de Proteção por Tendência de Margem**
+
+### **Problema**
+- Bot não possuía proteção contra quedas súbitas de margem em curtos períodos
+- Perda de capital por deterioração rápida sem detecção automática
+- Ausência de monitoramento de tendência de margem ao longo do tempo
+- Falta de ações configuráveis para diferentes níveis de deterioração
+
+### **Análise Técnica**
+```
+❌ ANTES: Sem proteção por tendência
+- Monitoramento de margem apenas em valores absolutos
+- Sem histórico de evolução da margem
+- Proteção baseada apenas em momentos pontuais
+- Ações limitadas para casos de deterioração gradual
+```
+
+### **Solução Implementada**
+✅ **Sistema Universal de Proteção por Tendência de Margem**
+
+**1. Monitoramento Histórico de Margem:**
+```python
+class MarginTrendProtector:
+    def __init__(self, period_minutes: int = 3, drop_threshold_percent: float = 15.0):
+        self.period_minutes = period_minutes
+        self.drop_threshold_percent = drop_threshold_percent
+        self.margin_snapshots = []  # Histórico de snapshots
+        self.enabled = True
+```
+
+**2. Sistema de Snapshots Temporais:**
+```python
+def take_margin_snapshot(self, current_margin: float) -> None:
+    """Registra snapshot da margem atual com timestamp"""
+    current_time = time.time()
+    
+    # Limpar snapshots antigos (fora do período de análise)
+    cutoff_time = current_time - (self.period_minutes * 60)
+    self.margin_snapshots = [
+        snapshot for snapshot in self.margin_snapshots 
+        if snapshot['timestamp'] >= cutoff_time
+    ]
+    
+    # Adicionar novo snapshot
+    snapshot = {
+        'timestamp': current_time,
+        'margin': current_margin,
+        'datetime': datetime.fromtimestamp(current_time).strftime('%H:%M:%S')
+    }
+    self.margin_snapshots.append(snapshot)
+```
+
+**3. Análise de Tendência com Múltiplos Algoritmos:**
+```python
+def analyze_margin_trend(self) -> Dict:
+    """Analisa tendência da margem com múltiplos métodos"""
+    if len(self.margin_snapshots) < 2:
+        return {'status': 'insufficient_data'}
+    
+    oldest_margin = self.margin_snapshots[0]['margin']
+    current_margin = self.margin_snapshots[-1]['margin']
+    
+    # Método 1: Comparação simples
+    drop_percent = ((oldest_margin - current_margin) / oldest_margin) * 100
+    
+    # Método 2: Volatilidade (desvio padrão)
+    margins = [s['margin'] for s in self.margin_snapshots]
+    volatility = statistics.stdev(margins) if len(margins) > 1 else 0
+    
+    # Método 3: Tendência linear (slope)
+    if len(self.margin_snapshots) >= 3:
+        slope = self._calculate_trend_slope(margins)
+    else:
+        slope = 0
+    
+    return {
+        'status': 'analyzed',
+        'drop_percent': drop_percent,
+        'volatility': volatility,
+        'slope': slope,
+        'oldest_margin': oldest_margin,
+        'current_margin': current_margin,
+        'period_minutes': self.period_minutes,
+        'snapshots_count': len(self.margin_snapshots)
+    }
+```
+
+**4. Sistema de Ações Configuráveis:**
+```python
+def execute_protection_action(self, action: str, trend_data: Dict) -> bool:
+    """Executa ação de proteção baseada na configuração"""
+    try:
+        if action == 'cancel_orders':
+            return self._cancel_orders(trend_data)
+        elif action == 'reduce_positions':
+            return self._reduce_positions(trend_data)
+        elif action == 'pause':
+            return self._pause_bot(trend_data)
+        elif action == 'shutdown':
+            return self._shutdown_bot(trend_data)
+        else:
+            self.logger.warning(f"⚠️ Ação desconhecida: {action}")
+            return False
+    except Exception as e:
+        self.logger.error(f"❌ Erro ao executar ação {action}: {e}")
+        return False
+```
+
+**5. Padrão Adapter para Integração Limpa:**
+```python
+class MarginTrendAdapter:
+    """Adapter para integração limpa com o bot principal"""
+    def __init__(self, auth_client, position_manager, logger):
+        self.auth = auth_client
+        self.position_mgr = position_manager
+        self.logger = logger
+        self.protector = MarginTrendProtector(
+            period_minutes=int(os.getenv('MARGIN_TREND_PERIOD_MINUTES', '3')),
+            drop_threshold_percent=float(os.getenv('MARGIN_DROP_THRESHOLD_PERCENT', '15.0'))
+        )
+        
+    def monitor_and_protect(self) -> None:
+        """Método principal para monitoramento e proteção"""
+        if not self.protector.enabled:
+            return
+            
+        # Obter margem atual
+        current_margin = self._get_current_margin()
+        if current_margin is None:
+            return
+            
+        # Registrar snapshot
+        self.protector.take_margin_snapshot(current_margin)
+        
+        # Analisar tendência
+        trend_data = self.protector.analyze_margin_trend()
+        
+        # Verificar se proteção deve ser ativada
+        if self.protector.should_trigger_protection(trend_data):
+            action = os.getenv('MARGIN_TREND_ACTION', 'cancel_orders')
+            self.protector.execute_protection_action(action, trend_data)
+```
+
+### **Configurações Disponíveis**
+```env
+# Proteção por Tendência de Margem
+ENABLE_MARGIN_TREND_PROTECTION=true
+MARGIN_TREND_PERIOD_MINUTES=3
+MARGIN_DROP_THRESHOLD_PERCENT=15.0
+MARGIN_TREND_ACTION=cancel_orders
+
+# Ações disponíveis:
+# - cancel_orders: Cancela ordens em aberto
+# - reduce_positions: Reduz posições abertas
+# - pause: Pausa o bot temporariamente
+# - shutdown: Encerra o bot completamente
+```
+
+### **Integração no Bot Principal**
+```python
+# Em grid_bot.py
+def create_margin_trend_adapter(self):
+    """Cria adapter para proteção de tendência de margem"""
+    if not self._is_margin_trend_protection_enabled():
+        return None
+        
+    try:
+        from src.margin_trend_protector import MarginTrendAdapter
+        adapter = MarginTrendAdapter(
+            auth_client=self.auth,
+            position_manager=self.position_mgr,
+            logger=self.logger
+        )
+        self.logger.info("✅ Proteção por tendência de margem ativada")
+        return adapter
+    except Exception as e:
+        self.logger.error(f"❌ Erro ao criar proteção de margem: {e}")
+        return None
+
+# No loop principal
+if self.margin_trend_adapter:
+    self.margin_trend_adapter.monitor_and_protect()
+```
+
+### **Algoritmos de Análise Implementados**
+
+**1. Comparação Simples (Principal):**
+- Compara margem mais antiga com atual no período
+- Calcula percentual de queda
+- Método mais confiável para detecção de quedas sustained
+
+**2. Análise de Volatilidade:**
+- Calcula desvio padrão das margens no período
+- Detecta instabilidade e oscilações extremas
+- Complementa análise principal
+
+**3. Tendência Linear (Slope):**
+- Calcula inclinação da reta de tendência
+- Detecta aceleração de queda
+- Útil para quedas progressivas
+
+### **Benefícios**
+- ✅ **Proteção proativa**: Detecta deterioração antes que se torne crítica
+- ✅ **Configurável**: Período e threshold adaptáveis à estratégia
+- ✅ **Múltiplas ações**: 4 níveis de resposta (cancel → reduce → pause → shutdown)
+- ✅ **Universal**: Funciona com qualquer tipo de estratégia
+- ✅ **Não invasivo**: Padrão adapter mantém código principal limpo
+- ✅ **Histórico persistente**: Snapshots mantidos durante a sessão
+- ✅ **Análise robusta**: Múltiplos algoritmos de detecção
+
+### **Casos de Uso**
+```python
+# Exemplo 1: Queda de 15% em 3 minutos
+# Margem inicial: $1000 → Margem atual: $850
+# Ação: cancel_orders (padrão)
+
+# Exemplo 2: Queda de 20% em 2 minutos  
+# Margem inicial: $500 → Margem atual: $400
+# Ação: reduce_positions (mais agressiva)
+
+# Exemplo 3: Queda de 30% em 1 minuto
+# Margem inicial: $200 → Margem atual: $140
+# Ação: shutdown (proteção máxima)
+```
+
+### **📁 Arquivos Criados**
+- `src/margin_trend_protector.py`: **NOVO** - Sistema completo de proteção
+- `grid_bot.py`: Integração via adapter pattern
+
+### **📁 Arquivos Modificados**
+- `.env`: Adicionadas configurações de proteção
+- `.env.example`: Sincronização de parâmetros
+
+**📅 Data da Implementação**: 11/01/2025  
+**🔧 Versão do Bot**: 2.2  
+**✅ Status**: Implementado e Funcional
+
+---
+
+*Documento atualizado em 11/01/2025*
