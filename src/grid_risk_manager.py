@@ -418,44 +418,44 @@ class GridRiskManager:
         return True
     
     def _calculate_position_pnl(self, symbol: str, current_price: float) -> Optional[Dict]:
-        # self.logger.info(f"*** _calculate_position_pnl CALLED ***")
+        # self.logger.info(f"*** _calculate_position_pnl CHAMADO ***")
 
         # Tentar obter do cache primeiro
         if symbol not in self.position_mgr.positions:
-            self.logger.info(f"*** SYMBOL {symbol} NOT IN positions - UPDATING... ***")
+            self.logger.info(f"⚠️ Símbolo {symbol} não encontrado nas posições - Atualizando...")
             
             # Forçar atualização
             self.position_mgr.update_account_state()
             
             # Verificar novamente
             if symbol not in self.position_mgr.positions:
-                self.logger.info(f"*** STILL NOT FOUND after update ***")
+                self.logger.info(f"⚠️ Símbolo {symbol} ainda não encontrado após atualização")
                 return None
         
         position = self.position_mgr.positions[symbol]
 
         if symbol not in self.position_mgr.positions:
-            self.logger.info(f"*** SYMBOL {symbol} NOT IN positions ***")
-            self.logger.info(f"*** Available symbols: {list(self.position_mgr.positions.keys())} ***")
+            self.logger.info(f"⚠️ Símbolo {symbol} não está nas posições")
+            self.logger.info(f"📋 Símbolos disponíveis: {list(self.position_mgr.positions.keys())}")
             return None
         
         position = self.position_mgr.positions[symbol]
-        # self.logger.info(f"*** Position data: {position} ***")
+        # self.logger.info(f"*** Dados da posição: {position} ***")
         
         quantity = position.get('quantity', 0)
         avg_price = position.get('avg_price', 0)
         
-        # self.logger.info(f"*** quantity={quantity}, avg_price={avg_price} ***")
+        # self.logger.info(f"*** quantidade={quantity}, preço_médio={avg_price} ***")
         
         if quantity == 0 or avg_price == 0:
-            self.logger.info(f"*** RETURNING NONE: quantity={quantity}, avg_price={avg_price} ***")
+            self.logger.info(f"⚠️ Retornando None: quantidade={quantity}, preço_médio={avg_price}")
             return None
         
         # Calcular PNL
         pnl_usd = (current_price - avg_price) * quantity
         pnl_percent = ((current_price - avg_price) / avg_price) * 100
         
-        # self.logger.info(f"*** CALCULATED PNL: ${pnl_usd:.2f} ({pnl_percent:.2f}%) ***")
+        # self.logger.info(f"*** PNL CALCULADO: ${pnl_usd:.2f} ({pnl_percent:.2f}%) ***")
         
         return {
             'pnl_usd': pnl_usd,

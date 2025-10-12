@@ -4,7 +4,9 @@ Position Manager - Gerenciamento de posições, margem e risco
 
 import os
 import time
+import json
 import logging
+from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
 
@@ -426,6 +428,9 @@ class PositionManager:
             self.logger.info(f"   Ordens: {orders_count}")
             self.logger.info("=" * 70)
 
+            # Salvar estado da conta para interface web
+            self._save_account_state()
+
             if positions_count > 0:
                 self._load_positions_from_api()
         
@@ -449,6 +454,37 @@ class PositionManager:
                     self.logger.error(f"   {line}")
             self.logger.error("=" * 70)
             return False
+    
+    def _save_account_state(self):
+        """
+        Salva estado da conta em JSON para visualização na interface web
+        """
+        try:
+            data_dir = Path("data")
+            data_dir.mkdir(exist_ok=True)
+            
+            account_state_file = data_dir / "account_state.json"
+            
+            # Calcular margem livre em percentual
+            margin_free_percent = 0
+            if self.account_balance > 0:
+                margin_free_percent = (self.margin_available / self.account_balance) * 100
+            
+            state_data = {
+                "last_update": datetime.now().isoformat(),
+                "balance": round(self.account_balance, 2),
+                "margin_used": round(self.margin_used, 2),
+                "margin_available": round(self.margin_available, 2),
+                "margin_free_percent": round(margin_free_percent, 1)
+            }
+            
+            with open(account_state_file, 'w', encoding='utf-8') as f:
+                json.dump(state_data, f, indent=2, ensure_ascii=False)
+            
+            self.logger.debug(f"💾 Estado da conta salvo em {account_state_file}")
+            
+        except Exception as e:
+            self.logger.debug(f"Erro ao salvar estado da conta: {e}")
     
     def _sync_internal_state_with_api(self):
         """ Sincroniza estado interno com API real - FILTRANDO POR SÍMBOLO"""

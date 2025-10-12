@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🤖 Pacifica Trading Bot - Dashboard v2.1</title>
+    <title>🤖 Pacifica Trading Bot - Dashboard v1.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -102,19 +102,19 @@
     <!-- Alertas Toast -->
     <div id="alerts-container"></div>
     
-    <div class="container mx-auto p-6 max-w-7xl">
+    <div class="container mx-auto p-4 max-w-7xl">
         <!-- Header -->
         <div class="mb-8 flex justify-between items-center">
             <div>
                 <h1 class="text-4xl font-bold mb-2">🤖 Pacifica Trading Bot</h1>
-                <p class="text-gray-400">Dashboard v2.1 - Real-time Monitoring + Positions</p>
+                <p class="text-gray-400">Dashboard v1.1 - Configurações Rápidas + Auto-apply</p>
             </div>
             <div class="text-right">
                 <div class="flex items-center gap-2 justify-end mb-2">
-                    <span class="text-gray-400 text-sm">WebSocket:</span>
-                    <div id="ws-status" class="flex items-center gap-2">
-                        <span class="ws-disconnected">●</span>
-                        <span class="text-sm">Desconectado</span>
+                    <span class="text-gray-400 text-sm">Auto-Refresh:</span>
+                    <div id="refresh-status" class="flex items-center gap-2">
+                        <span class="ws-connected">●</span>
+                        <span class="text-sm">Ativo (30s)</span>
                     </div>
                 </div>
                 <div class="text-sm text-gray-500" id="last-update">Última atualização: -</div>
@@ -127,13 +127,9 @@
                     class="px-4 py-2 border-b-2 border-blue-500 text-blue-500 whitespace-nowrap">
                 📊 Dashboard
             </button>
-            <button onclick="showTab('positions')" id="tab-positions" 
+            <button onclick="showTab('volume')" id="tab-volume" 
                     class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
-                📈 Posições & Ordens
-            </button>
-            <button onclick="showTab('charts')" id="tab-charts" 
-                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
-                📉 Gráficos
+                💰 Volume
             </button>
             <button onclick="showTab('trades')" id="tab-trades" 
                     class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
@@ -143,6 +139,10 @@
                     class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
                 📜 Logs
             </button>
+            <button onclick="showTab('csv-analysis')" id="tab-csv-analysis" 
+                    class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
+                📊 Análise CSV
+            </button>
             <button onclick="showTab('config')" id="tab-config" 
                     class="px-4 py-2 text-gray-400 hover:text-white whitespace-nowrap">
                 ⚙️ Config
@@ -151,7 +151,7 @@
 
         <!-- Dashboard Tab -->
         <div id="content-dashboard">
-            <!-- Status Cards -->
+            <!-- Status Cards e Controles -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-gray-800 rounded-lg p-6 metric-card">
                     <p class="text-gray-400 text-sm mb-2">Status</p>
@@ -162,92 +162,126 @@
                     <p id="pnl-text" class="text-2xl font-bold">$0.00</p>
                 </div>
                 <div class="bg-gray-800 rounded-lg p-6 metric-card">
-                    <p class="text-gray-400 text-sm mb-2">Ciclos Fechados</p>
-                    <p id="cycles-text" class="text-2xl font-bold">0</p>
+                    <p class="text-gray-400 text-sm mb-2">Total Volume</p>
+                    <p id="volume-text" class="text-2xl font-bold">$0</p>
                 </div>
                 <div class="bg-gray-800 rounded-lg p-6 metric-card">
-                    <p class="text-gray-400 text-sm mb-2">Win Rate</p>
-                    <p id="winrate-text" class="text-2xl font-bold">0%</p>
+                    <p class="text-gray-400 text-sm mb-2">Controles</p>
+                    <div class="flex gap-2 flex-wrap justify-center mt-3">
+                        <button id="btn-start" onclick="startBot()" 
+                                class="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm font-semibold">
+                            ▶️
+                        </button>
+                        <button id="btn-stop" onclick="stopBot(false)" disabled
+                                class="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-sm font-semibold btn-disabled">
+                            ⏸️
+                        </button>
+                        <button id="btn-stop-force" onclick="stopBot(true)" disabled
+                                class="bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm font-semibold btn-disabled">
+                            🛑
+                        </button>
+                        <button id="btn-restart" onclick="restartBot()" disabled
+                                class="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm font-semibold btn-disabled">
+                            🔄
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Métricas Detalhadas -->
+            <!-- Resumo de Posições -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">📊 Resumo</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-gray-400 text-sm mb-2">PNL Não Realizado</p>
+                        <p id="unrealized-pnl" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm mb-2">PNL Realizado</p>
+                        <p id="realized-pnl" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Exposição Total</p>
+                        <p id="positions-exposure" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Ordens Pendentes</p>
+                        <p id="orders-pending-value" class="text-2xl font-bold">$0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Métricas de Conta e Margem -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div class="bg-gray-800 rounded-lg p-6">
-                    <h3 class="text-lg font-semibold mb-4">💰 Performance</h3>
+                    <h3 class="text-lg font-semibold mb-4">💰 Saldo da Conta</h3>
                     <div class="space-y-2">
                         <div class="flex justify-between">
-                            <span class="text-gray-400">Total Trades:</span>
-                            <span id="total-trades">0</span>
+                            <span class="text-gray-400">Saldo Total:</span>
+                            <span id="account-balance" class="text-2xl font-bold text-blue-400">$0.00</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Trades Ganhos:</span>
-                            <span id="winning-trades" class="text-green-400">0</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Trades Perdidos:</span>
-                            <span id="losing-trades" class="text-red-400">0</span>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Última atualização:</span>
+                            <span id="balance-updated" class="text-gray-500">-</span>
                         </div>
                     </div>
                 </div>
                 
                 <div class="bg-gray-800 rounded-lg p-6">
-                    <h3 class="text-lg font-semibold mb-4">📊 Médias</h3>
+                    <h3 class="text-lg font-semibold mb-4">📊 Margem</h3>
                     <div class="space-y-2">
                         <div class="flex justify-between">
-                            <span class="text-gray-400">Média de Ganho:</span>
-                            <span id="avg-win" class="text-green-400">$0.00</span>
+                            <span class="text-gray-400">Margem Usada:</span>
+                            <span id="margin-used" class="text-orange-400">$0.00</span>
                         </div>
                         <div class="flex justify-between">
-                            <span class="text-gray-400">Média de Perda:</span>
-                            <span id="avg-loss" class="text-red-400">$0.00</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Profit Factor:</span>
-                            <span id="profit-factor">0.00</span>
+                            <span class="text-gray-400">Margem Disponível:</span>
+                            <span id="margin-available" class="text-green-400">$0.00</span>
                         </div>
                     </div>
                 </div>
                 
                 <div class="bg-gray-800 rounded-lg p-6">
-                    <h3 class="text-lg font-semibold mb-4">🎯 Extremos</h3>
-                    <div class="space-y-2">
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Maior Ganho:</span>
-                            <span id="largest-win" class="text-green-400">$0.00</span>
+                    <h3 class="text-lg font-semibold mb-4">🎯 Utilização</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-gray-400">Margem Livre:</span>
+                                <span id="margin-free-percent" class="text-2xl font-bold text-green-400">0%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div id="margin-free-bar" class="bg-green-500 h-2 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Maior Perda:</span>
-                            <span id="largest-loss" class="text-red-400">$0.00</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Capital Atual:</span>
-                            <span id="current-balance">$0.00</span>
+                        <div class="text-xs text-gray-500 text-center">
+                            <span id="margin-status-text">Monitorando...</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Controls -->
-            <div class="bg-gray-800 rounded-lg p-6 mb-6">
-                <h2 class="text-xl font-semibold mb-4">🎮 Controles</h2>
-                <div class="flex gap-4 flex-wrap">
-                    <button id="btn-start" onclick="startBot()" 
-                            class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-semibold flex items-center gap-2">
-                        ▶️ Iniciar Bot
-                    </button>
-                    <button id="btn-stop" onclick="stopBot(false)" disabled
-                            class="bg-yellow-600 hover:bg-yellow-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
-                        ⏸️ Parar (Gracioso)
-                    </button>
-                    <button id="btn-stop-force" onclick="stopBot(true)" disabled
-                            class="bg-red-600 hover:bg-red-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
-                        🛑 Parar (Forçado)
-                    </button>
-                    <button id="btn-restart" onclick="restartBot()" disabled
-                            class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded font-semibold btn-disabled flex items-center gap-2">
-                        🔄 Reiniciar
-                    </button>
+            <!-- Posições e Ordens -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Posições Ativas -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📈 Posições Ativas</h2>
+                        <span id="positions-count" class="bg-blue-600 px-3 py-1 rounded text-sm">0</span>
+                    </div>
+                    <div id="positions-container" class="space-y-3">
+                        <p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>
+                    </div>
+                </div>
+                
+                <!-- Ordens Abertas -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">📋 Ordens Abertas</h2>
+                        <span id="orders-count" class="bg-purple-600 px-3 py-1 rounded text-sm">0</span>
+                    </div>
+                    <div id="orders-container" class="space-y-3">
+                        <p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>
+                    </div>
                 </div>
             </div>
 
@@ -270,83 +304,6 @@
                     <div>
                         <p class="text-gray-400 text-sm">Uptime</p>
                         <p id="uptime-text" class="text-xl">0m</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Positions & Orders Tab (NOVA) -->
-        <div id="content-positions" class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <!-- Posições Ativas -->
-                <div class="bg-gray-800 rounded-lg p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-semibold">📈 Posições Ativas</h2>
-                        <span id="positions-count" class="bg-blue-600 px-3 py-1 rounded text-sm">0</span>
-                    </div>
-                    <div id="positions-container" class="space-y-3">
-                        <p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>
-                    </div>
-                </div>
-                
-                <!-- Ordens Abertas -->
-                <div class="bg-gray-800 rounded-lg p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-semibold">📋 Ordens Abertas</h2>
-                        <span id="orders-count" class="bg-yellow-600 px-3 py-1 rounded text-sm">0</span>
-                    </div>
-                    <div id="orders-container" class="space-y-3">
-                        <p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Resumo de Posições -->
-            <div class="bg-gray-800 rounded-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">📊 Resumo</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                        <p class="text-gray-400 text-sm">PNL Total Posições</p>
-                        <p id="positions-total-pnl" class="text-2xl font-bold">$0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Exposição Total</p>
-                        <p id="positions-exposure" class="text-2xl font-bold">$0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Ordens Pendentes</p>
-                        <p id="orders-pending-value" class="text-2xl font-bold">$0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Grid Preenchido</p>
-                        <p id="grid-fill-percent" class="text-2xl font-bold">0%</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Charts Tab -->
-        <div id="content-charts" class="hidden">
-            <div class="grid grid-cols-1 gap-6">
-                <!-- PNL Chart -->
-                <div class="bg-gray-800 rounded-lg p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-semibold">📈 PNL Acumulado (24h)</h2>
-                        <div class="flex gap-2">
-                            <button onclick="updatePNLChart(24)" class="px-3 py-1 bg-blue-600 rounded text-sm">24h</button>
-                            <button onclick="updatePNLChart(168)" class="px-3 py-1 bg-gray-700 rounded text-sm">7d</button>
-                            <button onclick="updatePNLChart(720)" class="px-3 py-1 bg-gray-700 rounded text-sm">30d</button>
-                        </div>
-                    </div>
-                    <canvas id="pnl-chart" height="100"></canvas>
-                </div>
-                
-                <!-- Trades Distribution -->
-                <div class="bg-gray-800 rounded-lg p-6">
-                    <h2 class="text-xl font-semibold mb-4">📊 Distribuição de Trades</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <canvas id="winrate-chart"></canvas>
-                        <canvas id="pnl-distribution-chart"></canvas>
                     </div>
                 </div>
             </div>
@@ -427,21 +384,454 @@
             </div>
         </div>
 
-        <!-- Config Tab -->
-        <div id="content-config" class="hidden">
-            <div class="bg-gray-800 rounded-lg p-6">
+        <!-- CSV Analysis Tab -->
+        <div id="content-csv-analysis" class="hidden">
+            <!-- Upload Section -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">⚙️ Configurações</h2>
-                    <button onclick="saveConfig()" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded">
-                        💾 Salvar
+                    <h2 class="text-xl font-semibold">📤 Upload CSV da Pacifica</h2>
+                    <button onclick="refreshCSVList()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                        🔄 Atualizar Lista
                     </button>
                 </div>
-                <div id="config-container" class="space-y-4">
-                    <p class="text-gray-500">Carregando configurações...</p>
+                
+                <!-- Upload Form -->
+                <div class="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center mb-6">
+                    <input type="file" id="csv-file-input" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
+                    <button onclick="document.getElementById('csv-file-input').click()" 
+                            class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold mb-2">
+                        📁 Selecionar CSV
+                    </button>
+                    <p class="text-gray-400 text-sm mt-2">Arraste um arquivo CSV aqui ou clique para selecionar</p>
+                    <p class="text-gray-500 text-xs mt-1">Formato aceito: CSV exportado da Pacifica.fi (máx 16MB)</p>
+                </div>
+                
+                <!-- Progress -->
+                <div id="upload-progress" class="hidden">
+                    <div class="bg-gray-700 rounded-full h-2 mb-2">
+                        <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                    <p id="upload-status" class="text-sm text-gray-400 text-center">Processando...</p>
+                </div>
+            </div>
+            
+            <!-- Available Files -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">📂 Arquivos Disponíveis</h2>
+                <div id="csv-files-list" class="space-y-2">
+                    <p class="text-gray-500">Carregando...</p>
+                </div>
+            </div>
+            
+            <!-- Analysis Results -->
+            <div id="csv-analysis-results" class="hidden">
+                <!-- Summary Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <p class="text-gray-400 text-sm mb-2">Total de Trades</p>
+                        <p id="csv-total-trades" class="text-3xl font-bold">-</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <p class="text-gray-400 text-sm mb-2">Win Rate</p>
+                        <p id="csv-win-rate" class="text-3xl font-bold">-</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <p class="text-gray-400 text-sm mb-2">PNL Total</p>
+                        <p id="csv-total-pnl" class="text-3xl font-bold">-</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <p class="text-gray-400 text-sm mb-2">Profit Factor</p>
+                        <p id="csv-profit-factor" class="text-3xl font-bold">-</p>
+                    </div>
+                </div>
+                
+                <!-- Detailed Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold mb-4">📈 Performance</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Trades Ganhos:</span>
+                                <span id="csv-winning-trades" class="text-green-400 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Trades Perdidos:</span>
+                                <span id="csv-losing-trades" class="text-red-400 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Média por Trade:</span>
+                                <span id="csv-avg-trade" class="font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Média de Ganho:</span>
+                                <span id="csv-avg-win" class="text-green-400 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Média de Perda:</span>
+                                <span id="csv-avg-loss" class="text-red-400 font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold mb-4">💰 Financeiro</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Volume Total:</span>
+                                <span id="csv-total-volume" class="font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Fees Totais:</span>
+                                <span id="csv-total-fees" class="text-red-400 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Lucro Líquido:</span>
+                                <span id="csv-net-profit" class="font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Melhor Trade:</span>
+                                <span id="csv-best-trade" class="text-green-400 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Pior Trade:</span>
+                                <span id="csv-worst-trade" class="text-red-400 font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Charts -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold mb-4">📊 Distribuição de Resultados</h3>
+                        <canvas id="csv-winrate-chart"></canvas>
+                    </div>
+                    
+                    <div class="bg-gray-800 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold mb-4">📈 PNL Acumulado</h3>
+                        <canvas id="csv-cumulative-pnl-chart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- By Symbol -->
+                <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                    <h3 class="text-lg font-semibold mb-4">🔍 Performance por Símbolo</h3>
+                    <div id="csv-by-symbol" class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="border-b border-gray-700">
+                                <tr class="text-left text-gray-400 text-sm">
+                                    <th class="pb-3">Símbolo</th>
+                                    <th class="pb-3">Trades</th>
+                                    <th class="pb-3">Win Rate</th>
+                                    <th class="pb-3">PNL</th>
+                                    <th class="pb-3">Fees</th>
+                                    <th class="pb-3">Volume</th>
+                                </tr>
+                            </thead>
+                            <tbody id="csv-symbol-tbody" class="text-sm">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Daily Stats -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="text-lg font-semibold mb-4">📅 Performance Diária</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="border-b border-gray-700">
+                                <tr class="text-left text-gray-400 text-sm">
+                                    <th class="pb-3">Data</th>
+                                    <th class="pb-3">Trades</th>
+                                    <th class="pb-3">Win Rate</th>
+                                    <th class="pb-3">PNL</th>
+                                    <th class="pb-3">Volume</th>
+                                </tr>
+                            </thead>
+                            <tbody id="csv-daily-tbody" class="text-sm">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Config Tab v1.1 - MELHORADO -->
+        <div id="content-config" class="hidden">
+            <!-- Ações Rápidas -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">⚙️ Configurações Rápidas</h2>
+                    <button onclick="saveConfig()" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-semibold flex items-center gap-2">
+                        💾 Salvar e Aplicar
+                    </button>
+                </div>
+                
+                <!-- Estratégia -->
+                <div class="bg-gray-700 rounded-lg p-4 mb-4">
+                    <label class="block text-gray-300 mb-2 font-semibold">🎯 Estratégia de Trading</label>
+                    <select id="config-STRATEGY_TYPE" onchange="toggleStrategyOptions()"
+                            class="w-full bg-gray-600 text-white px-4 py-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="market_making">📊 Market Making (Grid Dinâmico)</option>
+                        <option value="pure_grid">📈 Pure Grid (Grid Fixo)</option>
+                        <option value="dynamic_grid">⚡ Dynamic Grid (Grid Adaptativo)</option>
+                        <option value="multi_asset">🌐 Multi Asset (Múltiplos Pares)</option>
+                        <option value="multi_asset_enhanced">🚀 Multi Asset Enhanced (Avançado)</option>
+                    </select>
+                    <p class="text-xs text-gray-400 mt-2">
+                        💡 <strong>Market Making:</strong> Grid que se ajusta ao mercado |
+                        <strong>Pure Grid:</strong> Níveis fixos |
+                        <strong>Dynamic:</strong> Adaptativo |
+                        <strong>Multi Asset:</strong> Vários ativos simultâneos
+                    </p>
+                </div>
+                
+                <!-- Opções de Grid (visível quando STRATEGY = grid) -->
+                <div id="grid-options" class="space-y-4">
+                    <h3 class="text-lg font-semibold text-blue-400 mb-3">� Configurações do Grid</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Symbol -->
+                        <div>
+                            <label class="block text-gray-300 mb-2">💱 Símbolo</label>
+                            <input type="text" id="config-SYMBOL" placeholder="Ex: SOL"
+                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-400 mt-1">Par de trading (SOL, BTC, ETH...)</p>
+                        </div>
+                        
+                        <!-- Grid Levels -->
+                        <div>
+                            <label class="block text-gray-300 mb-2">🔢 Níveis do Grid</label>
+                            <input type="number" id="config-GRID_LEVELS" min="3" max="20" placeholder="Ex: 8"
+                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-400 mt-1">Número de ordens (3-20)</p>
+                        </div>
+                        
+                        <!-- Order Size -->
+                        <div>
+                            <label class="block text-gray-300 mb-2">💵 Tamanho da Ordem (USD)</label>
+                            <input type="number" id="config-ORDER_SIZE_USD" min="1" step="0.01" placeholder="Ex: 100"
+                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-400 mt-1">Valor em USD por ordem</p>
+                        </div>
+                        
+                        <!-- Grid Spacing -->
+                        <div>
+                            <label class="block text-gray-300 mb-2">📏 Espaçamento do Grid (%)</label>
+                            <input type="number" id="config-GRID_SPACING_PERCENT" min="0.1" max="5" step="0.1" placeholder="Ex: 0.2"
+                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-400 mt-1">Distância entre níveis (0.1% - 5%)</p>
+                        </div>
+                        
+                        <!-- Max Position -->
+                        <div>
+                            <label class="block text-gray-300 mb-2">🛡️ Posição Máxima (USD)</label>
+                            <input type="number" id="config-MAX_POSITION_SIZE_USD" min="0" step="0.01" placeholder="Ex: 1000"
+                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-400 mt-1">Limite de exposição total</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Configurações Avançadas (Collapsible) -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <button onclick="toggleAdvancedConfig()" class="w-full flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">🔧 Configurações Avançadas</h2>
+                    <span id="advanced-toggle-icon" class="text-2xl">▼</span>
+                </button>
+                <div id="advanced-config-container" class="space-y-4 hidden">
+                    <p class="text-gray-500">Carregando configurações avançadas...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Volume Tab -->
+        <div id="content-volume" class="hidden">
+            <!-- Cards de Volume por Período -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4 metric-card">
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-gray-400 text-sm">Última Hora</p>
+                    <span id="volume-1h-change" class="text-xs px-2 py-1 rounded bg-gray-700">-</span>
+                </div>
+                <p id="volume-1h" class="text-2xl font-bold text-blue-400">$0.00</p>
+                <p class="text-gray-500 text-xs mt-1">
+                    <span id="volume-1h-trades">0</span> trades
+                </p>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg p-4 metric-card">
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-gray-400 text-sm">Últimas 24h</p>
+                    <span id="volume-24h-change" class="text-xs px-2 py-1 rounded bg-gray-700">-</span>
+                </div>
+                <p id="volume-24h" class="text-2xl font-bold text-green-400">$0.00</p>
+                <p class="text-gray-500 text-xs mt-1">
+                    <span id="volume-24h-trades">0</span> trades
+                </p>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg p-4 metric-card">
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-gray-400 text-sm">Última Semana</p>
+                    <span id="volume-7d-change" class="text-xs px-2 py-1 rounded bg-gray-700">-</span>
+                </div>
+                <p id="volume-7d" class="text-2xl font-bold text-purple-400">$0.00</p>
+                <p class="text-gray-500 text-xs mt-1">
+                    <span id="volume-7d-trades">0</span> trades
+                </p>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg p-4 metric-card">
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-gray-400 text-sm">Últimos 14 dias</p>
+                    <span id="volume-14d-change" class="text-xs px-2 py-1 rounded bg-gray-700">-</span>
+                </div>
+                <p id="volume-14d" class="text-2xl font-bold text-yellow-400">$0.00</p>
+                <p class="text-gray-500 text-xs mt-1">
+                    <span id="volume-14d-trades">0</span> trades
+                </p>
+            </div>
+        </div>
+        
+        <!-- Métricas Detalhadas -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-lg font-semibold mb-4">💵 Financeiro (24h)</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Volume Total:</span>
+                        <span id="volume-total-24h" class="font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Fees Pagos:</span>
+                        <span id="volume-fees-24h" class="text-red-400 font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">PNL Total:</span>
+                        <span id="volume-pnl-24h" class="font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Avg por Trade:</span>
+                        <span id="volume-avg-24h" class="font-bold">$0.00</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-lg font-semibold mb-4">📊 Por Símbolo (24h)</h3>
+                <div id="volume-by-symbol" class="space-y-2 max-h-40 overflow-y-auto">
+                    <p class="text-gray-500 text-sm">Carregando...</p>
+                </div>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-lg font-semibold mb-4">🔄 Por Direção (24h)</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-green-400">🟢 Open Long:</span>
+                        <span id="volume-open-long" class="font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-red-400">🔴 Open Short:</span>
+                        <span id="volume-open-short" class="font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-blue-400">🔵 Close Long:</span>
+                        <span id="volume-close-long" class="font-bold">$0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-yellow-400">🟡 Close Short:</span>
+                        <span id="volume-close-short" class="font-bold">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Gráfico de Timeline -->
+        <div class="bg-gray-800 rounded-lg p-4 mb-6">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-lg font-semibold">📈 Evolução do Volume</h2>
+                <div class="flex gap-2">
+                    <button onclick="loadVolumeTimeline(6, 60)" 
+                            class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">
+                        6h
+                    </button>
+                    <button onclick="loadVolumeTimeline(24, 60)" 
+                            class="px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-700">
+                        24h
+                    </button>
+                    <button onclick="loadVolumeTimeline(168, 360)" 
+                            class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">
+                        7d
+                    </button>
+                    <button onclick="loadVolumeTimeline(336, 720)" 
+                            class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">
+                        14d
+                    </button>
+                </div>
+            </div>
+            <div style="height: 300px; position: relative;">
+                <canvas id="volume-timeline-chart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Comparação com Período Anterior -->
+        <div class="bg-gray-800 rounded-lg p-4">
+            <h2 class="text-lg font-semibold mb-4">📊 Comparação de Performance</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-sm text-gray-400 mb-3">Período Atual (24h)</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span>Volume:</span>
+                            <span id="comparison-current-volume" class="font-bold">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Trades:</span>
+                            <span id="comparison-current-trades" class="font-bold">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>PNL:</span>
+                            <span id="comparison-current-pnl" class="font-bold">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-sm text-gray-400 mb-3">Período Anterior (24h)</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span>Volume:</span>
+                            <span id="comparison-previous-volume" class="font-bold">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Trades:</span>
+                            <span id="comparison-previous-trades" class="font-bold">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>PNL:</span>
+                            <span id="comparison-previous-pnl" class="font-bold">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-gray-700">
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">Variação:</span>
+                    <div class="flex items-center gap-2">
+                        <span id="comparison-change-absolute" class="font-bold">$0.00</span>
+                        <span id="comparison-change-percent" class="px-3 py-1 rounded font-bold">0%</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+    </div>  <!-- Fecha o container principal mx-auto p-4 max-w-7xl -->
 
     <script>
         // Estado Global
@@ -449,17 +839,20 @@
         let socket = null;
         let currentTab = 'dashboard';
         let pnlChart = null;
+        let volumeTimelineChart = null;
         let winrateChart = null;
         let pnlDistChart = null;
         let tradesLimit = 50;
         let logsPaused = false;
         let logsAutoScroll = true;
         
-        console.log('🚀 Dashboard v2.1 iniciado');
+        console.log('🚀 Dashboard v1.1 iniciado');
 
         // ========== WEBSOCKET ==========
         
         function initWebSocket() {
+            console.log('🔌 Iniciando conexão WebSocket com:', API_BASE);
+            
             socket = io(API_BASE, {
                 transports: ['polling'],
                 upgrade: false,
@@ -469,15 +862,20 @@
             });
             
             socket.on('connect', () => {
-                console.log('✅ WebSocket conectado');
+                console.log('✅ WebSocket conectado - ID:', socket.id);
                 updateWSStatus(true);
                 showAlert('success', '🔌 Conectado ao servidor');
             });
             
-            socket.on('disconnect', () => {
-                console.log('❌ WebSocket desconectado');
+            socket.on('disconnect', (reason) => {
+                console.log('❌ WebSocket desconectado - Motivo:', reason);
                 updateWSStatus(false);
                 showAlert('error', '🔌 Desconectado do servidor');
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('❌ Erro de conexão WebSocket:', error.message);
+                updateWSStatus(false);
             });
             
             socket.on('bot_status_update', (data) => {
@@ -514,12 +912,7 @@
         }
         
         function updateWSStatus(connected) {
-            const statusEl = document.getElementById('ws-status');
-            if (connected) {
-                statusEl.innerHTML = '<span class="ws-connected">●</span><span class="text-sm">Conectado</span>';
-            } else {
-                statusEl.innerHTML = '<span class="ws-disconnected">●</span><span class="text-sm">Desconectado</span>';
-            }
+            // Auto-refresh está sempre ativo - não precisa atualizar status
         }
 
         // ========== ALERTS ==========
@@ -565,31 +958,108 @@
         function showTab(tab) {
             currentTab = tab;
             
-            ['dashboard', 'positions', 'charts', 'trades', 'logs', 'config'].forEach(t => {
-                document.getElementById(`content-${t}`).classList.add('hidden');
-                document.getElementById(`tab-${t}`).classList.remove('border-blue-500', 'text-blue-500');
-                document.getElementById(`tab-${t}`).classList.add('text-gray-400');
+            ['dashboard', 'volume', 'positions', 'charts', 'trades', 'logs', 'csv-analysis', 'config'].forEach(t => {
+                const contentEl = document.getElementById(`content-${t}`);
+                const tabEl = document.getElementById(`tab-${t}`);
+                
+                if (contentEl) {
+                    contentEl.classList.add('hidden');
+                }
+                if (tabEl) {
+                    tabEl.classList.remove('border-blue-500', 'text-blue-500');
+                    tabEl.classList.add('text-gray-400');
+                }
             });
             
-            document.getElementById(`content-${tab}`).classList.remove('hidden');
-            document.getElementById(`tab-${tab}`).classList.add('border-blue-500', 'text-blue-500');
-            document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
+            const activeContent = document.getElementById(`content-${tab}`);
+            const activeTab = document.getElementById(`tab-${tab}`);
             
+            if (activeContent) {
+                activeContent.classList.remove('hidden');
+            }
+            if (activeTab) {
+                activeTab.classList.add('border-blue-500', 'text-blue-500');
+                activeTab.classList.remove('text-gray-400');
+            }
+            
+            if (window.positionsInterval) {
+                clearInterval(window.positionsInterval);
+                window.positionsInterval = null;
+            }
             if (tab === 'dashboard') {
                 loadPositionsAndOrders();
+            } else if (tab === 'volume') {
+                loadVolumeStats();
+                loadVolumeTimeline(24, 60);
+                loadVolumeComparison('24h');
             } else if (tab === 'charts') {
                 initCharts();
-                loadPNLHistory(24);
             } else if (tab === 'trades') {
                 loadTrades();
             } else if (tab === 'logs') {
                 refreshLogs();
+            } else if (tab === 'csv-analysis') {
+                refreshCSVList();
+                if (!currentAnalysis) {
+                    loadLastAnalysis();
+                }
             } else if (tab === 'config') {
                 loadConfig();
             } else if (tab === 'positions') {
                 loadPositionsAndOrders();
+                window.positionsInterval = setInterval(() => {
+                    if (currentTab === 'positions') {
+                        loadPositionsAndOrders();
+                    }
+                }, 30000); // 30 segundos
             }
         }
+
+        // ========== HISTÓRICO ==========
+        async function loadHistoricalStats() {
+    try {
+        const response = await fetch(`${API_BASE}/api/historical-stats`);
+        const data = await response.json();
+        renderDailyPNLChart(data);
+    } catch (error) {
+        console.error('Erro ao carregar histórico:', error);
+    }
+}
+
+function renderDailyPNLChart(data) {
+    const ctx = document.getElementById('daily-pnl-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.days,
+            datasets: [
+                {
+                    label: 'PNL Diário (USD)',
+                    data: data.pnl,
+                    backgroundColor: data.pnl.map(v => v >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)')
+                },
+                {
+                    label: 'Volume (USD)',
+                    data: data.volume,
+                    backgroundColor: 'rgba(59,130,246,0.3)',
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { labels: { color: '#fff' } },
+                title: { display: true, text: 'Estatísticas Diárias - PNL e Volume', color: '#fff' }
+            },
+            scales: {
+                x: { ticks: { color: '#9ca3af' } },
+                y: { ticks: { color: '#9ca3af' }, beginAtZero: true },
+                y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#9ca3af' } }
+            }
+        }
+    });
+}
 
         // ========== BOT CONTROLS ==========
         
@@ -732,22 +1202,26 @@
         
         async function loadPositionsAndOrders() {
             try {
-                console.log('🔄 Carregando posições e ordens...');
-                const [posRes, ordRes] = await Promise.all([
+                console.log('🔄 Carregando posições, ordens e estado da conta...');
+                const [posRes, ordRes, accRes] = await Promise.all([
                     fetch(`${API_BASE}/api/positions`),
-                    fetch(`${API_BASE}/api/orders`)
+                    fetch(`${API_BASE}/api/orders`),
+                    fetch(`${API_BASE}/api/account-state`)
                 ]);
                 
                 const positions = await posRes.json();
                 const orders = await ordRes.json();
+                const accountState = await accRes.json();
                 
                 console.log('📊 Posições recebidas:', positions.length, positions);
                 console.log('📋 Ordens recebidas:', orders.length, orders);
+                console.log('💰 Estado da conta:', accountState);
                 
                 updatePositions(positions);
                 updateOrders(orders);
+                updateAccountState(accountState);
             } catch (error) {
-                console.error('❌ Erro ao carregar posições e ordens:', error);
+                console.error('❌ Erro ao carregar dados:', error);
             }
         }
         
@@ -755,34 +1229,42 @@
             console.log('🔄 updatePositions chamada com:', positions.length, 'posições');
             const container = document.getElementById('positions-container');
             const countEl = document.getElementById('positions-count');
-            
-            countEl.textContent = positions.length;
-            
+            if (countEl) countEl.textContent = positions.length;
+
             if (positions.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>';
-                document.getElementById('positions-total-pnl').textContent = '$0.00';
-                document.getElementById('positions-exposure').textContent = '$0.00';
+                if (container) container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma posição ativa</p>';
+                const totalPnlEl = document.getElementById('positions-total-pnl');
+                if (totalPnlEl) totalPnlEl.textContent = '$0.00';
+                const exposureEl = document.getElementById('positions-exposure');
+                if (exposureEl) exposureEl.textContent = '$0.00';
                 return;
             }
             
-            let totalPnl = 0;
+            let unrealizedPnl = 0;
+            let realizedPnl = 0;
             let totalExposure = 0;
-            
-            container.innerHTML = positions.map(pos => {
+
+            if (container) container.innerHTML = positions.map(pos => {
                 // Converter strings para números
                 const pnl = parseFloat(pos.pnl_usd || pos.unrealized_pnl || 0);
                 const size = parseFloat(pos.size || pos.amount || 0);
                 const entryPrice = parseFloat(pos.entry_price || pos.avg_price || 0);
                 const currentPrice = parseFloat(pos.current_price || entryPrice || 0);
                 const pnlPercent = parseFloat(pos.pnl_percent || 0);
-                
-                totalPnl += pnl;
+
+                // PNL não realizado: posições abertas
+                unrealizedPnl += pnl;
+                // PNL realizado: histórico fechado (se vier no objeto)
+                if (pos.realized_pnl) {
+                    realizedPnl += parseFloat(pos.realized_pnl);
+                }
+
                 totalExposure += entryPrice * size;
-                
+
                 const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
                 const sideClass = (pos.side || '').toLowerCase().includes('long') ? 'position-long' : 'position-short';
                 const sideLabel = (pos.side || '').toLowerCase().includes('long') ? '🟢 LONG' : '🔴 SHORT';
-                
+
                 return `
                     <div class="bg-gray-700 rounded-lg p-4 ${sideClass}">
                         <div class="flex justify-between items-start mb-2">
@@ -819,22 +1301,31 @@
                     </div>
                 `;
             }).join('');
-            
-            document.getElementById('positions-total-pnl').textContent = `$${totalPnl.toFixed(2)}`;
-            document.getElementById('positions-total-pnl').className = `text-2xl font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
-            document.getElementById('positions-exposure').textContent = `$${totalExposure.toFixed(2)}`;
+
+            const unrealizedEl = document.getElementById('unrealized-pnl');
+            if (unrealizedEl) {
+                unrealizedEl.textContent = `$${unrealizedPnl.toFixed(2)}`;
+                unrealizedEl.className = `text-2xl font-bold ${unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            }
+            const realizedEl = document.getElementById('realized-pnl');
+            if (realizedEl) {
+                realizedEl.textContent = `$${realizedPnl.toFixed(2)}`;
+                realizedEl.className = `text-2xl font-bold ${realizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            }
+            const exposureEl = document.getElementById('positions-exposure');
+            if (exposureEl) exposureEl.textContent = `$${totalExposure.toFixed(2)}`;
         }
         
         function updateOrders(orders) {
             console.log('🔄 updateOrders chamada com:', orders.length, 'ordens');
             const container = document.getElementById('orders-container');
             const countEl = document.getElementById('orders-count');
-            
-            countEl.textContent = orders.length;
-            
+            if (countEl) countEl.textContent = orders.length;
+
             if (orders.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>';
-                document.getElementById('orders-pending-value').textContent = '$0.00';
+                if (container) container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>';
+                const pendingValueEl = document.getElementById('orders-pending-value');
+                if (pendingValueEl) pendingValueEl.textContent = '$0.00';
                 return;
             }
             
@@ -842,7 +1333,7 @@
             let buyOrders = 0;
             let sellOrders = 0;
             
-            container.innerHTML = orders.map(order => {
+            if (container) container.innerHTML = orders.map(order => {
                 // Converter strings para números
                 const price = parseFloat(order.price || 0);
                 const size = parseFloat(order.size || order.initial_amount || 0);
@@ -886,12 +1377,100 @@
                 `;
             }).join('');
             
-            document.getElementById('orders-pending-value').textContent = `$${totalValue.toFixed(2)}`;
+            const pendingValueEl = document.getElementById('orders-pending-value');
+            if (pendingValueEl) pendingValueEl.textContent = `$${totalValue.toFixed(2)}`;
             
-            // Calcular % do grid preenchido (buy + sell orders)
-            const totalOrders = buyOrders + sellOrders;
-            const gridFillPercent = totalOrders > 0 ? ((buyOrders + sellOrders) / (totalOrders * 2)) * 100 : 0;
-            document.getElementById('grid-fill-percent').textContent = `${gridFillPercent.toFixed(0)}%`;
+            // Calcular % do grid preenchido (buy + sell orders) - DESABILITADO: elemento não existe no HTML
+            // const totalOrders = buyOrders + sellOrders;
+            // const gridFillPercent = totalOrders > 0 ? ((buyOrders + sellOrders) / (totalOrders * 2)) * 100 : 0;
+            // const gridFillEl = document.getElementById('grid-fill-percent');
+            // if (gridFillEl) gridFillEl.textContent = `${gridFillPercent.toFixed(0)}%`;
+        }
+        
+        function updateAccountState(state) {
+            console.log('💰 Atualizando estado da conta:', state);
+            
+            // Saldo
+            const balanceEl = document.getElementById('account-balance');
+            if (balanceEl) {
+                balanceEl.textContent = `$${(state.balance || 0).toFixed(2)}`;
+            }
+            
+            // Margem Usada
+            const marginUsedEl = document.getElementById('margin-used');
+            if (marginUsedEl) {
+                marginUsedEl.textContent = `$${(state.margin_used || 0).toFixed(2)}`;
+            }
+            
+            // Margem Disponível
+            const marginAvailableEl = document.getElementById('margin-available');
+            if (marginAvailableEl) {
+                marginAvailableEl.textContent = `$${(state.margin_available || 0).toFixed(2)}`;
+            }
+            
+            // Margem Livre (%)
+            const marginFreePercent = state.margin_free_percent || 0;
+            const marginFreePercentEl = document.getElementById('margin-free-percent');
+            if (marginFreePercentEl) {
+                marginFreePercentEl.textContent = `${marginFreePercent.toFixed(1)}%`;
+                
+                // Alterar cor baseado no percentual
+                if (marginFreePercent < 20) {
+                    marginFreePercentEl.className = 'text-2xl font-bold text-red-400';
+                } else if (marginFreePercent < 50) {
+                    marginFreePercentEl.className = 'text-2xl font-bold text-orange-400';
+                } else {
+                    marginFreePercentEl.className = 'text-2xl font-bold text-green-400';
+                }
+            }
+            
+            // Barra de progresso
+            const marginFreeBarEl = document.getElementById('margin-free-bar');
+            if (marginFreeBarEl) {
+                marginFreeBarEl.style.width = `${marginFreePercent}%`;
+                
+                // Alterar cor da barra baseado no percentual
+                if (marginFreePercent < 20) {
+                    marginFreeBarEl.className = 'bg-red-500 h-2 rounded-full transition-all';
+                } else if (marginFreePercent < 50) {
+                    marginFreeBarEl.className = 'bg-orange-500 h-2 rounded-full transition-all';
+                } else {
+                    marginFreeBarEl.className = 'bg-green-500 h-2 rounded-full transition-all';
+                }
+            }
+            
+            // Texto de status
+            const marginStatusEl = document.getElementById('margin-status-text');
+            if (marginStatusEl) {
+                if (marginFreePercent < 20) {
+                    marginStatusEl.textContent = '⚠️ Margem Crítica - Risco Alto';
+                    marginStatusEl.className = 'text-xs text-red-400 text-center font-semibold';
+                } else if (marginFreePercent < 50) {
+                    marginStatusEl.textContent = '⚡ Atenção - Margem Média';
+                    marginStatusEl.className = 'text-xs text-orange-400 text-center';
+                } else {
+                    marginStatusEl.textContent = '✅ Margem Saudável';
+                    marginStatusEl.className = 'text-xs text-green-400 text-center';
+                }
+            }
+            
+            // Última atualização
+            const balanceUpdatedEl = document.getElementById('balance-updated');
+            if (balanceUpdatedEl && state.last_update) {
+                const updateTime = new Date(state.last_update);
+                const now = new Date();
+                const diffSeconds = Math.floor((now - updateTime) / 1000);
+                
+                let timeText;
+                if (diffSeconds < 60) {
+                    timeText = 'agora mesmo';
+                } else if (diffSeconds < 3600) {
+                    timeText = `há ${Math.floor(diffSeconds / 60)}min`;
+                } else {
+                    timeText = updateTime.toLocaleTimeString('pt-BR');
+                }
+                balanceUpdatedEl.textContent = timeText;
+            }
         }
 
         // ========== LOGS COM AUTO-REFRESH (MELHORADO) ==========
@@ -1149,39 +1728,83 @@
             loadTrades();
         }
 
-        // ========== CONFIG ==========
+        // ========== CONFIG v1.1 ==========
+        
+        function toggleStrategyOptions() {
+            const strategy = document.getElementById('config-STRATEGY_TYPE').value;
+            const gridOptions = document.getElementById('grid-options');
+            
+            // Mostrar opções de grid para todas as estratégias baseadas em grid
+            const gridBasedStrategies = ['market_making', 'pure_grid', 'dynamic_grid'];
+            
+            if (gridBasedStrategies.includes(strategy)) {
+                gridOptions.classList.remove('hidden');
+            } else {
+                // Multi Asset strategies não usam as mesmas configs de grid
+                gridOptions.classList.add('hidden');
+            }
+        }
+        
+        function toggleAdvancedConfig() {
+            const container = document.getElementById('advanced-config-container');
+            const icon = document.getElementById('advanced-toggle-icon');
+            
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                icon.textContent = '▲';
+            } else {
+                container.classList.add('hidden');
+                icon.textContent = '▼';
+            }
+        }
         
         async function loadConfig() {
             try {
                 const response = await fetch(`${API_BASE}/api/config`);
                 const config = await response.json();
                 
-                const container = document.getElementById('config-container');
-                
                 if (Object.keys(config).length === 0) {
-                    container.innerHTML = `
-                        <div class="bg-yellow-500/10 border border-yellow-500 rounded-lg p-4">
-                            <p class="text-yellow-500 font-bold mb-2">⚠️ Arquivo .env não encontrado</p>
-                            <p class="text-gray-300 text-sm">Crie um arquivo .env na raiz do projeto.</p>
-                        </div>
-                    `;
+                    showAlert('error', '⚠️ Arquivo .env não encontrado');
                     return;
                 }
                 
-                container.innerHTML = Object.entries(config).map(([key, value]) => {
-                    const isSecret = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET');
-                    return `
-                        <div class="grid grid-cols-3 gap-4 items-center">
-                            <label class="text-gray-400">${key}</label>
-                            <input 
-                                type="${isSecret ? 'password' : 'text'}"
-                                id="config-${key}"
-                                value="${value}"
-                                class="col-span-2 bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                    `;
-                }).join('');
+                // Campos de configuração rápida
+                const quickFields = ['STRATEGY_TYPE', 'SYMBOL', 'GRID_LEVELS', 'ORDER_SIZE_USD', 'GRID_SPACING_PERCENT', 'MAX_POSITION_SIZE_USD'];
+                
+                quickFields.forEach(key => {
+                    const input = document.getElementById(`config-${key}`);
+                    if (input && config[key] !== undefined) {
+                        input.value = config[key];
+                    }
+                });
+                
+                // Mostrar/ocultar opções de grid
+                toggleStrategyOptions();
+                
+                // Configurações avançadas
+                const advancedContainer = document.getElementById('advanced-config-container');
+                const advancedFields = Object.entries(config).filter(([key]) => !quickFields.includes(key));
+                
+                if (advancedFields.length > 0) {
+                    advancedContainer.innerHTML = advancedFields.map(([key, value]) => {
+                        const isSecret = key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET') || key === 'PRIVATE_KEY' || key === 'WALLET_ADDRESS';
+                        return `
+                            <div class="grid grid-cols-3 gap-4 items-center">
+                                <label class="text-gray-400">${key}</label>
+                                <input 
+                                    type="${isSecret ? 'password' : 'text'}"
+                                    id="config-advanced-${key}"
+                                    value="${value}"
+                                    class="col-span-2 bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    advancedContainer.innerHTML = '<p class="text-gray-500">Nenhuma configuração avançada disponível</p>';
+                }
+                
+                console.log('✅ Configurações carregadas');
             } catch (error) {
                 console.error('Erro ao carregar config:', error);
                 showAlert('error', 'Erro ao carregar configurações');
@@ -1190,17 +1813,44 @@
         
         async function saveConfig() {
             try {
+                // Confirmar ação
+                const botRunning = await isBotCurrentlyRunning();
+                
+                let confirmMessage = '💾 Salvar configurações?';
+                if (botRunning) {
+                    confirmMessage = '💾 Salvar e reiniciar o bot?\n\n⚠️ O bot está rodando e será reiniciado automaticamente para aplicar as novas configurações.';
+                }
+                
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
+                showAlert('info', '⏳ Salvando configurações...');
+                
+                // Coletar todas as configurações
                 const response = await fetch(`${API_BASE}/api/config`);
                 const config = await response.json();
                 
                 const updates = {};
-                for (const key of Object.keys(config)) {
+                
+                // Campos rápidos
+                const quickFields = ['STRATEGY_TYPE', 'SYMBOL', 'GRID_LEVELS', 'ORDER_SIZE_USD', 'GRID_SPACING_PERCENT', 'MAX_POSITION_SIZE_USD'];
+                quickFields.forEach(key => {
                     const input = document.getElementById(`config-${key}`);
-                    if (input) {
+                    if (input && input.value) {
                         updates[key] = input.value;
+                    }
+                });
+                
+                // Campos avançados
+                for (const key of Object.keys(config)) {
+                    const advInput = document.getElementById(`config-advanced-${key}`);
+                    if (advInput) {
+                        updates[key] = advInput.value;
                     }
                 }
                 
+                // Salvar
                 const saveResponse = await fetch(`${API_BASE}/api/config/update`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -1209,14 +1859,46 @@
                 
                 const result = await saveResponse.json();
                 
-                if (result.status === 'success') {
-                    showAlert('success', '✅ Configurações salvas! Reinicie o bot para aplicar.');
-                } else {
+                if (result.status !== 'success') {
                     showAlert('error', result.message);
+                    return;
                 }
+                
+                showAlert('success', '✅ Configurações salvas!');
+                
+                // Se bot está rodando, reiniciar automaticamente
+                if (botRunning) {
+                    showAlert('info', '🔄 Reiniciando bot...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    const restartResult = await fetch(`${API_BASE}/api/bot/restart`, {
+                        method: 'POST'
+                    });
+                    
+                    const restartData = await restartResult.json();
+                    
+                    if (restartData.status === 'success') {
+                        showAlert('success', '🎉 Bot reiniciado! Novas configurações aplicadas.');
+                    } else {
+                        showAlert('error', '❌ Erro ao reiniciar: ' + restartData.message);
+                    }
+                } else {
+                    showAlert('info', 'ℹ️ Inicie o bot para aplicar as configurações.');
+                }
+                
             } catch (error) {
                 console.error('Erro ao salvar config:', error);
-                showAlert('error', 'Erro ao salvar configurações');
+                showAlert('error', 'Erro ao salvar configurações: ' + error.message);
+            }
+        }
+        
+        async function isBotCurrentlyRunning() {
+            try {
+                const response = await fetch(`${API_BASE}/api/bot/status`);
+                const status = await response.json();
+                return status.running === true;
+            } catch (error) {
+                return false;
             }
         }
 
@@ -1225,6 +1907,236 @@
         function exportCSV() {
             window.open(`${API_BASE}/api/export/csv`, '_blank');
             showAlert('success', '📥 Exportando CSV...');
+        }
+
+        // ========== VOLUME TRACKING ==========
+
+        async function loadVolumeStats() {
+            try {
+                const response = await fetch(`${API_BASE}/api/volume/stats?periods=1h,24h,7d,14d`);
+                const stats = await response.json();
+                
+                updateVolumeCards(stats);
+                
+                // Carregar detalhes de 24h
+                if (stats['24h']) {
+                    updateVolumeDetails(stats['24h']);
+                }
+                
+            } catch (error) {
+                console.error('Erro ao carregar volume:', error);
+            }
+        }
+
+        function updateVolumeCards(stats) {
+            const periods = ['1h', '24h', '7d', '14d'];
+            
+            periods.forEach(period => {
+                const data = stats[period];
+                if (!data) return;
+                
+                // Volume total
+                const volumeEl = document.getElementById(`volume-${period}`);
+                if (volumeEl) {
+                    volumeEl.textContent = `$${formatNumber(data.total_volume)}`;
+                }
+                
+                // Número de trades
+                const tradesEl = document.getElementById(`volume-${period}-trades`);
+                if (tradesEl) {
+                    tradesEl.textContent = data.total_trades;
+                }
+                
+                // Badge de variação (será preenchido pela comparação)
+                const changeEl = document.getElementById(`volume-${period}-change`);
+                if (changeEl) {
+                    changeEl.textContent = '...';
+                    changeEl.className = 'text-xs px-2 py-1 rounded bg-gray-700';
+                }
+            });
+        }
+
+        function updateVolumeDetails(data) {
+            // Financeiro
+            document.getElementById('volume-total-24h').textContent = `$${formatNumber(data.total_volume)}`;
+            document.getElementById('volume-fees-24h').textContent = `$${formatNumber(data.total_fees)}`;
+            
+            const pnlEl = document.getElementById('volume-pnl-24h');
+            pnlEl.textContent = `$${formatNumber(data.total_pnl)}`;
+            pnlEl.className = data.total_pnl >= 0 ? 'font-bold text-green-400' : 'font-bold text-red-400';
+            
+            const avgVolume = data.total_trades > 0 ? data.total_volume / data.total_trades : 0;
+            document.getElementById('volume-avg-24h').textContent = `$${formatNumber(avgVolume)}`;
+            
+            // Por símbolo
+            const symbolContainer = document.getElementById('volume-by-symbol');
+            if (data.by_symbol && Object.keys(data.by_symbol).length > 0) {
+                symbolContainer.innerHTML = Object.entries(data.by_symbol)
+                    .sort(([,a], [,b]) => b.volume - a.volume)
+                    .map(([symbol, info]) => `
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-300">${symbol}:</span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold">$${formatNumber(info.volume)}</span>
+                                <span class="text-xs text-gray-500">(${info.trades})</span>
+                            </div>
+                        </div>
+                    `).join('');
+            } else {
+                symbolContainer.innerHTML = '<p class="text-gray-500 text-sm">Nenhum trade encontrado</p>';
+            }
+            
+            // Por direção
+            if (data.by_side) {
+                document.getElementById('volume-open-long').textContent = `$${formatNumber(data.by_side.open_long || 0)}`;
+                document.getElementById('volume-open-short').textContent = `$${formatNumber(data.by_side.open_short || 0)}`;
+                document.getElementById('volume-close-long').textContent = `$${formatNumber(data.by_side.close_long || 0)}`;
+                document.getElementById('volume-close-short').textContent = `$${formatNumber(data.by_side.close_short || 0)}`;
+            }
+        }
+
+        async function loadVolumeTimeline(hours = 24, interval = 60) {
+            try {
+                const response = await fetch(`${API_BASE}/api/volume/timeline?hours=${hours}&interval=${interval}`);
+                const timeline = await response.json();
+                
+                if (!Array.isArray(timeline) || timeline.length === 0) {
+                    console.warn('Timeline de volume vazia');
+                    return;
+                }
+                
+                updateVolumeTimelineChart(timeline);
+                
+            } catch (error) {
+                console.error('Erro ao carregar timeline:', error);
+            }
+        }
+
+        function updateVolumeTimelineChart(timeline) {
+            const ctx = document.getElementById('volume-timeline-chart');
+            if (!ctx) return;
+            
+            if (volumeTimelineChart) {
+                volumeTimelineChart.destroy();
+            }
+            
+            const labels = timeline.map(point => {
+                const date = new Date(point.timestamp);
+                return date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+            });
+            
+            const volumes = timeline.map(point => point.volume);
+            
+            volumeTimelineChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Volume (USD)',
+                        data: volumes,
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#fff' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const point = timeline[context.dataIndex];
+                                    return [
+                                        `Volume: $${formatNumber(point.volume)}`,
+                                        `Trades: ${point.trades}`,
+                                        `PNL: $${formatNumber(point.pnl)}`
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: { 
+                                color: '#9ca3af',
+                                maxTicksLimit: 12
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            ticks: { 
+                                color: '#9ca3af',
+                                callback: value => `$${formatNumber(value)}`
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadVolumeComparison(period = '24h') {
+            try {
+                const response = await fetch(`${API_BASE}/api/volume/comparison?period=${period}`);
+                const comparison = await response.json();
+                
+                updateVolumeComparison(comparison);
+                
+            } catch (error) {
+                console.error('Erro ao carregar comparação:', error);
+            }
+        }
+
+        function updateVolumeComparison(comparison) {
+            // Período atual
+            document.getElementById('comparison-current-volume').textContent = 
+                `$${formatNumber(comparison.current.total_volume)}`;
+            document.getElementById('comparison-current-trades').textContent = 
+                comparison.current.total_trades;
+            
+            const currentPnlEl = document.getElementById('comparison-current-pnl');
+            currentPnlEl.textContent = `$${formatNumber(comparison.current.total_pnl)}`;
+            currentPnlEl.className = comparison.current.total_pnl >= 0 ? 
+                'font-bold text-green-400' : 'font-bold text-red-400';
+            
+            // Período anterior
+            document.getElementById('comparison-previous-volume').textContent = 
+                `$${formatNumber(comparison.previous.total_volume)}`;
+            document.getElementById('comparison-previous-trades').textContent = 
+                comparison.previous.total_trades;
+            
+            const prevPnlEl = document.getElementById('comparison-previous-pnl');
+            prevPnlEl.textContent = `$${formatNumber(comparison.previous.total_pnl)}`;
+            prevPnlEl.className = comparison.previous.total_pnl >= 0 ? 
+                'font-bold text-green-400' : 'font-bold text-red-400';
+            
+            // Variação
+            document.getElementById('comparison-change-absolute').textContent = 
+                `${comparison.change_absolute >= 0 ? '+' : ''}$${formatNumber(comparison.change_absolute)}`;
+            
+            const changePercentEl = document.getElementById('comparison-change-percent');
+            changePercentEl.textContent = `${comparison.change_percent >= 0 ? '+' : ''}${comparison.change_percent.toFixed(1)}%`;
+            
+            if (comparison.change_percent >= 0) {
+                changePercentEl.className = 'px-3 py-1 rounded font-bold bg-green-600 text-white';
+            } else {
+                changePercentEl.className = 'px-3 py-1 rounded font-bold bg-red-600 text-white';
+            }
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(2) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(2) + 'K';
+            }
+            return num.toFixed(2);
         }
 
         // ========== INIT ==========
@@ -1237,11 +2149,396 @@
             // Carregar dados iniciais
             loadPositionsAndOrders();
             
+            
             // Polling periódico para dados (fallback se WebSocket falhar)
             setInterval(() => {
                 loadPositionsAndOrders();
             }, 30000); // A cada 30 segundos
         });
+        
+        // ========== CSV ANALYSIS VARIABLES ==========
+        let csvWinrateChart = null;
+        let csvCumulativePNLChart = null;
+        let currentAnalysis = null;
+        
+        // ========== CSV UPLOAD FUNCTIONS ==========
+        
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showAlert('error', '❌ Arquivo deve ser CSV');
+                return;
+            }
+            
+            await uploadAndAnalyzeCSV(file);
+        }
+        
+        async function uploadAndAnalyzeCSV(file) {
+            const progressDiv = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('upload-progress-bar');
+            const statusText = document.getElementById('upload-status');
+            
+            try {
+                progressDiv.classList.remove('hidden');
+                progressBar.style.width = '10%';
+                statusText.textContent = 'Enviando arquivo...';
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                progressBar.style.width = '40%';
+                
+                const response = await fetch(`${API_BASE}/api/csv/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                progressBar.style.width = '70%';
+                statusText.textContent = 'Processando CSV...';
+                
+                const result = await response.json();
+                
+                progressBar.style.width = '100%';
+                
+                if (result.status === 'success') {
+                    showAlert('success', `✅ ${result.message}`);
+                    
+                    // Mostrar resultados
+                    displayAnalysis(result.stats);
+                    
+                    // Atualizar lista de arquivos
+                    await refreshCSVList();
+                    
+                    setTimeout(() => {
+                        progressDiv.classList.add('hidden');
+                        progressBar.style.width = '0%';
+                    }, 2000);
+                } else {
+                    showAlert('error', `❌ ${result.message}`);
+                    progressDiv.classList.add('hidden');
+                }
+                
+                // Limpar input
+                document.getElementById('csv-file-input').value = '';
+                
+            } catch (error) {
+                console.error('Erro no upload:', error);
+                showAlert('error', '❌ Erro ao processar arquivo');
+                progressDiv.classList.add('hidden');
+            }
+        }
+        
+        // ========== CSV FILE LIST ==========
+        
+        async function refreshCSVList() {
+            try {
+                const response = await fetch(`${API_BASE}/api/csv/list`);
+                const result = await response.json();
+                
+                const container = document.getElementById('csv-files-list');
+                
+                if (result.status === 'success' && result.files.length > 0) {
+                    container.innerHTML = result.files.map(file => {
+                        const date = new Date(file.modified).toLocaleString('pt-BR');
+                        const size = (file.size / 1024).toFixed(1);
+                        
+                        return `
+                            <div class="flex items-center justify-between bg-gray-700 rounded p-3 hover:bg-gray-600">
+                                <div class="flex-1">
+                                    <p class="font-semibold">${file.filename}</p>
+                                    <p class="text-sm text-gray-400">${size} KB - ${date}</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="analyzeCSVFile('${file.filename}')" 
+                                            class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+                                        📊 Analisar
+                                    </button>
+                                    <button onclick="deleteCSVFile('${file.filename}')" 
+                                            class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm">
+                                        🗑️
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<p class="text-gray-500">Nenhum arquivo CSV encontrado. Faça upload de um CSV da Pacifica.</p>';
+                }
+            } catch (error) {
+                console.error('Erro ao listar CSVs:', error);
+            }
+        }
+        
+        async function analyzeCSVFile(filename) {
+            try {
+                showAlert('info', `📊 Analisando ${filename}...`);
+                
+                const response = await fetch(`${API_BASE}/api/csv/analyze/${encodeURIComponent(filename)}`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    displayAnalysis(result.data);
+                    showAlert('success', '✅ Análise concluída!');
+                } else {
+                    showAlert('error', `❌ ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Erro ao analisar:', error);
+                showAlert('error', '❌ Erro ao analisar arquivo');
+            }
+        }
+        
+        async function deleteCSVFile(filename) {
+            if (!confirm(`Tem certeza que deseja deletar ${filename}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/csv/delete/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showAlert('success', '✅ Arquivo deletado');
+                    await refreshCSVList();
+                } else {
+                    showAlert('error', `❌ ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Erro ao deletar:', error);
+                showAlert('error', '❌ Erro ao deletar arquivo');
+            }
+        }
+        
+        // ========== DISPLAY ANALYSIS ==========
+        
+        function displayAnalysis(stats) {
+            currentAnalysis = stats;
+            const summary = stats.summary;
+            
+            // Show results section
+            document.getElementById('csv-analysis-results').classList.remove('hidden');
+            
+            // Update summary cards
+            document.getElementById('csv-total-trades').textContent = summary.total_trades;
+            document.getElementById('csv-win-rate').textContent = `${summary.win_rate}%`;
+            document.getElementById('csv-total-pnl').textContent = `$${summary.total_pnl.toFixed(2)}`;
+            document.getElementById('csv-total-pnl').className = `text-3xl font-bold ${summary.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            document.getElementById('csv-profit-factor').textContent = summary.profit_factor.toFixed(2);
+            
+            // Update detailed stats
+            document.getElementById('csv-winning-trades').textContent = summary.winning_trades;
+            document.getElementById('csv-losing-trades').textContent = summary.losing_trades;
+            document.getElementById('csv-avg-trade').textContent = `$${summary.avg_trade.toFixed(2)}`;
+            document.getElementById('csv-avg-trade').className = `font-bold ${summary.avg_trade >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            document.getElementById('csv-avg-win').textContent = `$${summary.avg_win.toFixed(2)}`;
+            document.getElementById('csv-avg-loss').textContent = `$${summary.avg_loss.toFixed(2)}`;
+            
+            // Financial
+            document.getElementById('csv-total-volume').textContent = `$${summary.total_volume.toFixed(2)}`;
+            document.getElementById('csv-total-fees').textContent = `$${summary.total_fees.toFixed(2)}`;
+            document.getElementById('csv-net-profit').textContent = `$${summary.net_profit.toFixed(2)}`;
+            document.getElementById('csv-net-profit').className = `font-bold ${summary.net_profit >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            
+            if (summary.best_trade) {
+                document.getElementById('csv-best-trade').textContent = `$${summary.best_trade.pnl.toFixed(2)}`;
+            }
+            
+            if (summary.worst_trade) {
+                document.getElementById('csv-worst-trade').textContent = `$${summary.worst_trade.pnl.toFixed(2)}`;
+            }
+            
+            // Update charts
+            updateCSVCharts(stats);
+            
+            // Update tables
+            updateSymbolTable(stats.by_symbol);
+            updateDailyTable(stats.daily);
+        }
+        
+        // ========== CSV CHARTS ==========
+        
+        function updateCSVCharts(stats) {
+            const summary = stats.summary;
+            
+            // Win Rate Chart
+            if (csvWinrateChart) {
+                csvWinrateChart.destroy();
+            }
+            
+            const ctx1 = document.getElementById('csv-winrate-chart').getContext('2d');
+            csvWinrateChart = new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Ganhos', 'Perdas', 'Breakeven'],
+                    datasets: [{
+                        data: [
+                            summary.winning_trades, 
+                            summary.losing_trades,
+                            summary.breakeven_trades
+                        ],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(156, 163, 175, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#fff' }
+                        }
+                    }
+                }
+            });
+            
+            // Cumulative PNL Chart
+            if (csvCumulativePNLChart) {
+                csvCumulativePNLChart.destroy();
+            }
+            
+            // Calculate cumulative PNL from raw trades
+            const trades = stats.raw_trades || [];
+            const cumulativeData = [];
+            let cumulative = 0;
+            
+            trades.forEach(trade => {
+                cumulative += trade.net_pnl;
+                cumulativeData.push(cumulative);
+            });
+            
+            const ctx2 = document.getElementById('csv-cumulative-pnl-chart').getContext('2d');
+            csvCumulativePNLChart = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: trades.map((_, i) => `Trade ${i + 1}`),
+                    datasets: [{
+                        label: 'PNL Acumulado',
+                        data: cumulativeData,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#fff' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { 
+                                color: '#9ca3af',
+                                maxTicksLimit: 10
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            ticks: { 
+                                color: '#9ca3af',
+                                callback: value => `$${value.toFixed(2)}`
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========== TABLES ==========
+        
+        function updateSymbolTable(bySymbol) {
+            const tbody = document.getElementById('csv-symbol-tbody');
+            
+            if (!bySymbol || Object.keys(bySymbol).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-gray-500">Nenhum dado disponível</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = Object.entries(bySymbol)
+                .sort(([,a], [,b]) => b.pnl - a.pnl)
+                .map(([symbol, data]) => `
+                    <tr class="border-b border-gray-700">
+                        <td class="py-3 font-semibold">${symbol}</td>
+                        <td class="py-3">${data.trades}</td>
+                        <td class="py-3">${data.win_rate}%</td>
+                        <td class="py-3 ${data.pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
+                            $${data.pnl.toFixed(2)}
+                        </td>
+                        <td class="py-3 text-red-400">$${data.fees.toFixed(2)}</td>
+                        <td class="py-3">$${data.volume.toFixed(2)}</td>
+                    </tr>
+                `).join('');
+        }
+        
+        function updateDailyTable(daily) {
+            const tbody = document.getElementById('csv-daily-tbody');
+            
+            if (!daily || Object.keys(daily).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Nenhum dado disponível</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = Object.entries(daily)
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([date, data]) => `
+                    <tr class="border-b border-gray-700">
+                        <td class="py-3">${date}</td>
+                        <td class="py-3">${data.trades}</td>
+                        <td class="py-3">${data.win_rate}%</td>
+                        <td class="py-3 ${data.pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
+                            $${data.pnl.toFixed(2)}
+                        </td>
+                        <td class="py-3">$${data.volume.toFixed(2)}</td>
+                    </tr>
+                `).join('');
+        }
+        
+        // ========== INIT CSV TAB ==========
+        
+        async function loadLastAnalysis() {
+            try {
+                const response = await fetch(`${API_BASE}/api/csv/analysis`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    displayAnalysis(result.data);
+                }
+            } catch (error) {
+                console.log('Nenhuma análise anterior disponível');
+            }
+        }
+        
+        // Drag and drop support
+        const csvTab = document.getElementById('content-csv-analysis');
+        if (csvTab) {
+            csvTab.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            csvTab.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.toLowerCase().endsWith('.csv')) {
+                    await uploadAndAnalyzeCSV(files[0]);
+                } else {
+                    showAlert('error', '❌ Arquivo deve ser CSV');
+                }
+            });
+        }
+        
+        console.log('✅ Módulo de Análise CSV carregado');
     </script>
 </body>
 </html>
+

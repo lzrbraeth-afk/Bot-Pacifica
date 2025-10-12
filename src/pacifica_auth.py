@@ -106,7 +106,7 @@ def setup_logging() -> logging.Logger:
 # CLASSE DE AUTENTICAÇÃO COM AGENT WALLET
 # ============================================================================
 
-class PacificaAuth:
+class PacificaAuth:        
     def __init__(self):
         self.logger = setup_logging()
         self.debug_logger = logging.getLogger('PacificaBot.Debug')
@@ -1273,60 +1273,177 @@ class PacificaAuth:
     def get_positions(self, symbol: str = None) -> Optional[List]:
         """
         Busca posições abertas da conta
+        Endpoint oficial: GET /api/v1/positions?account=<wallet_address>
+        
+        Resposta esperada:
+        {
+          "success": true,
+          "data": [
+            {
+              "symbol": "AAVE",
+              "side": "ask",
+              "amount": "223.72",
+              "entry_price": "279.283134",
+              "margin": "0",
+              "funding": "13.159593",
+              "isolated": false,
+              "created_at": 1754928414996,
+              "updated_at": 1759223365538
+            }
+          ],
+          "error": null,
+          "code": null
+        }
+        
         Args:
             symbol: Filtrar por símbolo específico (opcional)
         Returns:
-            Lista de posições ou None em caso de erro
+            Lista de posições ou [] se não houver posições
         """
         try:
-            # Primeiro tentar endpoint público (similar ao get_open_orders)
-            url = f"{self.base_url}/account"
+            # ⭐ ENDPOINT OFICIAL DA API V1
+            # base_url já contém '/api/v1', então só precisamos adicionar '/positions'
+            url = f"{self.base_url}/positions"
             params = {'account': self.main_public_key}
             
+            self.logger.info(f"📊 GET /positions?account={self.main_public_key[:8]}...")
+            self.logger.debug(f"   URL completa: {url}")
             response = requests.get(url, params=params, timeout=10)
-            self.logger.info(f"📊 GET /account (for positions) -> {response.status_code}")
-            self.debug_logger.debug(f"Response: {response.text[:500]}")
+            
+            self.logger.info(f"   Status: {response.status_code}")
+            self.debug_logger.debug(f"   Response: {response.text[:500]}")
             
             if response.status_code == 200:
                 data = response.json()
-                # Tentar extrair posições dos dados da conta
-                positions = []
                 
+                # Verificar estrutura da resposta
                 if isinstance(data, dict):
-                    # Verificar diferentes estruturas possíveis
-                    account_data = data.get('data', {})
+                    success = data.get('success', False)
+                    error = data.get('error')
                     
-                    # Se positions_count > 0, mas não há array de posições, 
-                    # pode ser que as posições estejam em outro endpoint
-                    positions_count = account_data.get('positions_count', 0)
+                    if success and data.get('data') is not None:
+                        positions = data.get('data', [])
+                        
+                        # Filtrar por símbolo se especificado
+                        if symbol and positions:
+                            positions = [p for p in positions if p.get('symbol') == symbol]
+                        
+                        self.logger.info(f"✅ {len(positions)} posição(ões) encontrada(s) via /api/v1/positions")
+                        
+                        # Log detalhado das posições
+                        for pos in positions:
+                            self.logger.debug(
+                                f"   • {pos.get('symbol')} - {pos.get('side')} - "
+                                f"Amount: {pos.get('amount')} - Entry: {pos.get('entry_price')}"
+                            )
+                        
+                        return positions
                     
-                    positions = (account_data.get('positions', []) or 
-                               account_data.get('open_positions', []) or
-                               data.get('positions', []))
+                    elif error:
+                        self.logger.error(f"❌ API retornou erro: {error}")
+                        return []
                     
-                    # Se não encontramos array de posições mas o count indica que há posições,
-                    # tentar endpoint específico de posições
-                    if not positions and positions_count > 0:
-                        self.logger.info(f"🔍 {positions_count} posições indicadas, tentando endpoint específico")
-                        return self._try_positions_endpoint(symbol)
+                    else:
+                        self.logger.warning(f"⚠️ Resposta sem 'data' ou 'success=false': {data}")
+                        return []
                 
-                if symbol and positions:
-                    # Filtrar por símbolo se especificado
-                    positions = [p for p in positions if p.get('symbol') == symbol]
-                
-                self.logger.info(f"✅ {len(positions)} posições encontradas")
-                return positions
+                else:
+                    self.logger.error(f"❌ Resposta inesperada (não é dict): {type(data)}")
+                    return []
+                    
+            elif response.status_code == 404:
+                self.logger.warning("⚠️ Endpoint /api/v1/positions não encontrado (404)")
+                # Fallback para método antigo
+                return self._get_positions_fallback(symbol)
                 
             elif response.status_code == 401:
-                # Se precisar de autenticação, tentar método autenticado
-                self.logger.info("🔒 Endpoint requer autenticação - tentando método autenticado")
+                self.logger.info("� Endpoint requer autenticação")
                 return self._get_positions_authenticated(symbol)
+                
             else:
                 self.logger.error(f"❌ Erro {response.status_code}: {response.text[:200]}")
                 return []
                 
         except Exception as e:
             self.logger.error(f"❌ Erro ao buscar posições: {e}")
+            import traceback
+            self.debug_logger.debug(f"Traceback: {traceback.format_exc()}")
+            return []
+    
+    def _get_positions_fallback(self, symbol: str = None) -> Optional[List]:
+        """
+        Método fallback caso /api/v1/positions não funcione
+        Tenta buscar do endpoint /account (método antigo)
+        """
+        try:
+            self.logger.info("🔄 Usando método fallback: /account")
+            url = f"{self.base_url}/account"
+            params = {'account': self.main_public_key}
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                account_data = data.get('data', {})
+                positions_count = account_data.get('positions_count', 0)
+                
+                if positions_count > 0:
+                    self.logger.info(f"🔍 {positions_count} posições indicadas no /account")
+                    # Tentar extrair de campos aninhados
+                    positions = self._extract_positions_from_nested_data(account_data, positions_count)
+                    
+                    if not positions:
+                        # Tentar outros endpoints
+                        return self._try_positions_endpoint(symbol)
+                    
+                    return positions
+                else:
+                    self.logger.info("ℹ️ positions_count = 0 no endpoint /account")
+                    return []
+            
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro no fallback: {e}")
+            return []
+    
+    def _extract_positions_from_nested_data(self, account_data: dict, expected_count: int) -> List:
+        """
+        Tenta extrair posições de campos aninhados ou estruturas alternativas
+        """
+        try:
+            self.logger.debug(f"🔍 Buscando {expected_count} posições em dados aninhados...")
+            
+            # Tentar buscar em todos os campos que podem conter posições
+            for key, value in account_data.items():
+                if isinstance(value, list) and len(value) > 0:
+                    # Se encontrou uma lista, pode ser posições
+                    self.logger.debug(f"   Encontrada lista em '{key}' com {len(value)} itens")
+                    
+                    # Verificar se os itens parecem posições (têm campos típicos)
+                    if len(value) > 0 and isinstance(value[0], dict):
+                        first_item = value[0]
+                        # Campos típicos de uma posição
+                        position_fields = ['size', 'amount', 'entry_price', 'avg_price', 'side', 'symbol']
+                        
+                        if any(field in first_item for field in position_fields):
+                            self.logger.info(f"✅ Posições encontradas no campo '{key}'!")
+                            return value
+                
+                elif isinstance(value, dict):
+                    # Se for um dicionário, pode ter posições aninhadas
+                    nested_positions = (value.get('positions') or 
+                                      value.get('open_positions') or
+                                      value.get('active_positions'))
+                    if nested_positions and isinstance(nested_positions, list):
+                        self.logger.info(f"✅ Posições encontradas em '{key}.positions'!")
+                        return nested_positions
+            
+            self.logger.debug("⚠️ Não foi possível extrair posições de dados aninhados")
+            return []
+            
+        except Exception as e:
+            self.logger.debug(f"Erro ao extrair posições aninhadas: {e}")
             return []
     
     def _get_positions_authenticated(self, symbol: str = None) -> Optional[List]:
@@ -1389,13 +1506,18 @@ class PacificaAuth:
         """
         Tenta endpoints alternativos para buscar posições
         """
-        # Lista de endpoints possíveis para tentar
+        # Lista de endpoints possíveis para tentar (ordem de prioridade)
         endpoints_to_try = [
+            "/api/v1/positions",        # ⭐ Endpoint oficial da API v1
+            "/v1/positions",
+            "/api/positions",
             "/account/positions",
             "/positions", 
             "/user/positions",
             "/trading/positions"
         ]
+        
+        self.logger.info(f"🔍 Tentando {len(endpoints_to_try)} endpoints alternativos para posições...")
         
         for endpoint in endpoints_to_try:
             try:
@@ -1407,31 +1529,40 @@ class PacificaAuth:
                 self.logger.debug(f"🔍 Tentando endpoint: {endpoint}")
                 response = requests.get(url, params=params, timeout=10)
                 
+                self.logger.debug(f"   Status: {response.status_code}")
+                
                 if response.status_code == 200:
                     data = response.json()
-                    if isinstance(data, dict) and 'data' in data:
-                        positions = data['data']
+                    
+                    # Log da estrutura recebida
+                    self.debug_logger.debug(f"   Response: {json.dumps(data, indent=2)[:500]}")
+                    
+                    # Extrair posições de diferentes estruturas
+                    positions = None
+                    if isinstance(data, dict):
+                        positions = (data.get('data') or 
+                                   data.get('positions') or
+                                   data.get('open_positions'))
                     elif isinstance(data, list):
                         positions = data
-                    else:
-                        continue
                     
-                    if positions:  # Se encontrou posições
-                        self.logger.info(f"✅ Posições encontradas em {endpoint}: {len(positions)}")
+                    if positions and isinstance(positions, list) and len(positions) > 0:
+                        self.logger.info(f"✅ {len(positions)} posições encontradas em {endpoint}")
                         return positions
                         
                 elif response.status_code == 401:
                     # Se precisar de autenticação, tentar com Agent Wallet
+                    self.logger.debug(f"   Endpoint requer autenticação, tentando com Agent Wallet...")
                     auth_positions = self._try_authenticated_positions_endpoint(endpoint, symbol)
                     if auth_positions:
                         return auth_positions
                 
             except Exception as e:
-                self.logger.debug(f"Erro no endpoint {endpoint}: {e}")
+                self.logger.debug(f"   Erro: {e}")
                 continue
         
         # Se chegou aqui, nenhum endpoint funcionou
-        self.logger.info("ℹ️ Nenhum endpoint de posições retornou dados")
+        self.logger.warning("⚠️ Nenhum endpoint de posições retornou dados - posições podem estar em formato diferente")
         return []
     
     def _try_authenticated_positions_endpoint(self, endpoint: str, symbol: str = None) -> Optional[List]:
@@ -1478,6 +1609,50 @@ class PacificaAuth:
             
         except Exception as e:
             self.logger.debug(f"Erro no endpoint autenticado {endpoint}: {e}")
+            return []
+        
+    def get_trade_history(self, symbol=None, start_time=None, end_time=None, limit=100, offset=0):
+        """
+        Busca histórico de trades da conta principal.
+        Endpoint: GET /api/v1/positions/history
+        Parâmetros:
+            symbol (str): símbolo do mercado (opcional)
+            start_time (int): timestamp inicial (em ms)
+            end_time (int): timestamp final (em ms)
+            limit (int): máximo de registros
+            offset (int): registros a pular
+        Retorna: lista de trades (dict)
+        """
+        url = f"{self.base_url}/positions/history"
+        params = {
+            "account": self.main_public_key,
+            "limit": limit,
+            "offset": offset
+        }
+        if symbol:
+            params["symbol"] = symbol
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+
+        try:
+            self.logger.info(f"🔍 Requisição GET positions/history: {params}")
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                trades = data.get("data", data)
+                if isinstance(trades, list):
+                    return trades
+                elif isinstance(trades, dict):
+                    return [trades]
+                else:
+                    return []
+            else:
+                self.logger.error(f"❌ Erro HTTP {response.status_code} ao buscar histórico: {response.text}")
+                return []
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar histórico de trades: {e}")
             return []
 
 # ============================================================================

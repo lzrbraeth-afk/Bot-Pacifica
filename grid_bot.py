@@ -26,6 +26,7 @@ from src.strategy_logger import create_strategy_logger, get_strategy_specific_me
 from src.telegram_notifier import TelegramNotifier
 from src.grid_risk_manager import GridRiskManager
 from src.margin_trend_protector import create_margin_trend_adapter
+from src.positions_tracker import PositionsTracker
 
 # Força UTF-8 no Windows para suportar emojis
 if sys.platform == 'win32':
@@ -73,16 +74,19 @@ class GridTradingBot:
         
         # Configurações
         self.symbol = os.getenv('SYMBOL', 'BTC')
+        self.leverage = int(os.getenv('LEVERAGE', '10'))
         self.rebalance_interval = int(os.getenv('REBALANCE_INTERVAL_SECONDS', '60'))
         self.check_balance = os.getenv('CHECK_BALANCE_BEFORE_ORDER', 'true').lower() == 'true'
+        
+        # ========== TRACKER PARA INTERFACE WEB ==========
+        # Tracker para posições e ordens (interface web)
+        self.positions_tracker = PositionsTracker()
+        self.logger.info("📊 Interface tracker inicializado")
+        # ================================================
         
         # ✨ NOVA FUNCIONALIDADE: Reset periódico do grid
         self.enable_periodic_reset = os.getenv('ENABLE_PERIODIC_GRID_RESET', 'false').lower() == 'true'
         self.grid_reset_interval = int(os.getenv('GRID_RESET_INTERVAL_MINUTES', '60')) * 60  # Converter para segundos
-
-        # 📄 NOVA FUNCIONALIDADE: Snapshots de posições e ordens
-        self.enable_snapshots = os.getenv('ENABLE_SNAPSHOTS', 'true').lower() == 'true'
-        self.snapshot_interval_seconds = int(os.getenv('SNAPSHOT_INTERVAL_SECONDS', '30'))
 
         # Configurações de controle de sessão
         self.session_stop_loss = float(os.getenv('SESSION_STOP_LOSS_USD', '100'))
@@ -416,43 +420,79 @@ class GridTradingBot:
             self.logger.debug(f"Stack trace: {traceback.format_exc()}")
             return 0
     
-    def _save_positions_snapshot(self, positions):
-        """Salva snapshot das posições ativas em arquivo JSON"""
+    def _update_interface_data(self):
+        """
+        Atualiza dados para visualização na interface web
+        Busca dados REAIS da API Pacifica e salva via tracker
+        """
         try:
-            os.makedirs("data", exist_ok=True)
+            # 1️⃣ BUSCAR POSIÇÕES REAIS DA API PACIFICA
+            api_positions = self.auth.get_positions(self.symbol)
             
-            # Preparar dados das posições para o snapshot
-            snapshot_data = {
-                "timestamp": datetime.now().isoformat(),
-                "positions": positions if positions else [],
-                "total_positions": len(positions) if positions else 0
-            }
+            # 2️⃣ BUSCAR ORDENS REAIS DA API PACIFICA
+            api_orders = self.auth.get_open_orders(self.symbol)
             
-            with open("data/active_positions.json", "w", encoding="utf-8") as f:
-                json.dump(snapshot_data, f, ensure_ascii=False, indent=2)
-                
-            self.logger.debug(f"📄 Snapshot de posições salvo: {len(positions) if positions else 0} posições")
+            # 3️⃣ BUSCAR PREÇO ATUAL REAL
+            try:
+                current_price = float(self.get_current_price())
+            except:
+                current_price = None
+            
+            # 4️⃣ FORMATAR POSIÇÕES PARA O TRACKER
+            positions = []
+            if api_positions:
+                for pos in api_positions:
+                    # Normalizar 'side': API retorna 'ask'/'bid', converter para 'long'/'short'
+                    raw_side = pos.get("side", "long").lower()
+                    if raw_side == "bid":
+                        side = "long"
+                    elif raw_side == "ask":
+                        side = "short"
+                    else:
+                        side = raw_side  # Manter como está se já for long/short
+                    
+                    positions.append({
+                        "symbol": pos.get("symbol", self.symbol),
+                        "side": side,
+                        "size": float(pos.get("amount", 0) or pos.get("size", 0)),  # API v1 usa 'amount'
+                        "entry_price": float(pos.get("entry_price", 0) or pos.get("avg_price", 0)),
+                        "open_time": pos.get("created_at", datetime.now().isoformat()),
+                        "leverage": pos.get("leverage", self.leverage)
+                    })
+            
+            # 5️⃣ FORMATAR ORDENS PARA O TRACKER
+            orders = []
+            if api_orders:
+                for order in api_orders:
+                    # Normalizar side (bid/ask → buy/sell)
+                    side = order.get("side", "").lower()
+                    if side == "bid":
+                        side = "buy"
+                    elif side == "ask":
+                        side = "sell"
+                    
+                    orders.append({
+                        "order_id": order.get("order_id", "") or order.get("id", ""),
+                        "symbol": order.get("symbol", self.symbol),
+                        "side": side,
+                        "price": float(order.get("price", 0)),
+                        "size": float(order.get("size", 0) or order.get("initial_amount", 0)),
+                        "create_time": order.get("created_at", datetime.now().isoformat()),
+                        "type": order.get("type", "limit")
+                    })
+            
+            # 6️⃣ SALVAR VIA TRACKER (cria os arquivos JSON)
+            self.positions_tracker.update_positions(positions, current_price)
+            self.positions_tracker.update_orders(orders)
+            
+            self.logger.debug(
+                f"📊 Interface atualizada: "
+                f"{len(positions)} posições, {len(orders)} ordens"
+            )
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ Erro ao salvar posições: {e}")
-
-    def _save_orders_snapshot(self, orders):
-        """Salva snapshot das ordens ativas em arquivo JSON"""
-        try:
-            os.makedirs("data", exist_ok=True)
-            
-            # Preparar dados das ordens para o snapshot
-            snapshot_data = {
-                "timestamp": datetime.now().isoformat(),
-                "orders": orders if orders else [],
-                "total_orders": len(orders) if orders else 0
-            }
-            
-            with open("data/active_orders.json", "w", encoding="utf-8") as f:
-                json.dump(snapshot_data, f, ensure_ascii=False, indent=2)
-                
-            self.logger.debug(f"📄 Snapshot de ordens salvo: {len(orders) if orders else 0} ordens")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erro ao salvar ordens: {e}")
+            # Não é crítico - só log de debug
+            self.logger.debug(f"Erro ao atualizar interface: {e}")
     
     def run(self):
         """Loop principal do bot"""
@@ -869,24 +909,11 @@ class GridTradingBot:
                 if iteration % 60 == 0:  # 🔧 A cada 60 iterações (1 minuto)
                     self.print_status()
 
-                # 📄 Salvar snapshots das posições e ordens periodicamente
-                if self.enable_snapshots and iteration % self.snapshot_interval_seconds == 0:
-                    try:
-                        # Obter posições atuais da API
-                        positions = self.auth.get_positions()
-                        self._save_positions_snapshot(positions)
-                        
-                        # Obter ordens abertas da API  
-                        orders = self.auth.get_open_orders()
-                        self._save_orders_snapshot(orders)
-                        
-                        if iteration % 300 == 0:  # Log a cada 5 minutos apenas
-                            pos_count = len(positions) if positions else 0
-                            ord_count = len(orders) if orders else 0
-                            self.logger.info(f"📄 Snapshots salvos: {pos_count} posições, {ord_count} ordens")
-                            
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Erro ao salvar snapshots: {e}")
+                # ========== ATUALIZAR INTERFACE WEB ==========
+                # Atualizar dados para interface web (a cada 30 segundos)
+                if iteration % 30 == 0:
+                    self._update_interface_data()
+                # =============================================
 
                 # Relatório detalhado a cada 10 minutos
                 if iteration % 600 == 0:

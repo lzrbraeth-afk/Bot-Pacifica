@@ -1,6 +1,6 @@
 """
 Interface Web Flask Melhorada - Bot Trading Pacifica.fi
-Versão 1.1 com Configurações Rápidas e Auto-apply
+Versão 2.1 com Logs Auto-refresh e Visualização de Posições/Ordens
 """
 from flask import Flask, render_template, jsonify, request, send_file, Response
 from flask_cors import CORS
@@ -10,10 +10,6 @@ from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 import shutil
 from src.csv_trade_parser import PacificaCSVParser, analyze_pacifica_csv
-
-# ===== IMPORT VOLUME TRACKER =====
-from src.volume_tracker import get_volume_tracker
-
 import subprocess
 import psutil
 import os
@@ -25,10 +21,6 @@ import logging
 import threading
 import time
 from io import StringIO, BytesIO
-from dotenv import load_dotenv
-
-# Carregar variáveis de ambiente
-load_dotenv()
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -749,212 +741,30 @@ def api_orders():
         logger.error(f"Erro em /api/orders: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/account-state')
-def api_account_state():
-    """API: Estado da conta (saldo e margem)"""
-    try:
-        account_state_file = DATA_DIR / "account_state.json"
-        
-        if not account_state_file.exists():
-            # Retornar estado padrão se arquivo não existir
-            return jsonify({
-                "last_update": None,
-                "balance": 0,
-                "margin_used": 0,
-                "margin_available": 0,
-                "margin_free_percent": 0
-            })
-        
-        with open(account_state_file, 'r', encoding='utf-8') as f:
-            account_state = json.load(f)
-        
-        return jsonify(account_state)
-    except Exception as e:
-        logger.error(f"Erro em /api/account-state: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# ==========================================
-# ROTAS DE API - VOLUME TRACKER
-# ==========================================
-
-@app.route('/api/volume/stats')
-def api_volume_stats():
-    """API: Estatísticas de volume por período"""
-    try:
-        periods = request.args.get('periods', '1h,24h,7d,14d')
-        periods_list = [p.strip() for p in periods.split(',')]
-        
-        tracker = get_volume_tracker()
-        if not tracker:
-            return jsonify({
-                "error": "VolumeTracker não disponível. Verifique WALLET_ADDRESS no .env"
-            }), 500
-        
-        stats = tracker.get_volume_stats(periods_list)
-        return jsonify(stats)
-        
-    except Exception as e:
-        logger.error(f"Erro em /api/volume/stats: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/volume/timeline')
-def api_volume_timeline():
-    """API: Timeline de volume"""
-    try:
-        hours_back = request.args.get('hours', 24, type=int)
-        interval_minutes = request.args.get('interval', 60, type=int)
-        
-        tracker = get_volume_tracker()
-        if not tracker:
-            return jsonify({
-                "error": "VolumeTracker não disponível"
-            }), 500
-        
-        timeline = tracker.get_volume_timeline(
-            hours_back=hours_back,
-            interval_minutes=interval_minutes
-        )
-        
-        return jsonify(timeline)
-        
-    except Exception as e:
-        logger.error(f"Erro em /api/volume/timeline: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/volume/comparison')
-def api_volume_comparison():
-    """API: Comparação de volume com período anterior"""
-    try:
-        period = request.args.get('period', '24h')
-        
-        tracker = get_volume_tracker()
-        if not tracker:
-            return jsonify({"error": "VolumeTracker não disponível"}), 500
-        
-        # Período atual
-        current_stats = tracker.get_volume_stats([period])
-        current = current_stats.get(period, {})
-        
-        # Período anterior (mesmo intervalo de tempo, mas deslocado)
-        period_map = {
-            '1h': 1,
-            '24h': 24,
-            '7d': 168,
-            '14d': 336
-        }
-        
-        hours_back = period_map.get(period, 24)
-        
-        now = datetime.now()
-        
-        # Buscar período anterior
-        end_previous = now - timedelta(hours=hours_back)
-        start_previous = end_previous - timedelta(hours=hours_back)
-        
-        previous_trades = tracker.get_trades_history(
-            start_time=int(start_previous.timestamp() * 1000),
-            end_time=int(end_previous.timestamp() * 1000),
-            limit=10000
-        )
-        
-        previous = tracker.calculate_volume(previous_trades)
-        
-        # Calcular variação
-        current_volume = current.get('total_volume', 0)
-        previous_volume = previous.get('total_volume', 0)
-        
-        if previous_volume > 0:
-            change_percent = ((current_volume - previous_volume) / previous_volume) * 100
-        else:
-            change_percent = 0
-        
-        return jsonify({
-            "period": period,
-            "current": current,
-            "previous": previous,
-            "change_percent": round(change_percent, 2),
-            "change_absolute": round(current_volume - previous_volume, 2)
-        })
-        
-    except Exception as e:
-        logger.error(f"Erro em /api/volume/comparison: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# ==========================================
-# FIM ROTAS VOLUME TRACKER
-# ==========================================
-
 @app.route('/api/trades')
 def api_trades():
-    """API: Histórico de trades usando Volume Tracker"""
+    """API: Histórico de trades da exchange (dados coletados via historical_collector)"""
     try:
         limit = request.args.get('limit', 50, type=int)
+        # Ler dados coletados do endpoint /api/v1/positions/history da Pacifica
+        file_path = DATA_DIR / "historical_trades.json"
         
-        # Usar Volume Tracker para buscar trades
-        tracker = get_volume_tracker()
-        if not tracker:
-            logger.warning("⚠️ VolumeTracker não disponível. Verifique WALLET_ADDRESS no .env")
+        if not file_path.exists():
+            logger.warning("⚠️ Arquivo historical_trades.json não encontrado. Execute historical_collector.py")
             return jsonify([])
         
-        # Buscar trades dos últimos 30 dias
-        now = datetime.now()
-        start_time = now - timedelta(days=30)
+        with open(file_path, "r", encoding="utf-8") as f:
+            trades = json.load(f)
         
-        trades_raw = tracker.get_trades_history(
-            start_time=int(start_time.timestamp() * 1000),
-            end_time=int(now.timestamp() * 1000),
-            limit=10000
-        )
-        
-        if not trades_raw:
-            logger.info("📊 Nenhum trade encontrado nos últimos 30 dias")
+        if not isinstance(trades, list):
+            logger.error(f"❌ Formato inválido em historical_trades.json: {type(trades)}")
             return jsonify([])
-        
-        # Formatar trades para o formato esperado pelo frontend
-        trades_formatted = []
-        accumulated_pnl = 0
-        
-        for trade in trades_raw:
-            # Timestamp
-            created_at = trade.get("created_at", 0)
-            timestamp = datetime.fromtimestamp(created_at / 1000).isoformat() if created_at else ""
-            
-            # Dados do trade
-            amount = float(trade.get("amount", 0))
-            entry_price = float(trade.get("entry_price", 0))
-            pnl_raw = trade.get("pnl", "0")
-            
-            # Converter PNL para float (pode vir como string)
-            try:
-                pnl_usd = float(pnl_raw)
-            except (ValueError, TypeError):
-                pnl_usd = 0
-            
-            accumulated_pnl += pnl_usd
-            
-            # Calcular PNL % baseado no valor investido
-            invested = amount * entry_price
-            pnl_percent = (pnl_usd / invested * 100) if invested > 0 else 0
-            
-            # Formatar trade
-            trades_formatted.append({
-                "timestamp": timestamp,
-                "symbol": trade.get("symbol", ""),
-                "pnl_usd": pnl_usd,
-                "pnl_percent": pnl_percent,
-                "duration_minutes": 0,  # Não disponível na API
-                "reason": trade.get("side", ""),
-                "accumulated_pnl": accumulated_pnl
-            })
         
         # Ordenar por timestamp (mais recente primeiro)
-        trades_formatted.sort(key=lambda x: x["timestamp"], reverse=True)
+        trades_sorted = sorted(trades, key=lambda x: x.get('timestamp', x.get('closed_at', '')), reverse=True)
         
         # Aplicar limite
-        return jsonify(trades_formatted[:limit])
-        
+        return jsonify(trades_sorted[:limit])
     except Exception as e:
         logger.error(f"Erro em /api/trades: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1160,13 +970,11 @@ def api_csv_delete(filename):
 
 if __name__ == '__main__':
     print("="*60)
-    print("🚀 Interface Web Melhorada v1.1 iniciando...")
+    print("🚀 Interface Web Melhorada v2.1 iniciando...")
     print("📊 Dashboard: http://localhost:5000")
     print("🔌 WebSocket: Ativado")
     print("📜 Logs: Auto-refresh ativado")
     print("📈 Posições: Monitoramento em tempo real")
-    print("💹 Volume Tracker: Ativo")
-    print("⚙️  Config: Salvamento inteligente + Auto-restart")
     print("🛑 Para parar: Ctrl+C")
     print("="*60)
     print(f"🐍 Python: {PYTHON_EXECUTABLE}")

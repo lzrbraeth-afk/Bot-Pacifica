@@ -24,6 +24,8 @@ tests
 update
 data/
 bot.pid
+csv.txt
+*.backup*
 
 # OS
 .DS_Store
