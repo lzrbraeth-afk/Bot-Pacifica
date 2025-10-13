@@ -280,18 +280,18 @@ def get_volume_tracker() -> Optional[VolumeTracker]:
     Factory function para criar VolumeTracker a partir do .env
     """
     try:
-        wallet_address = os.getenv("WALLET_ADDRESS")
-        private_key = os.getenv("PRIVATE_KEY")
+        # Carregar do .env usando as mesmas variáveis do pacifica_auth
+        wallet_address = os.getenv("MAIN_PUBLIC_KEY")
+        private_key = os.getenv("AGENT_PRIVATE_KEY_B58")
         
         if not wallet_address:
-            logger.warning("WALLET_ADDRESS não encontrado no .env")
+            logger.warning("MAIN_PUBLIC_KEY não encontrado no .env")
             return None
         
         return VolumeTracker(
             wallet_address=wallet_address,
             private_key=private_key
         )
-        
     except Exception as e:
         logger.error(f"Erro ao criar VolumeTracker: {e}")
         return None

@@ -787,7 +787,7 @@ def api_volume_stats():
         tracker = get_volume_tracker()
         if not tracker:
             return jsonify({
-                "error": "VolumeTracker não disponível. Verifique WALLET_ADDRESS no .env"
+                "error": "VolumeTracker não disponível. Verifique MAIN_PUBLIC_KEY no .env"
             }), 500
         
         stats = tracker.get_volume_stats(periods_list)
@@ -895,7 +895,7 @@ def api_trades():
         # Usar Volume Tracker para buscar trades
         tracker = get_volume_tracker()
         if not tracker:
-            logger.warning("⚠️ VolumeTracker não disponível. Verifique WALLET_ADDRESS no .env")
+            logger.warning("⚠️ VolumeTracker não disponível. Verifique MAIN_PUBLIC_KEY no .env")
             return jsonify([])
         
         # Buscar trades dos últimos 30 dias
