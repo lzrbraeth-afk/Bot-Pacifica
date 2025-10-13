@@ -64,7 +64,7 @@ if exist "requirements.txt" (
     if /i "%INSTALL_DEPS%"=="s" (
         echo.
         echo 📦 Instalando dependências...
-        pip install -r requirements_web.txt
+        pip install -r requirements.txt
         
         if %ERRORLEVEL% NEQ 0 (
             echo.
@@ -75,7 +75,7 @@ if exist "requirements.txt" (
     )
 ) else (
     echo.
-    echo ⚠️  Arquivo requirements_web.txt não encontrado
+    echo ⚠️  Arquivo requirements.txt não encontrado
     echo    Certifique-se de ter instalado as dependências
 )
 
