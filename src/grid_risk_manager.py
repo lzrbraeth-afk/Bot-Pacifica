@@ -10,6 +10,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 from pathlib import Path
+from src.positions_tracker import PositionsTracker
+from src.risk_health_reporter import RiskHealthReporter  # ⬅️ ADD
 
 class GridRiskManager:
     """
@@ -84,6 +86,10 @@ class GridRiskManager:
         # Arquivo de histórico
         self.history_file = Path('data/grid_pnl_history.json')
         self.history_file.parent.mkdir(exist_ok=True)
+
+        # ▶️ Telemetria/saúde do gestor de risco
+        self.health = RiskHealthReporter(strategy_name="grid")  # ⬅️ ADD
+        self._ui_tracker = PositionsTracker()
         
         # Carregar histórico se existir
         self._load_history()
@@ -151,6 +157,119 @@ class GridRiskManager:
         Envia status periódico para monitoramento
         """
         self._send_debug_status("STATUS PERIÓDICO")
+
+    def _extract_price_from_item(self, item: dict) -> float:
+        for k in ('mark', 'mid', 'last', 'bid', 'price'):
+            try:
+                v = float(item.get(k, 0) or 0); 
+                if v > 0: return v
+            except Exception: 
+                pass
+        return 0.0
+
+    def _get_realtime_positions(self) -> list:
+        try:
+            pos_resp = self.auth.get_positions() or []
+            # Tratar caso onde API retorna lista diretamente ou objeto com 'data'
+            if isinstance(pos_resp, list):
+                pos_list = pos_resp
+            elif isinstance(pos_resp, dict):
+                pos_list = pos_resp.get('data', [])
+            else:
+                pos_list = []
+            
+            prices = self.auth.get_prices() or {}
+            items = prices.get('data', prices if isinstance(prices, list) else [])
+            pmap = {it.get('symbol'): self._extract_price_from_item(it) for it in items if isinstance(it, dict) and it.get('symbol')}
+            result = []
+            for p in pos_list:
+                if not isinstance(p, dict):
+                    continue
+                sym = p.get('symbol'); 
+                if not sym: 
+                    continue
+                entry = float(p.get('entry_price') or p.get('entryPrice') or 0)
+                size  = float(p.get('size') or p.get('amount') or 0)
+                side  = (p.get('side') or 'long').lower()
+                current = pmap.get(sym, entry)
+                pnl_usd = (current - entry) * size if side in ('long','buy','bid') else (entry - current) * size
+                pnl_pct = (pnl_usd / (entry*size) * 100) if entry>0 and size>0 else 0.0
+                result.append({
+                    "symbol": sym, "side": side, "size": size,
+                    "entry_price": entry, "current_price": current,
+                    "pnl_usd": round(pnl_usd,2), "pnl_percent": round(pnl_pct,2),
+                })
+            return result
+        except Exception as e:
+            self.logger.error(f"❌ _get_realtime_positions: {e}")
+            return []
+
+    def _auto_detect_active_trade(self):
+        """
+        Detecta posições abertas na corretora e sincroniza com RiskHealthReporter.
+        Cria, atualiza e encerra trade ativo automaticamente.
+        """
+        try:
+            positions = self._get_realtime_positions()
+            if positions:
+                # Pega primeira posição como referência (pode adaptar para multi-asset)
+                pos = positions[0]
+                trade_id = f"{pos['symbol']}-{int(datetime.now().timestamp())}"
+
+                # Inicia trade se não houver ativo
+                if not self.health.active:
+                    self.health.start_trade(
+                        trade_id,
+                        symbol=pos['symbol'],
+                        side=pos['side'],
+                        size=pos['size'],
+                        entry_price=pos['entry_price'],
+                        entry_time=datetime.now().isoformat(),
+                        tp_percent=self.cycle_take_profit_percent,
+                        sl_percent=self.cycle_stop_loss_percent,
+                        extra={"auto_detected": True}
+                    )
+                    self.logger.info(f"🟢 Trade detectado e iniciado automaticamente: {pos['symbol']} {pos['side']}")
+
+                # Atualiza PNL em tempo real
+                if self.health.active:
+                    entry_time = datetime.fromisoformat(self.health.active.entry_time)
+                    time_in_trade = int((datetime.now() - entry_time).total_seconds())
+                    
+                    # Campos de configuração de risco (fixos por sessão ou carregados do .env)
+                    risk_cfg = {
+                        "cycle_stop_loss_percent": getattr(self, "cycle_stop_loss_percent", None),
+                        "cycle_take_profit_percent": getattr(self, "cycle_take_profit_percent", None),
+                        "emergency_sl_percent": float(os.getenv('EMERGENCY_SL_PERCENT', '3.0')),
+                        "emergency_tp_percent": float(os.getenv('EMERGENCY_TP_PERCENT', '5.0')),
+                        "session_max_loss_usd": getattr(self, "session_max_loss_usd", None),
+                        "session_profit_target_usd": getattr(self, "session_profit_target_usd", None)
+                    }
+                    
+                    # Adiciona ao JSON de trade ativo
+                    self.health.update_trade(
+                        current_price=pos['current_price'],
+                        pnl_usd=pos['pnl_usd'],
+                        pnl_percent=pos['pnl_percent'],
+                        time_in_trade_sec=time_in_trade,
+                        extra={
+                            "positions": positions,
+                            "risk_config": risk_cfg,
+                            "cycle_thresholds": {
+                                "sl%": self.cycle_stop_loss_percent,
+                                "tp%": self.cycle_take_profit_percent
+                            }
+                        }
+                    )
+
+            else:
+                # Se não houver posições e havia trade ativo, encerra
+                if self.health.active:
+                    self.health.end_trade(reason="position_closed", result="manual_or_tp")
+                    self.logger.info("🔴 Nenhuma posição aberta — trade encerrado automaticamente.")
+
+        except Exception as e:
+            self.logger.error(f"❌ Erro no _auto_detect_active_trade: {e}")
     
     def _log_initialization(self):
         """Log detalhado da inicialização"""
@@ -198,6 +317,40 @@ class GridRiskManager:
         """
         if not self.enable_cycle_protection:
             return False, None
+
+        # 🔹 Chamada da nova função automática de detecção
+        self._auto_detect_active_trade()
+
+        # Telemetria: atualizar trade ativo e status de sessão
+        rt_positions = self._get_realtime_positions()
+        total_pnl = sum(p["pnl_usd"] for p in rt_positions) if rt_positions else 0.0
+        avg_pct   = (sum(p["pnl_percent"] for p in rt_positions)/len(rt_positions)) if rt_positions else 0.0
+        age_sec = int((datetime.now() - self.current_cycle_start).total_seconds()) if self.current_cycle_start else 0
+
+        self.health.update_trade(
+            current_price=rt_positions[0]["current_price"] if rt_positions else None,
+            pnl_usd=total_pnl,
+            pnl_percent=avg_pct,
+            time_in_trade_sec=age_sec,
+            extra={
+                "positions": rt_positions,
+                "cycle_thresholds": {
+                    "sl%": self.cycle_stop_loss_percent,
+                    "tp%": self.cycle_take_profit_percent
+                },
+                "session": {
+                    "accumulated_pnl": self.accumulated_pnl,
+                    "cycles_closed": self.cycles_closed
+                }
+            }
+        )
+        self.health.log_check("risk_check", {
+            "age_sec": age_sec,
+            "positions_count": len(rt_positions),
+            "cycle_sl_percent": self.cycle_stop_loss_percent,
+            "cycle_tp_percent": self.cycle_take_profit_percent,
+            "session_pnl": self.accumulated_pnl
+        })
     
         # Calcular PNL da posição aberta
         position_pnl = self._calculate_position_pnl(symbol, current_price)
@@ -225,6 +378,7 @@ class GridRiskManager:
                 'action': 'Fechando posição e reiniciando grid'
             })
             
+            self.health.end_trade(reason="cycle_sl", result="sl")
             return True, reason
         
         # Verificar Take Profit
@@ -244,6 +398,7 @@ class GridRiskManager:
                 'action': 'Realizando lucro e reiniciando grid'
             })
             
+            self.health.end_trade(reason="cycle_tp", result="tp")
             return True, reason
         
         return False, None
@@ -355,6 +510,8 @@ class GridRiskManager:
         self.logger.error("=" * 80)
         self.logger.error(f"🚨 LIMITE DE SESSÃO ATINGIDO: {reason}")
         self.logger.error("=" * 80)
+        
+        self.health.end_trade(reason="session_limit", result="limit_hit")
         
         # Calcular estatísticas
         win_rate = (self.cycles_profit / self.cycles_closed * 100) if self.cycles_closed > 0 else 0
@@ -501,7 +658,7 @@ class GridRiskManager:
         }
     
     def log_periodic_status(self):
-        """Log periódico do status"""
+        """Log periódico do status com comparações detalhadas dos limites"""
         
         current_time = time.time()
         
@@ -519,6 +676,45 @@ class GridRiskManager:
         self.logger.info("📊 STATUS DO GRID RISK MANAGER")
         self.logger.info("=" * 80)
         self.logger.info(f"💰 PNL Acumulado: ${status['accumulated_pnl']:+.2f} ({status['accumulated_pnl_percent']:+.2f}%)")
+        
+        # 🆕 MOSTRAR COMPARAÇÕES DETALHADAS COM LIMITES
+        if self.enable_session_protection:
+            self.logger.info("")
+            self.logger.info("🛡️ LIMITES DE PROTEÇÃO:")
+            
+            # Stop Loss USD
+            remaining_loss_usd = abs(self.session_max_loss_usd) - abs(status['accumulated_pnl'])
+            loss_percentage_used = (abs(status['accumulated_pnl']) / abs(self.session_max_loss_usd)) * 100 if self.session_max_loss_usd != 0 else 0
+            
+            if status['accumulated_pnl'] <= 0:
+                self.logger.info(f"   🚨 Stop Loss USD: ${-self.session_max_loss_usd:.2f} | Atual: ${status['accumulated_pnl']:.2f} | Restam: ${remaining_loss_usd:.2f} ({100-loss_percentage_used:.1f}%)")
+            else:
+                self.logger.info(f"   🚨 Stop Loss USD: ${-self.session_max_loss_usd:.2f} | Atual: ${status['accumulated_pnl']:.2f} | ✅ SEGURO")
+                
+            # Stop Loss Percentual
+            remaining_loss_percent = self.session_max_loss_percent - abs(status['accumulated_pnl_percent'])
+            if status['accumulated_pnl_percent'] <= 0:
+                self.logger.info(f"   🚨 Stop Loss %:   -{self.session_max_loss_percent:.1f}% | Atual: {status['accumulated_pnl_percent']:+.2f}% | Restam: {remaining_loss_percent:.2f}pp")
+            else:
+                self.logger.info(f"   🚨 Stop Loss %:   -{self.session_max_loss_percent:.1f}% | Atual: {status['accumulated_pnl_percent']:+.2f}% | ✅ SEGURO")
+            
+            # Take Profit USD
+            remaining_profit_usd = self.session_profit_target_usd - status['accumulated_pnl']
+            profit_percentage_reached = (status['accumulated_pnl'] / self.session_profit_target_usd) * 100 if self.session_profit_target_usd != 0 else 0
+            
+            if status['accumulated_pnl'] >= self.session_profit_target_usd:
+                self.logger.info(f"   🎯 Take Profit USD: ${self.session_profit_target_usd:.2f} | Atual: ${status['accumulated_pnl']:.2f} | 🎉 ATINGIDO!")
+            else:
+                self.logger.info(f"   🎯 Take Profit USD: ${self.session_profit_target_usd:.2f} | Atual: ${status['accumulated_pnl']:.2f} | Faltam: ${remaining_profit_usd:.2f} ({profit_percentage_reached:.1f}%)")
+            
+            # Take Profit Percentual
+            remaining_profit_percent = self.session_profit_target_percent - status['accumulated_pnl_percent']
+            if status['accumulated_pnl_percent'] >= self.session_profit_target_percent:
+                self.logger.info(f"   🎯 Take Profit %:   +{self.session_profit_target_percent:.1f}% | Atual: {status['accumulated_pnl_percent']:+.2f}% | 🎉 ATINGIDO!")
+            else:
+                self.logger.info(f"   🎯 Take Profit %:   +{self.session_profit_target_percent:.1f}% | Atual: {status['accumulated_pnl_percent']:+.2f}% | Faltam: {remaining_profit_percent:.2f}pp")
+        
+        self.logger.info("")
         self.logger.info(f"🔄 Ciclos: {status['cycles_closed']} (✅{status['cycles_profit']} / ❌{status['cycles_loss']})")
         self.logger.info(f"📈 Win Rate: {status['win_rate']:.1f}%")
         self.logger.info(f"⏱️ Uptime: {status['uptime']}")
@@ -606,6 +802,24 @@ class GridRiskManager:
     def reset_cycle(self):
         """Reseta ciclo atual (usado ao reiniciar grid)"""
         self.current_cycle_start = datetime.now()
+        # ID de trade por ciclo (simples e único)
+        trade_id = f"grid-{getattr(self, 'symbol', 'GRID')}-{int(self.current_cycle_start.timestamp())}"
+        self.health.start_trade(
+            trade_id,
+            symbol=getattr(self, 'symbol', 'GRID'),
+            side="mixed",  # grid pode alternar; se tiver lado atual, substitua
+            size=0.0,      # opcional: pode preencher com exposição
+            entry_price=0.0,
+            entry_time=self.current_cycle_start.isoformat(),
+            tp_percent=self.cycle_take_profit_percent,
+            sl_percent=self.cycle_stop_loss_percent,
+            extra={
+                "session_targets": {
+                    "max_loss_usd": self.session_max_loss_usd,
+                    "profit_target_usd": self.session_profit_target_usd
+                }
+            }
+        )
         self.logger.info(f"🔄 Ciclo #{self.current_cycle_id} iniciado")
     
     def close_session(self):

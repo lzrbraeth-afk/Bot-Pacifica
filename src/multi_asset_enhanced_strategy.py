@@ -13,6 +13,8 @@ from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger
 from src.enhanced_signal_detector import EnhancedSignalDetector
 from src.emergency_sl_system import EmergencyStopLoss
+from src.analytics_tracker import AnalyticsTracker
+import traceback
 
 class MultiAssetEnhancedStrategy:
     def __init__(self, auth_client, calculator, position_manager):
@@ -82,6 +84,7 @@ class MultiAssetEnhancedStrategy:
         self.logger.info(f"🧠 Algoritmo melhorado: Quality ≥ {self.enhanced_min_signal_quality}, Confidence ≥ {self.enhanced_min_confidence}")
         
         self._tp_sl_check_counter = 0
+        self._analytics_report_counter = 0  # Counter for periodic analytics reports
 
         # CAMADA 3: Emergency Stop Loss
         self.emergency_sl = EmergencyStopLoss(
@@ -94,6 +97,22 @@ class MultiAssetEnhancedStrategy:
         self.logger.info("  Camada 1: TP/SL da API (criado com ordem)")
         self.logger.info("  Camada 2: Shadow SL (monitoramento interno)")
         self.logger.info("  Camada 3: Emergency SL (fail-safe)")
+        
+        # Sistema de Analytics (opcional via .env)
+        analytics_enabled = os.getenv('ANALYTICS_ENABLED', 'true').lower() == 'true'
+        self.analytics = AnalyticsTracker(
+            strategy_name='multi_asset_enhanced',
+            enabled=analytics_enabled
+        )
+        
+        self.logger.info(f"📊 Analytics: {'ATIVO ✅' if analytics_enabled else 'DESATIVADO ❌'}")
+        
+        # Inicializar contador para salvar dados da interface
+        self._interface_update_counter = 0
+        
+        # Salvar dados iniciais do dashboard
+        self.logger.debug("📊 Salvando dados iniciais do dashboard...")
+        self._save_dashboard_data()
 
 
     def get_symbol_info_cached(self, symbol: str):
@@ -307,6 +326,21 @@ class MultiAssetEnhancedStrategy:
             # 4. Verificar TP/SL manual se habilitado
             if not self.use_api_tp_sl:
                 self._check_all_tp_sl()
+            
+            # 5. Analytics: Periodic reporting (every 50 cycles)
+            self._analytics_report_counter += 1
+            if self._analytics_report_counter >= 50:
+                self._log_periodic_analytics()
+                self._analytics_report_counter = 0
+            
+            # 6. Atualizar dados do dashboard periodicamente (a cada 30 ciclos)
+            self._interface_update_counter += 1
+            if self._interface_update_counter >= 30:
+                self.logger.debug(f"📊 Salvando dados do dashboard (ciclo {self._interface_update_counter})")
+                self._save_dashboard_data()
+                self._interface_update_counter = 0
+            elif self._interface_update_counter % 10 == 0:
+                self.logger.debug(f"📊 Dashboard update counter: {self._interface_update_counter}/30")
                 
         except Exception as e:
             self.logger.error(f"❌ Erro no check_filled_orders: {e}")
@@ -418,13 +452,37 @@ class MultiAssetEnhancedStrategy:
                         
                         # Verificar se pode executar
                         if self._can_execute_enhanced_signal(symbol, signal):
+                            # Registrar aprovação no analytics
+                            self.analytics.log_signal_analysis(
+                                symbol=symbol,
+                                signal_data=signal,
+                                decision='EXECUTED'
+                            )
+                            
                             self.logger.info(f"🚀 {symbol}: Executando sinal Enhanced...")
                             self._execute_enhanced_signal(symbol, signal)
                             self.signals_executed += 1
                         else:
+                            # Registrar rejeição no analytics
+                            rejection_reason = self._get_rejection_reason(symbol, signal)
+                            self.analytics.log_signal_analysis(
+                                symbol=symbol,
+                                signal_data=signal,
+                                decision='REJECTED',
+                                rejection_reason=rejection_reason
+                            )
+                            
                             self.signals_rejected_limits += 1
                             self.logger.debug(f"🚫 {symbol}: Sinal rejeitado - Limites de execução")
                     else:
+                        # Registrar rejeição por baixa confiança
+                        self.analytics.log_signal_analysis(
+                            symbol=symbol,
+                            signal_data=signal,
+                            decision='REJECTED',
+                            rejection_reason=f"low_confidence_{confidence:.0f}%_<_{self.enhanced_min_confidence}%"
+                        )
+                        
                         self.signals_rejected_quality += 1
                         self.logger.debug(f"📊 {symbol}: Sinal rejeitado - Confiança {confidence:.1f} < {self.enhanced_min_confidence}")
                         
@@ -439,6 +497,40 @@ class MultiAssetEnhancedStrategy:
             self.logger.info(f"📊 Enhanced: {signals_found} sinais encontrados | Executados: {self.signals_executed} | Taxa: {execution_rate:.1f}%")
         else:
             self.logger.info(f"📊 Enhanced: Nenhum sinal encontrado nos {len(self.symbols)} símbolos analisados")
+    
+    def _get_rejection_reason(self, symbol: str, signal: Dict) -> str:
+        """
+        Determina o motivo específico da rejeição do sinal.
+        """
+        
+        # Verificar cada condição de rejeição
+        if len(self.active_positions) >= self.max_concurrent_trades:
+            return f"max_trades_reached_{len(self.active_positions)}/{self.max_concurrent_trades}"
+        
+        if not self.allow_multiple_per_symbol and self.symbol_positions.get(symbol, 0) > 0:
+            return "symbol_already_has_position"
+        
+        margin_needed = self.position_size_usd / self.leverage
+        can_place, msg = self.position_mgr.can_place_order(self.position_size_usd)
+        if not can_place:
+            return f"insufficient_margin_{msg}"
+        
+        if signal['volatility'] > self.enhanced_max_volatility:
+            return f"high_volatility_{signal['volatility']:.2f}%_>_{self.enhanced_max_volatility}%"
+        
+        if self.enhanced_use_rsi_filter:
+            rsi = signal['rsi']
+            side = signal['side']
+            if (side == 'LONG' and rsi > 80) or (side == 'SHORT' and rsi < 20):
+                return f"rsi_extreme_{side}_{rsi:.1f}"
+        
+        if signal['quality_score'] < self.enhanced_min_signal_quality:
+            return f"low_score_{signal['quality_score']}_<_{self.enhanced_min_signal_quality}"
+        
+        if signal['confidence'] < self.enhanced_min_confidence:
+            return f"low_confidence_{signal['confidence']:.0f}%_<_{self.enhanced_min_confidence}%"
+        
+        return "unknown"
     
     def _can_execute_enhanced_signal(self, symbol: str, signal: Dict) -> bool:
         """Verifica se pode executar sinal com validações adicionais"""
@@ -653,6 +745,17 @@ class MultiAssetEnhancedStrategy:
                 self.active_positions[position_id] = position_info
                 
                 self.symbol_positions[symbol] = self.symbol_positions.get(symbol, 0) + 1
+                
+                # Registrar execução no analytics
+                self.analytics.log_trade_execution(
+                    symbol=symbol,
+                    side=side,
+                    price=current_price_rounded,
+                    quantity=quantity,
+                    order_id=order_id,
+                    tp_price=take_profit_config['stop_price'] if take_profit_config else None,
+                    sl_price=stop_loss_config['stop_price'] if stop_loss_config else None
+                )
                 
                 self.logger.strategy_info(f"✅ Posição Enhanced aberta: {symbol} {side} {quantity} @ ${current_price_rounded:.4f}")
                 
@@ -973,6 +1076,32 @@ class MultiAssetEnhancedStrategy:
             
             if result:
                 self.logger.info(f"✅ Enhanced: Ordem de fechamento criada para {symbol}")
+                
+                # Analytics: Log position closure
+                if hasattr(self, 'analytics') and self.analytics:
+                    try:
+                        # Calculate PnL if possible
+                        pnl = None
+                        if 'entry_price' in position_data:
+                            entry_price = float(position_data['entry_price'])
+                            if side == 'bid':  # Long position
+                                pnl = (current_price - entry_price) * quantity
+                            else:  # Short position
+                                pnl = (entry_price - current_price) * quantity
+                        
+                        self.analytics.log_position_closure(
+                            symbol=symbol,
+                            side=side,
+                            quantity=quantity,
+                            entry_price=position_data.get('entry_price'),
+                            exit_price=current_price,
+                            pnl=pnl,
+                            exit_reason=reason,
+                            position_id=position_data.get('position_id')
+                        )
+                    except Exception as e:
+                        self.logger.error(f"❌ Analytics: Erro ao registrar fechamento de posição: {e}")
+                
                 # Remover da lista de posições ativas
                 position_id = position_data['position_id']
                 if position_id in self.active_positions:
@@ -1161,3 +1290,114 @@ class MultiAssetEnhancedStrategy:
         
         # Sempre mostrar métricas Enhanced específicas
         self.log_performance_summary()
+    
+    def _log_periodic_analytics(self):
+        """Log periodic analytics summary for monitoring"""
+        if hasattr(self, 'analytics') and self.analytics:
+            try:
+                summary = self.analytics.get_analytics_summary()
+                
+                # Only log if there's meaningful data
+                if summary.get('total_signals', 0) > 0:
+                    self.logger.info("📊 PERIODIC ANALYTICS REPORT:")
+                    self.logger.info(f"   🔍 Signals analyzed: {summary.get('total_signals', 0)}")
+                    
+                    executed = summary.get('executed_signals', 0)
+                    rejected = summary.get('rejected_signals', 0)
+                    execution_rate = (executed / summary.get('total_signals', 1)) * 100
+                    
+                    self.logger.info(f"   ✅ Executed: {executed} ({execution_rate:.1f}%)")
+                    self.logger.info(f"   ❌ Rejected: {rejected}")
+                    
+                    if summary.get('total_trades', 0) > 0:
+                        self.logger.info(f"   💼 Active trades: {summary.get('total_trades', 0)}")
+                        
+                    if summary.get('total_closures', 0) > 0:
+                        self.logger.info(f"   🔒 Completed closures: {summary.get('total_closures', 0)}")
+                        
+            except Exception as e:
+                self.logger.error(f"❌ Analytics: Erro no relatório periódico: {e}")
+
+    def _save_dashboard_data(self):
+        """Salva dados das posições e ordens para o dashboard"""
+        try:
+            from pathlib import Path
+            import json
+            from datetime import datetime
+            
+            self.logger.debug("📊 Iniciando salvamento dos dados do dashboard...")
+            
+            data_dir = Path("data")
+            data_dir.mkdir(exist_ok=True)
+            
+            # Preparar dados das posições ativas
+            positions_data = []
+            if self.active_positions:
+                for pos_id, pos_info in self.active_positions.items():
+                    positions_data.append({
+                        "symbol": pos_info.get("symbol", ""),
+                        "side": pos_info.get("side", "").lower(),
+                        "size": float(pos_info.get("size", 0)),
+                        "entry_price": float(pos_info.get("entry_price", 0)),
+                        "open_time": pos_info.get("open_time", datetime.now().isoformat()),
+                        "leverage": pos_info.get("leverage", 1),
+                        "position_id": pos_id
+                    })
+            
+            # Salvar posições ativas
+            positions_file = data_dir / "active_positions.json"
+            positions_payload = {
+                "last_update": datetime.now().isoformat(),
+                "strategy_type": "multi_asset_enhanced",
+                "total_positions": len(positions_data),
+                "positions": positions_data
+            }
+            
+            with open(positions_file, 'w', encoding='utf-8') as f:
+                json.dump(positions_payload, f, indent=2, ensure_ascii=False)
+            
+            # Obter ordens abertas da API (para todas as criptos)
+            orders_data = []
+            try:
+                api_orders = self.auth.get_open_orders()
+                if api_orders:
+                    for order in api_orders:
+                        # Normalizar side (bid/ask → buy/sell)
+                        side = order.get("side", "").lower()
+                        if side == "bid":
+                            side = "buy"
+                        elif side == "ask":
+                            side = "sell"
+                        
+                        orders_data.append({
+                            "order_id": order.get("order_id", "") or order.get("id", ""),
+                            "symbol": order.get("symbol", ""),
+                            "side": side,
+                            "price": float(order.get("price", 0)),
+                            "size": float(order.get("size", 0) or order.get("initial_amount", 0)),
+                            "create_time": order.get("created_at", datetime.now().isoformat()),
+                            "type": order.get("type", "limit")
+                        })
+            except Exception as e:
+                self.logger.debug(f"Erro ao obter ordens da API: {e}")
+            
+            # Salvar ordens ativas
+            orders_file = data_dir / "active_orders.json"
+            orders_payload = {
+                "last_update": datetime.now().isoformat(),
+                "strategy_type": "multi_asset_enhanced",
+                "total_orders": len(orders_data),
+                "orders": orders_data
+            }
+            
+            with open(orders_file, 'w', encoding='utf-8') as f:
+                json.dump(orders_payload, f, indent=2, ensure_ascii=False)
+            
+            self.logger.info(
+                f"📊 Dashboard atualizado: "
+                f"{len(positions_data)} posições, {len(orders_data)} ordens"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao salvar dados do dashboard: {e}")
+            self.logger.debug(f"Stack trace: {traceback.format_exc()}")

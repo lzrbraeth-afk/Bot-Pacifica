@@ -8,6 +8,7 @@ import time
 import logging
 from datetime import datetime
 from typing import Dict, Optional, Tuple
+from src.risk_health_reporter import RiskHealthReporter  # ⬅️ ADD
 
 class EmergencyStopLoss:
     """
@@ -43,6 +44,8 @@ class EmergencyStopLoss:
         self.logger.info(f"  Intervalo de verificação: {self.check_interval_seconds}s")
         self.logger.info("=" * 80)
         self.logger.info("🚨 EMERGENCY STOP LOSS SYSTEM - Camada 3 Ativada")
+        # ▶️ Reporter compartilhado (nome 'risk_emergency' só para tag)
+        self.health = RiskHealthReporter(strategy_name="risk_emergency")  # ⬅️ ADD
         self.logger.info(f"  Emergency SL: {self.emergency_sl_percent}%")
     
     def check_all_positions(self, active_positions: Dict) -> None:
@@ -95,6 +98,17 @@ class EmergencyStopLoss:
             pnl_percent = self._calculate_pnl_percent(side, entry_price, current_price)
             
             self.logger.info(f"   PNL calculado: {pnl_percent:.2f}%")
+            # Telemetria de cada checagem de emergência
+            self.health.log_check("emergency_check", {
+                "symbol": symbol, "side": side, "pnl_percent": pnl_percent,
+                "emergency_sl_percent": self.emergency_sl_percent,
+                "time_check_sec": self.check_interval_seconds
+            })
+            self.health.update_trade(
+                current_price=current_price,
+                pnl_percent=pnl_percent,
+                extra={"emergency": {"sl%": self.emergency_sl_percent, "tp%": self.emergency_tp_percent}}
+            )
             
             # Verificar tempo da posição
             position_age = self._get_position_age(position)
@@ -106,6 +120,8 @@ class EmergencyStopLoss:
                     f"PERDA CRÍTICA: {pnl_percent:.2f}% <= -{self.emergency_sl_percent}%",
                     pnl_percent
                 )
+                self.health.end_trade(reason="emergency_sl", result="emergency",
+                                      final_snapshot={"pnl_percent": pnl_percent, "symbol": symbol})
                 return
             
             # CONDIÇÃO 2: Lucro extremo inesperado (proteção contra reversão)
@@ -115,6 +131,8 @@ class EmergencyStopLoss:
                     f"LUCRO EXTREMO: {pnl_percent:.2f}% >= {self.emergency_tp_percent}% (proteger ganhos)",
                     pnl_percent
                 )
+                self.health.end_trade(reason="emergency_tp", result="emergency",
+                                      final_snapshot={"pnl_percent": pnl_percent, "symbol": symbol})
                 return
             
             # CONDIÇÃO 3: Tempo excessivo em perda
@@ -131,6 +149,8 @@ class EmergencyStopLoss:
                             f"LOSS PROLONGADO: {time_in_loss_minutes:.1f}min em perda de {pnl_percent:.2f}%",
                             pnl_percent
                         )
+                        self.health.end_trade(reason="emergency_time_sl", result="emergency",
+                                              final_snapshot={"pnl_percent": pnl_percent, "symbol": symbol, "time_in_loss_minutes": time_in_loss_minutes})
                         return
             else:
                 # Posição em lucro - limpar tracking de loss

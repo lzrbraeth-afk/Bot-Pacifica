@@ -12,6 +12,7 @@ from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass
 from pathlib import Path
 import json
+from src.risk_health_reporter import RiskHealthReporter  # ⬅️ ADD
 
 @dataclass
 class MarginSnapshot:
@@ -74,6 +75,7 @@ class MarginTrendProtector:
         
         # Contador para logs periódicos
         self.status_log_counter = 0
+        self.health = RiskHealthReporter(strategy_name="margin_trend")  # ⬅️ ADD
     
     def register_callback(self, action: str, callback: Callable):
         """Registrar callbacks para ações específicas"""
@@ -106,6 +108,12 @@ class MarginTrendProtector:
                 self.logger.info(f"📊 Margem: {margin_percent:.1f}% | Histórico: {len(self.margin_history)} pontos | Período: {self.history_minutes}min")
             else:
                 self.logger.debug(f"Margem: {margin_percent:.2f}% - Histórico: {len(self.margin_history)} pontos")
+        # Telemetria leve de margem
+        self.health.update_status({
+            "margin_percent": margin_percent,
+            "balance_usd": balance_usd,
+            "history_points": len(self.margin_history)
+        })
     
     def check_margin_trend(self) -> Dict:
         """
@@ -158,6 +166,13 @@ class MarginTrendProtector:
                     f"(variação: {drop_percent:+.1f}% | limite: {self.drop_threshold}%)"
                 )
         
+        # Telemetria da checagem
+        self.health.log_check("margin_check", {
+            "current_margin": current_snapshot.margin_percent,
+            "drop_percent": round(drop_percent,2),
+            "threshold": self.drop_threshold,
+            "window_min": self.history_minutes
+        })
         # Verificar se excedeu threshold
         if drop_percent >= self.drop_threshold:
             return self._trigger_protection(drop_percent, current_snapshot, oldest_snapshot)
@@ -176,6 +191,11 @@ class MarginTrendProtector:
         
         self.logger.critical("=" * 80)
         self.logger.critical("🚨 PROTEÇÃO DE MARGEM ACIONADA!")
+        self.health.log_check("margin_protection_triggered", {
+            "drop_percent": round(drop_percent,2),
+            "action": self.action,
+            "window_min": self.history_minutes
+        })
         self.logger.critical(f"📊 Margem caiu {drop_percent:.1f}% em {time_diff:.1f} minutos")
         self.logger.critical(f"📈 Margem anterior: {oldest.margin_percent:.1f}%")
         self.logger.critical(f"📉 Margem atual: {current.margin_percent:.1f}%")

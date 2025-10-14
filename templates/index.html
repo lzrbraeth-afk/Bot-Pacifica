@@ -96,6 +96,240 @@
         #logs-container::-webkit-scrollbar-thumb:hover {
             background: #6b7280;
         }
+        
+        /* Risk Management Styles */
+        .risk-manager {
+            transition: all 0.3s ease;
+        }
+        
+        .risk-content {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .risk-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .risk-metric {
+            background: rgba(55, 65, 81, 0.5);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .risk-metric:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .risk-status-safe {
+            border-left: 4px solid #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        
+        .risk-status-warning {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        
+        .risk-status-danger {
+            border-left: 4px solid #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .risk-progress {
+            width: 100%;
+            background: #374151;
+            border-radius: 9999px;
+            height: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .risk-progress-bar {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 9999px;
+        }
+        
+        .risk-progress-safe { background: #10b981; }
+        .risk-progress-warning { background: #f59e0b; }
+        .risk-progress-danger { background: #ef4444; }
+        
+        /* Risk Monitor Styles */
+        .risk-positions-content {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .position-card {
+            background: rgba(55, 65, 81, 0.3);
+            border: 1px solid #374151;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .position-card:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        
+        .position-card.risk-level-1 {
+            border-left: 4px solid #10b981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+        
+        .position-card.risk-level-2 {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.05);
+        }
+        
+        .position-card.risk-level-3 {
+            border-left: 4px solid #ef4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+        
+        .position-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #374151;
+        }
+        
+        .position-symbol {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .position-pnl {
+            font-family: monospace;
+            font-weight: 600;
+        }
+        
+        .position-pnl.positive { color: #10b981; }
+        .position-pnl.negative { color: #ef4444; }
+        .position-pnl.neutral { color: #9ca3af; }
+        
+        .risk-layers {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .risk-layer {
+            background: rgba(75, 85, 99, 0.3);
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+        
+        .risk-layer-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .risk-items {
+            display: grid;
+            gap: 0.5rem;
+        }
+        
+        .risk-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            background: rgba(55, 65, 81, 0.3);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+        
+        .risk-item-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .risk-item-value {
+            font-family: monospace;
+            font-weight: 500;
+        }
+        
+        .risk-status-indicator {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .risk-item-placeholder {
+            padding: 0.75rem;
+            background-color: rgba(75, 85, 99, 0.3);
+            border: 1px dashed rgba(156, 163, 175, 0.5);
+            border-radius: 0.375rem;
+            color: #9CA3AF;
+            text-align: center;
+            font-style: italic;
+            font-size: 0.875rem;
+        }
+        
+        .position-card.error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #EF4444;
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .status-safe { background-color: #10b981; }
+        .status-warning { background-color: #f59e0b; }
+        .status-critical { background-color: #ef4444; }
+        .status-near-target { background-color: #3b82f6; }
+        .status-approaching { background-color: #8b5cf6; }
+        
+        .risk-progress-container {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+        
+        .risk-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            margin-bottom: 0.25rem;
+        }
+        
+        .risk-progress-bar-container {
+            background: #374151;
+            height: 0.5rem;
+            border-radius: 0.25rem;
+            overflow: hidden;
+        }
+        
+        .risk-progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .monitor-status-connected {
+            color: #10b981;
+        }
+        
+        .monitor-status-disconnected {
+            color: #ef4444;
+        }
+        
+        .monitor-status-warning {
+            color: #f59e0b;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
@@ -283,6 +517,50 @@
                         <p class="text-gray-500 text-center py-8">Nenhuma ordem aberta</p>
                     </div>
                 </div>
+            </div>
+
+            <!-- DASHBOARD UNIFICADO DE GERENCIAMENTO DE RISCO -->
+            <div id="risk-dashboard" class="p-4 bg-gray-900 text-white rounded-2xl shadow-lg mt-4">
+              <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                🛡️ Painel de Gerenciamento de Risco
+                <span id="risk-status-indicator" class="text-sm font-semibold bg-green-500 px-2 py-1 rounded-lg text-black">Online</span>
+              </h2>
+
+              <div class="grid grid-cols-3 gap-4 text-sm font-mono">
+                <!-- COLUNA 1: Configurações -->
+                <div class="bg-gray-800 p-3 rounded-xl">
+                  <h3 class="text-blue-400 font-semibold mb-2">⚙️ Configurações Atuais</h3>
+                  <p><strong>Ciclo Stop:</strong> <span id="cfg-cycle-sl">—</span>%</p>
+                  <p><strong>Ciclo Take:</strong> <span id="cfg-cycle-tp">—</span>%</p>
+                  <p><strong>Emergência SL:</strong> <span id="cfg-emerg-sl">—</span>%</p>
+                  <p><strong>Emergência TP:</strong> <span id="cfg-emerg-tp">—</span>%</p>
+                  <p><strong>Margem Alvo:</strong> <span id="cfg-margin">—</span>%</p>
+                  <p><strong>Max Loss Sessão:</strong> $<span id="cfg-session-loss">—</span></p>
+                  <p><strong>Meta Lucro Sessão:</strong> $<span id="cfg-session-profit">—</span></p>
+                </div>
+
+                <!-- COLUNA 2: Trade Atual -->
+                <div class="bg-gray-800 p-3 rounded-xl">
+                  <h3 class="text-green-400 font-semibold mb-2">📊 Trade Ativo</h3>
+                  <p><strong>ID:</strong> <span id="trade-id">—</span></p>
+                  <p><strong>Ativo:</strong> <span id="trade-symbol">—</span></p>
+                  <p><strong>Tipo:</strong> <span id="trade-side">—</span></p>
+                  <p><strong>Tempo em Trade:</strong> <span id="trade-time">—</span></p>
+                  <p><strong>Preço Atual:</strong> $<span id="trade-price">—</span></p>
+                  <p><strong>PNL:</strong> <span id="trade-pnl-usd">$0.00</span> (<span id="trade-pnl-pct">0.00%</span>)</p>
+                  <p><strong>Status:</strong> <span id="trade-status">Nenhum trade ativo</span></p>
+                </div>
+
+                <!-- COLUNA 3: Sessão -->
+                <div class="bg-gray-800 p-3 rounded-xl">
+                  <h3 class="text-yellow-400 font-semibold mb-2">📈 Sessão / Saúde</h3>
+                  <p><strong>Ciclos:</strong> <span id="session-cycles">0</span></p>
+                  <p><strong>PNL Acumulado:</strong> $<span id="session-pnl">0.00</span></p>
+                  <p><strong>Margem Atual:</strong> <span id="session-margin">—</span>%</p>
+                  <p><strong>Última Verificação:</strong> <span id="session-lastcheck">—</span></p>
+                  <p><strong>Flags:</strong> <span id="session-flags">—</span></p>
+                </div>
+              </div>
             </div>
 
             <!-- System Info -->
@@ -909,6 +1187,13 @@
             socket.on('alert', (data) => {
                 showAlert(data.type, data.message);
             });
+            
+            // NOVO: Risk Management Updates
+            socket.on('risk_update', (data) => {
+                if (currentTab === 'dashboard') {
+                    updateRiskDisplay(data);
+                }
+            });
         }
         
         function updateWSStatus(connected) {
@@ -988,6 +1273,8 @@
             }
             if (tab === 'dashboard') {
                 loadPositionsAndOrders();
+                updateRiskDashboard();
+                // loadRiskPositionsMonitor();
             } else if (tab === 'volume') {
                 loadVolumeStats();
                 loadVolumeTimeline(24, 60);
@@ -1166,18 +1453,46 @@ function renderDailyPNLChart(data) {
         }
         
         function updateMetrics(data) {
-            document.getElementById('pnl-text').textContent = `$${data.accumulated_pnl.toFixed(2)}`;
-            document.getElementById('pnl-text').className = `text-2xl font-bold ${data.accumulated_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            // Verificar se os elementos existem antes de tentar atualizá-los
+            const pnlElement = document.getElementById('pnl-text');
+            const cyclesElement = document.getElementById('cycles-text');
+            const winrateElement = document.getElementById('winrate-text');
+            const totalTradesElement = document.getElementById('total-trades');
+            const winningTradesElement = document.getElementById('winning-trades');
+            const losingTradesElement = document.getElementById('losing-trades');
+            const avgWinElement = document.getElementById('avg-win');
             
-            document.getElementById('cycles-text').textContent = data.cycles_closed || 0;
-            document.getElementById('winrate-text').textContent = `${data.win_rate || 0}%`;
-            document.getElementById('winrate-text').className = `text-2xl font-bold ${data.win_rate >= 50 ? 'text-green-400' : 'text-yellow-400'}`;
+            if (pnlElement) {
+                const pnl = data?.accumulated_pnl || 0;
+                pnlElement.textContent = `$${pnl.toFixed(2)}`;
+                pnlElement.className = `text-2xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            }
             
-            document.getElementById('total-trades').textContent = data.total_trades || 0;
-            document.getElementById('winning-trades').textContent = data.winning_trades || 0;
-            document.getElementById('losing-trades').textContent = data.losing_trades || 0;
+            if (cyclesElement) {
+                cyclesElement.textContent = data?.cycles_closed || 0;
+            }
             
-            document.getElementById('avg-win').textContent = `$${(data.avg_win || 0).toFixed(2)}`;
+            if (winrateElement) {
+                const winRate = data?.win_rate || 0;
+                winrateElement.textContent = `${winRate}%`;
+                winrateElement.className = `text-2xl font-bold ${winRate >= 50 ? 'text-green-400' : 'text-yellow-400'}`;
+            }
+            
+            if (totalTradesElement) {
+                totalTradesElement.textContent = data?.total_trades || 0;
+            }
+            
+            if (winningTradesElement) {
+                winningTradesElement.textContent = data?.winning_trades || 0;
+            }
+            
+            if (losingTradesElement) {
+                losingTradesElement.textContent = data?.losing_trades || 0;
+            }
+            
+            if (avgWinElement) {
+                avgWinElement.textContent = `$${(data?.avg_win || 0).toFixed(2)}`;
+            }
             document.getElementById('avg-loss').textContent = `$${(data.avg_loss || 0).toFixed(2)}`;
             document.getElementById('profit-factor').textContent = (data.profit_factor || 0).toFixed(2);
             document.getElementById('profit-factor').className = data.profit_factor >= 1 ? 'text-green-400' : 'text-red-400';
@@ -2148,13 +2463,999 @@ function renderDailyPNLChart(data) {
             
             // Carregar dados iniciais
             loadPositionsAndOrders();
+            updateRiskDashboard();
             
             
             // Polling periódico para dados (fallback se WebSocket falhar)
             setInterval(() => {
                 loadPositionsAndOrders();
+                if (currentTab === 'dashboard') {
+                    updateRiskDashboard();
+                    // loadRiskPositionsMonitor();
+                }
             }, 30000); // A cada 30 segundos
         });
+        
+        // ========== RISK MANAGEMENT FUNCTIONS (MELHORADAS) ==========
+        
+        /**
+         * ✅ MELHORADO: Carrega status de risco com tratamento robusto de erros
+         */
+        async function loadRiskStatus() {
+            const container = document.getElementById('risk-status');
+            
+            // Mostrar loading
+            container.innerHTML = `
+                <div class="flex justify-center items-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                    <span class="ml-3 text-gray-400">Carregando dados de risco...</span>
+                </div>
+            `;
+            
+            try {
+                console.log('📡 Buscando status de risco...');
+                const response = await fetch(`${API_BASE}/api/risk/status`);
+                
+                // ✅ NOVO: Verificar status HTTP antes de parsear JSON
+                if (!response.ok) {
+                    console.warn(`⚠️ Resposta HTTP ${response.status} ao carregar risco`);
+                    
+                    // Tentar ler erro da resposta
+                    let errorData;
+                    try {
+                        errorData = await response.json();
+                    } catch (e) {
+                        errorData = { error: `Erro HTTP ${response.status}` };
+                    }
+                    
+                    console.warn('Dados de erro:', errorData);
+                    
+                    // ✅ NOVO: Mostrar UI de erro amigável baseada no status
+                    const errorMessage = errorData.error || errorData.message || 'Serviço temporariamente indisponível';
+                    const botStatus = errorData.bot_status || 'unknown';
+                    
+                    let statusIcon = '⚠️';
+                    let statusColor = 'yellow';
+                    let userMessage = errorMessage;
+                    
+                    if (response.status === 503) {
+                        if (botStatus === 'disconnected') {
+                            statusIcon = '🚫';
+                            statusColor = 'red';
+                            userMessage = 'Bot não está rodando. Inicie o bot para visualizar dados de risco em tempo real.';
+                        } else if (botStatus === 'running_separate') {
+                            statusIcon = '🔗';
+                            statusColor = 'yellow';
+                            userMessage = 'Bot rodando em processo separado. Dados de risco limitados neste modo.';
+                        }
+                    } else if (response.status === 500) {
+                        statusIcon = '❌';
+                        statusColor = 'red';
+                        userMessage = 'Erro interno ao processar dados de risco. Verifique os logs.';
+                    }
+                    
+                    container.innerHTML = `
+                        <div class="bg-${statusColor}-900/30 border border-${statusColor}-600 rounded-lg p-6">
+                            <div class="flex items-start gap-4">
+                                <span class="text-4xl">${statusIcon}</span>
+                                <div class="flex-1">
+                                    <h3 class="text-xl font-semibold mb-2 text-${statusColor}-300">
+                                        ${botStatus === 'disconnected' ? 'Bot Desconectado' : 
+                                          botStatus === 'running_separate' ? 'Modo Limitado' : 
+                                          'Erro ao Carregar'}
+                                    </h3>
+                                    <p class="text-gray-300 mb-3">${userMessage}</p>
+                                    ${botStatus === 'disconnected' ? `
+                                        <code class="block bg-gray-800 px-3 py-2 rounded text-sm mt-2">
+                                            python grid_bot.py
+                                        </code>
+                                    ` : ''}
+                                    ${response.status === 503 ? `
+                                        <button onclick="loadRiskStatus()" 
+                                                class="mt-3 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+                                            🔄 Tentar Novamente
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // ✅ Resposta OK - parsear JSON
+                const data = await response.json();
+                console.log('✅ Status de risco carregado:', data);
+                
+                // ✅ NOVO: Validar estrutura básica do JSON
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Resposta inválida do servidor');
+                }
+                
+                // Atualizar display com dados
+                updateRiskDisplay(data);
+                
+            } catch (error) {
+                console.error('❌ Erro crítico ao carregar status de risco:', error);
+                
+                // ✅ NOVO: Mostrar erro detalhado para debugging
+                container.innerHTML = `
+                    <div class="bg-red-900/30 border border-red-600 rounded-lg p-6">
+                        <div class="flex items-start gap-4">
+                            <span class="text-4xl">❌</span>
+                            <div class="flex-1">
+                                <h3 class="text-xl font-semibold mb-2 text-red-300">Erro de Conexão</h3>
+                                <p class="text-gray-300 mb-3">
+                                    Não foi possível conectar ao servidor de risco.
+                                </p>
+                                <details class="text-sm">
+                                    <summary class="cursor-pointer text-gray-400 hover:text-gray-300">
+                                        Ver detalhes técnicos
+                                    </summary>
+                                    <pre class="mt-2 bg-gray-800 p-2 rounded overflow-x-auto text-xs">
+${error.message}
+${error.stack || ''}
+                                    </pre>
+                                </details>
+                                <button onclick="loadRiskStatus()" 
+                                        class="mt-3 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+                                    🔄 Tentar Novamente
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Mostrar alerta também
+                showAlert('error', `Erro ao carregar dados de risco: ${error.message}`);
+            }
+        }
+        
+        function updateRiskDisplay(riskData) {
+            const container = document.getElementById('risk-status');
+            
+            // Verificar se o bot não está rodando
+            if (riskData.bot_status === 'disconnected') {
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="risk-metric bg-red-900/30 border border-red-700">
+                            <div class="flex items-center mb-3">
+                                <span class="text-2xl mr-3">🚫</span>
+                                <div>
+                                    <h4 class="font-semibold text-red-300">Bot Desconectado</h4>
+                                    <p class="text-sm text-gray-400">Inicie o bot com: python grid_bot.py</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="risk-metric">
+                            <h4 class="font-semibold mb-3">⚙️ Configurações (.env)</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Proteção de Sessão:</span>
+                                    <span class="${riskData.session_protection ? 'text-green-400' : 'text-red-400'}">
+                                        ${riskData.session_protection ? 'Ativada' : 'Desativada'}
+                                    </span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Limite de Perda:</span>
+                                    <span class="text-red-400">$${riskData.session_max_loss_usd}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Meta de Lucro:</span>
+                                    <span class="text-green-400">$${riskData.session_profit_target_usd}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="risk-metric">
+                            <h4 class="font-semibold mb-3">🔄 Proteção de Ciclo</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Status:</span>
+                                    <span class="${riskData.cycle_protection ? 'text-green-400' : 'text-red-400'}">
+                                        ${riskData.cycle_protection ? 'Ativada' : 'Desativada'}
+                                    </span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Stop Loss:</span>
+                                    <span class="text-red-400">${riskData.cycle_sl}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Take Profit:</span>
+                                    <span class="text-green-400">${riskData.cycle_tp}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Bot rodando separadamente - mostrar configurações básicas
+            if (riskData.bot_status === 'running_separate') {
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="risk-metric bg-yellow-900/30 border border-yellow-700">
+                            <div class="flex items-center mb-3">
+                                <span class="text-2xl mr-3">🔗</span>
+                                <div>
+                                    <h4 class="font-semibold text-yellow-300">Bot Rodando (Processo Separado)</h4>
+                                    <p class="text-sm text-gray-400">Dados detalhados não disponíveis via Flask</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="risk-metric">
+                            <h4 class="font-semibold mb-3">⚙️ Configurações Ativas</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Proteção de Sessão:</span>
+                                    <span class="${riskData.session_protection ? 'text-green-400' : 'text-red-400'}">
+                                        ${riskData.session_protection ? 'Ativada' : 'Desativada'}
+                                    </span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Limite de Perda:</span>
+                                    <span class="text-red-400">$${riskData.session_max_loss_usd}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Meta de Lucro:</span>
+                                    <span class="text-green-400">$${riskData.session_profit_target_usd}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="risk-metric">
+                            <h4 class="font-semibold mb-3">🛡️ Sistema de Emergência</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Emergency SL:</span>
+                                    <span class="text-red-400">${riskData.emergency_sl_percent}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Emergency TP:</span>
+                                    <span class="text-green-400">${riskData.emergency_tp_percent}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Ação no Limite:</span>
+                                    <span class="text-blue-400">${riskData.action_on_limit}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // ✅ CORREÇÃO: Verificar se temos dados completos ou apenas configurações básicas
+            const hasComplexData = riskData.session_protection && 
+                                   typeof riskData.session_protection === 'object' &&
+                                   riskData.session_protection.loss_risk_level;
+            
+            if (!hasComplexData) {
+                // Dados simples - mostrar apenas configurações básicas
+                const botConnected = riskData.bot_status !== 'disconnected';
+                const statusColor = botConnected ? (riskData.is_paused ? 'orange' : 'green') : 'orange';
+                const statusIcon = botConnected ? (riskData.is_paused ? '⏸️' : '▶️') : '🔌';
+                const statusText = riskData.is_paused ? `Pausado até: ${riskData.pause_until}` :
+                                   botConnected ? 'Operando normalmente' : 'Aguardando conexão do bot...';
+                
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Status Geral -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4" style="border-left-color: ${statusColor};">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">Status Geral</h4>
+                                <span class="text-2xl">${statusIcon}</span>
+                            </div>
+                            <div class="text-lg font-bold" style="color: ${statusColor};">${statusText}</div>
+                            ${riskData.last_check ? `<div class="text-xs text-gray-400 mt-2">Última verificação: ${riskData.last_check}</div>` : ''}
+                        </div>
+                        
+                        <!-- Nível 1 (Ciclo) -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4 ${riskData.cycle_protection ? 'border-green-500' : 'border-red-500'}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">🔄 Nível 1 (Ciclo)</h4>
+                                <span class="${riskData.cycle_protection ? 'text-green-400' : 'text-red-400'} text-sm font-medium">
+                                    ${riskData.cycle_protection ? '✅ Ativo' : '❌ Desligado'}
+                                </span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Stop Loss:</span>
+                                    <span class="text-red-400 font-medium">${riskData.cycle_sl}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Take Profit:</span>
+                                    <span class="text-green-400 font-medium">${riskData.cycle_tp}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Nível 2 (Sessão) -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4 ${riskData.session_protection ? 'border-green-500' : 'border-red-500'}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">🛡️ Nível 2 (Sessão)</h4>
+                                <span class="${riskData.session_protection ? 'text-green-400' : 'text-red-400'} text-sm font-medium">
+                                    ${riskData.session_protection ? '✅ Ativo' : '❌ Desligado'}
+                                </span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Max Loss:</span>
+                                    <span class="text-red-400 font-medium">$${riskData.session_max_loss_usd}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Meta Lucro:</span>
+                                    <span class="text-green-400 font-medium">$${riskData.session_profit_target_usd}</span>
+                                </div>
+                                ${riskData.action_on_limit ? `
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Ação:</span>
+                                    <span class="text-blue-400 font-medium">${riskData.action_on_limit}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Emergency Stop -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4 border-orange-500">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">🚨 Emergency Stop</h4>
+                                <span class="text-orange-400 text-xs px-2 py-1 bg-orange-900 rounded">BACKUP</span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Emergency SL:</span>
+                                    <span class="text-red-400 font-medium">${riskData.emergency_sl_percent}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Emergency TP:</span>
+                                    <span class="text-green-400 font-medium">${riskData.emergency_tp_percent}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Posições Ativas -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4 border-blue-500">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">📊 Posições Ativas</h4>
+                                <span class="text-2xl font-bold text-blue-400">${riskData.active_positions_count || 0}</span>
+                            </div>
+                            <div class="text-xs text-gray-400">
+                                ${(riskData.active_positions_count || 0) > 0 ? 'Posições abertas no momento' : 'Nenhuma posição aberta'}
+                            </div>
+                        </div>
+                        
+                        <!-- Desempenho -->
+                        <div class="bg-gray-700 rounded-lg p-4 border-l-4 ${(riskData.accumulated_pnl || 0) >= 0 ? 'border-green-500' : 'border-red-500'}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-gray-300">💰 Desempenho</h4>
+                                <span class="${(riskData.accumulated_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">
+                                    ${(riskData.accumulated_pnl || 0) >= 0 ? '+' : ''}${(riskData.accumulated_pnl || 0).toFixed(2)} USD
+                                </span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">Ciclos:</span>
+                                    <span class="text-gray-300">${riskData.cycles_closed || 0}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">🏆 Lucro:</span>
+                                    <span class="text-green-400">${riskData.cycles_profit || 0}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-400">💀 Perda:</span>
+                                    <span class="text-red-400">${riskData.cycles_loss || 0}</span>
+                                </div>
+                                ${riskData.session_start && riskData.session_start !== 'Bot não iniciado' ? `
+                                    <div class="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-600">
+                                        Início: ${riskData.session_start}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Dados completos - usar a estrutura complexa original
+            const session = riskData.session_protection;
+            const cycle = riskData.cycle_protection;
+            
+            // Determinar status geral
+            let overallStatus = 'safe';
+            if (session.loss_risk_level === 'HIGH' || cycle.loss_risk_level === 'HIGH') {
+                overallStatus = 'danger';
+            } else if (session.loss_risk_level === 'MEDIUM' || cycle.loss_risk_level === 'MEDIUM') {
+                overallStatus = 'warning';
+            }
+            
+            container.innerHTML = `
+                <div class="risk-metrics">
+                    <!-- Status Geral -->
+                    <div class="risk-metric risk-status-${overallStatus}">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium">Status Geral</span>
+                            <span class="text-lg">${overallStatus === 'safe' ? '🟢' : overallStatus === 'warning' ? '🟡' : '🔴'}</span>
+                        </div>
+                        <p class="text-xl font-bold">
+                            ${overallStatus === 'safe' ? 'Seguro' : overallStatus === 'warning' ? 'Atenção' : 'Risco Alto'}
+                        </p>
+                    </div>
+                    
+                    <!-- Sessão -->
+                    <div class="risk-metric">
+                        <h4 class="font-semibold mb-3">📊 Sessão Atual</h4>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span>PNL Atual:</span>
+                                <span class="${session.current_pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
+                                    $${session.current_pnl.toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Meta Lucro:</span>
+                                <span class="text-green-400">$${session.profit_target.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Limite Perda:</span>
+                                <span class="text-red-400">-$${session.max_loss.toFixed(2)}</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="flex justify-between mb-1">
+                                    <span>Margem de Segurança:</span>
+                                    <span class="text-${session.loss_risk_level === 'LOW' ? 'green' : session.loss_risk_level === 'MEDIUM' ? 'yellow' : 'red'}-400">
+                                        $${session.remaining_loss_buffer.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="risk-progress">
+                                    <div class="risk-progress-bar risk-progress-${session.loss_risk_level === 'LOW' ? 'safe' : session.loss_risk_level === 'MEDIUM' ? 'warning' : 'danger'}" 
+                                         style="width: ${Math.max(0, Math.min(100, (session.max_loss + session.current_pnl) / session.max_loss * 100))}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ciclo -->
+                    <div class="risk-metric">
+                        <h4 class="font-semibold mb-3">🔄 Ciclo Atual</h4>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span>PNL Ciclo:</span>
+                                <span class="${cycle.current_pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
+                                    $${cycle.current_pnl.toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Meta Lucro:</span>
+                                <span class="text-green-400">$${cycle.profit_target.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Limite Perda:</span>
+                                <span class="text-red-400">-$${cycle.max_loss.toFixed(2)}</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="flex justify-between mb-1">
+                                    <span>Margem de Segurança:</span>
+                                    <span class="text-${cycle.loss_risk_level === 'LOW' ? 'green' : cycle.loss_risk_level === 'MEDIUM' ? 'yellow' : 'red'}-400">
+                                        $${cycle.remaining_loss_buffer.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="risk-progress">
+                                    <div class="risk-progress-bar risk-progress-${cycle.loss_risk_level === 'LOW' ? 'safe' : cycle.loss_risk_level === 'MEDIUM' ? 'warning' : 'danger'}" 
+                                         style="width: ${Math.max(0, Math.min(100, (cycle.max_loss + cycle.current_pnl) / cycle.max_loss * 100))}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Emergency Stop -->
+                    ${riskData.emergency_stop ? `
+                    <div class="risk-metric risk-status-${riskData.emergency_stop.is_active ? 'danger' : 'safe'}">
+                        <h4 class="font-semibold mb-3">🚨 Emergency Stop</h4>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span>Status:</span>
+                                <span class="${riskData.emergency_stop.is_active ? 'text-red-400' : 'text-green-400'}">
+                                    ${riskData.emergency_stop.is_active ? 'ATIVO' : 'Desativo'}
+                                </span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Limite:</span>
+                                <span class="text-red-400">-$${riskData.emergency_stop.stop_loss_threshold.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
+        // ========== RISK MONITOR FUNCTIONS ==========
+        
+        /**
+         * ✅ MELHORADO: Carrega monitor de posições com tratamento robusto
+         */
+        async function loadRiskPositionsMonitor() {
+            const container = document.getElementById('risk-positions-container');
+            const statusContainer = document.getElementById('risk-monitor-status');
+            
+            // Mostrar loading
+            container.innerHTML = `
+                <div class="flex justify-center items-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                    <span class="ml-3 text-gray-400">Carregando posições...</span>
+                </div>
+            `;
+            
+            try {
+                console.log('📡 Buscando posições para risk monitor...');
+                const response = await fetch(`${API_BASE}/api/risk/positions`);
+                
+                // ✅ NOVO: Verificar status antes de parsear
+                if (!response.ok) {
+                    console.warn(`⚠️ Resposta HTTP ${response.status}`);
+                    
+                    let errorData;
+                    try {
+                        errorData = await response.json();
+                    } catch (e) {
+                        errorData = { error: `Erro HTTP ${response.status}` };
+                    }
+                    
+                    updateRiskMonitorStatus('error');
+                    
+                    container.innerHTML = `
+                        <div class="text-center py-8">
+                            <div class="text-6xl mb-4">⚠️</div>
+                            <h3 class="text-xl font-semibold mb-2 text-yellow-300">Erro ao Carregar Posições</h3>
+                            <p class="text-gray-400 mb-4">${errorData.error || 'Serviço indisponível'}</p>
+                            <button onclick="loadRiskPositionsMonitor()" 
+                                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                                🔄 Tentar Novamente
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log('✅ Posições carregadas:', data);
+                
+                // ✅ NOVO: Validar estrutura
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Resposta inválida do servidor');
+                }
+                
+                updateRiskPositionsDisplay(data);
+                updateRiskMonitorStatus(data.bot_status || 'unknown');
+                
+            } catch (error) {
+                console.error('❌ Erro ao carregar risk monitor:', error);
+                
+                updateRiskMonitorStatus('error');
+                
+                container.innerHTML = `
+                    <div class="bg-red-900/30 border border-red-600 rounded-lg p-6 text-center">
+                        <div class="text-4xl mb-4">❌</div>
+                        <h3 class="text-xl font-semibold mb-2 text-red-300">Erro de Conexão</h3>
+                        <p class="text-gray-400 mb-4">${error.message}</p>
+                        <button onclick="loadRiskPositionsMonitor()" 
+                                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                            🔄 Tentar Novamente
+                        </button>
+                    </div>
+                `;
+                
+                showAlert('error', `Erro ao carregar monitor: ${error.message}`);
+            }
+        }
+        
+        /**
+         * ✅ MELHORADO: Atualiza status do monitor com ícones corretos
+         */
+        function updateRiskMonitorStatus(status) {
+            const statusContainer = document.getElementById('risk-monitor-status');
+            if (!statusContainer) return;
+            
+            const indicator = statusContainer.querySelector('.w-3');
+            const text = statusContainer.querySelector('span');
+            
+            if (!indicator || !text) return;
+            
+            // ✅ NOVO: Mapeamento de status mais completo
+            const statusMap = {
+                'connected': {
+                    color: 'bg-green-500',
+                    text: 'Conectado',
+                    class: 'monitor-status-connected'
+                },
+                'running_separate': {
+                    color: 'bg-yellow-500',
+                    text: 'Bot Separado',
+                    class: 'monitor-status-warning'
+                },
+                'disconnected': {
+                    color: 'bg-red-500',
+                    text: 'Desconectado',
+                    class: 'monitor-status-disconnected'
+                },
+                'error': {
+                    color: 'bg-red-500',
+                    text: 'Erro',
+                    class: 'monitor-status-disconnected'
+                },
+                'unknown': {
+                    color: 'bg-gray-500',
+                    text: 'Desconhecido',
+                    class: 'text-gray-400'
+                }
+            };
+            
+            const config = statusMap[status] || statusMap['unknown'];
+            
+            indicator.className = `w-3 h-3 rounded-full ${config.color}`;
+            text.textContent = config.text;
+            text.className = `text-sm ${config.class}`;
+        }
+        
+        /**
+         * ✅ MELHORADO: Refresh manual do risk monitor
+         */
+        function refreshRiskMonitor() {
+            console.log('🔄 Refresh manual do risk monitor');
+           // loadRiskPositionsMonitor();
+        }
+        
+        /**
+         * ✅ NOVO: Função helper para mostrar placeholders de loading
+         */
+        function showRiskLoadingPlaceholder(containerId, message = 'Carregando...') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            container.innerHTML = `
+                <div class="flex justify-center items-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                    <span class="ml-3 text-gray-400">${message}</span>
+                </div>
+            `;
+        }
+        
+        /**
+         * ✅ NOVO: Função helper para validar resposta JSON
+         */
+        function validateRiskResponse(data, requiredFields = []) {
+            if (!data || typeof data !== 'object') {
+                console.error('❌ Resposta inválida:', data);
+                return false;
+            }
+            
+            for (const field of requiredFields) {
+                if (!(field in data)) {
+                    console.warn(`⚠️ Campo obrigatório ausente: ${field}`);
+                    // Não retorna false - campos ausentes terão valores padrão
+                }
+            }
+            
+            return true;
+        }
+        
+        // ========== FIM DAS CORREÇÕES RISK MANAGEMENT ==========
+        console.log('✅ Funções de Risk Management corrigidas e carregadas (v1.2)');
+
+        // ========== PAINEL UNIFICADO DE RISCO - TELEMETRIA ==========
+        
+        async function fetchJson(path) {
+          const res = await fetch(path);
+          if (!res.ok) throw new Error(`Falha ao buscar ${path}`);
+          return await res.json();
+        }
+
+        function fmtNum(v, digits = 2) {
+          return isNaN(v) ? '—' : parseFloat(v).toFixed(digits);
+        }
+
+        function fmtTime(secs) {
+          if (!secs) return '—';
+          const h = Math.floor(secs / 3600);
+          const m = Math.floor((secs % 3600) / 60);
+          const s = secs % 60;
+          return `${h}h ${m}m ${s}s`;
+        }
+
+        async function updateRiskDashboard() {
+          try {
+            const [active, status] = await Promise.all([
+              fetchJson('/api/risk/telemetry/active'),
+              fetchJson('/api/risk/telemetry/status')
+            ]);
+
+            // 🔹 CONFIGURAÇÕES
+            const trade = active.trade || active || {};
+            const extra = trade.extra || {};
+            const emerg = extra.emergency || {};
+            const session = extra.session || {};
+            const risk_config = extra.risk_config || {};
+
+            document.getElementById('cfg-cycle-sl').textContent = extra.cycle_thresholds?.['sl%'] ?? '—';
+            document.getElementById('cfg-cycle-tp').textContent = extra.cycle_thresholds?.['tp%'] ?? '—';
+            document.getElementById('cfg-emerg-sl').textContent = risk_config.emergency_sl_percent ?? emerg['sl%'] ?? '—';
+            document.getElementById('cfg-emerg-tp').textContent = risk_config.emergency_tp_percent ?? emerg['tp%'] ?? '—';
+            document.getElementById('cfg-margin').textContent = status.margin_percent ?? '—';
+            document.getElementById('cfg-session-loss').textContent = risk_config.session_max_loss_usd ?? session.max_loss_usd ?? '—';
+            document.getElementById('cfg-session-profit').textContent = risk_config.session_profit_target_usd ?? session.profit_target_usd ?? '—';
+
+            // 🔹 TRADE ATUAL
+            const pnlUsd = trade.pnl_usd ?? 0;
+            const pnlPct = trade.pnl_percent ?? 0;
+            const pnlColor = pnlUsd > 0 ? '#4ade80' : pnlUsd < 0 ? '#f87171' : '#e5e7eb';
+            document.getElementById('trade-id').textContent = trade.trade_id || '—';
+            document.getElementById('trade-symbol').textContent = trade.symbol || '—';
+            document.getElementById('trade-side').textContent = trade.side || '—';
+            document.getElementById('trade-time').textContent = fmtTime(trade.time_in_trade_sec);
+            document.getElementById('trade-price').textContent = fmtNum(trade.current_price);
+            document.getElementById('trade-pnl-usd').textContent = `$${fmtNum(pnlUsd)}`;
+            document.getElementById('trade-pnl-usd').style.color = pnlColor;
+            document.getElementById('trade-pnl-pct').textContent = `${fmtNum(pnlPct)}%`;
+            document.getElementById('trade-pnl-pct').style.color = pnlColor;
+            document.getElementById('trade-status').textContent = active.active ? 'Trade em andamento' : 'Nenhum trade ativo';
+
+            // 🔹 SESSÃO / SAÚDE
+            document.getElementById('session-cycles').textContent = session.cycles_closed ?? '0';
+            document.getElementById('session-pnl').textContent = fmtNum(session.accumulated_pnl ?? 0);
+            document.getElementById('session-margin').textContent = fmtNum(status.margin_percent ?? 0);
+            document.getElementById('session-lastcheck').textContent = new Date(status.timestamp || Date.now()).toLocaleTimeString();
+            document.getElementById('session-flags').textContent = Object.keys(extra).length ? Object.keys(extra).join(', ') : '—';
+
+            // Indicador geral
+            const ind = document.getElementById('risk-status-indicator');
+            const isActive = active.active === true || active.active === "true" || (active.trade && Object.keys(active.trade).length > 0);
+            ind.textContent = isActive ? 'Online' : 'Parado';
+            ind.style.backgroundColor = isActive ? '#22c55e' : '#ef4444';
+          } catch (err) {
+            console.warn('Erro atualizando painel de risco', err);
+          }
+        }
+
+        // Inicializar painel de risco unificado
+        setInterval(updateRiskDashboard, 3000);
+        updateRiskDashboard();
+        console.log('✅ Painel unificado de risco inicializado');
+        
+        function updateRiskPositionsDisplay(data) {
+            const container = document.getElementById('risk-positions-container');
+            
+            if (data.bot_status === 'disconnected') {
+                container.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4">🚫</div>
+                        <h3 class="text-xl font-semibold mb-2 text-red-300">Bot Não Está Rodando</h3>
+                        <p class="text-gray-400 mb-4">Inicie o bot para monitorar posições em tempo real</p>
+                        <code class="bg-gray-800 px-3 py-1 rounded text-sm">python grid_bot.py</code>
+                    </div>
+                `;
+                return;
+            }
+            
+            if (data.bot_status === 'running_separate') {
+                container.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4">🔗</div>
+                        <h3 class="text-xl font-semibold mb-2 text-yellow-300">Bot Rodando (Processo Separado)</h3>
+                        <p class="text-gray-400 mb-4">Risk managers não integrados ao Flask</p>
+                        <p class="text-sm text-gray-500">Dados de monitoramento limitados neste modo</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            if (!data.positions || data.positions.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4">📊</div>
+                        <h3 class="text-xl font-semibold mb-2">Nenhuma Posição Ativa</h3>
+                        <p class="text-gray-400">O bot está rodando mas não há posições para monitorar</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Renderizar posições
+            container.innerHTML = data.positions.map(position => createPositionCard(position)).join('');
+        }
+        
+        /**
+         * ✅ MELHORADO: Cria card de posição com validação robusta
+         */
+        function createPositionCard(position) {
+            // ✅ NOVO: Validação de segurança robusta
+            if (!position || typeof position !== 'object') {
+                console.error('❌ createPositionCard recebeu dados inválidos:', position);
+                return `
+                    <div class="position-card bg-red-900/30 border border-red-600 rounded-lg p-4 text-center">
+                        <p class="text-red-400">❌ Erro: Dados da posição inválidos</p>
+                    </div>
+                `;
+            }
+            
+            // ✅ NOVO: Valores padrão seguros com validação de tipo
+            const safeFloat = (value, defaultValue = 0) => {
+                const parsed = parseFloat(value);
+                return isNaN(parsed) ? defaultValue : parsed;
+            };
+            
+            const safeString = (value, defaultValue = 'N/A') => {
+                return value && typeof value === 'string' ? value : defaultValue;
+            };
+            
+            // Extrair dados com valores padrão
+            const symbol = safeString(position.symbol, 'UNKNOWN');
+            const side = safeString(position.side, 'unknown');
+            const quantity = safeFloat(position.quantity, 0);
+            const entryPrice = safeFloat(position.entry_price, 0);
+            const currentPrice = safeFloat(position.current_price, 0);
+            const pnlUsd = safeFloat(position.pnl_usd, 0);
+            const pnlPercent = safeFloat(position.pnl_percent, 0);
+            const leverage = safeFloat(position.leverage, 1);
+            
+            // Determinar classes de estilo
+            const pnlClass = pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral';
+            const riskLevel = position.overall_risk_level || 1;
+            
+            // ✅ NOVO: Validar estruturas aninhadas antes de usar
+            const hasCycleProtection = position.cycle_protection && 
+                                       typeof position.cycle_protection === 'object';
+            
+            const hasSessionProtection = position.session_protection && 
+                                         typeof position.session_protection === 'object';
+            
+            const hasEmergencySystem = position.emergency_system && 
+                                      typeof position.emergency_system === 'object';
+            
+            // Helper para criar item de risco com validação
+            const createRiskItemSafe = (label, data, type = 'percent') => {
+                if (!data || typeof data !== 'object') {
+                    return `
+                        <div class="risk-item-placeholder">
+                            ${label}: Não configurado
+                        </div>
+                    `;
+                }
+                
+                const current = safeFloat(data.current_percent || data.current, 0);
+                const limit = safeFloat(data.limit_percent || data.limit || data.target_percent, 0);
+                const status = safeString(data.status, 'unknown');
+                const triggered = data.triggered === true;
+                
+                const progress = limit !== 0 ? Math.min(100, Math.abs(current / limit) * 100) : 0;
+                const statusClass = triggered ? 'critical' : status;
+                
+                return `
+                    <div class="risk-item">
+                        <div class="risk-item-label">
+                            <div class="risk-status-indicator status-${statusClass}"></div>
+                            <span>${label}</span>
+                        </div>
+                        <div class="risk-item-value ${triggered ? 'text-red-400 font-bold' : ''}">
+                            ${current.toFixed(2)}${type} / ${Math.abs(limit).toFixed(2)}${type}
+                            ${triggered ? ' ⚠️' : ''}
+                        </div>
+                    </div>
+                    <div class="risk-progress-container">
+                        <div class="risk-progress-label">
+                            <span>${label}</span>
+                            <span>${progress.toFixed(1)}%</span>
+                        </div>
+                        <div class="risk-progress-bar-container">
+                            <div class="risk-progress-fill risk-progress-${statusClass}" 
+                                 style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                `;
+            };
+            
+            return `
+                <div class="position-card risk-level-${riskLevel}">
+                    <div class="position-header">
+                        <div>
+                            <div class="position-symbol">
+                                ${symbol} 
+                                <span class="text-sm font-normal text-gray-400">
+                                    ${side.toUpperCase()} ${quantity.toFixed(4)}
+                                </span>
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                Entry: $${entryPrice.toLocaleString()} | 
+                                Current: $${currentPrice.toLocaleString()}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="position-pnl ${pnlClass}">
+                                ${pnlUsd >= 0 ? '+' : ''}$${pnlUsd.toFixed(2)}
+                            </div>
+                            <div class="position-pnl ${pnlClass} text-sm">
+                                ${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="risk-layers">
+                        <!-- Nível 1: Proteção por Ciclo -->
+                        <div class="risk-layer">
+                            <div class="risk-layer-header">
+                                <span>🛡️ Nível 1 - Proteção por Ciclo</span>
+                            </div>
+                            <div class="risk-items">
+                                ${hasCycleProtection && position.cycle_protection.stop_loss ? 
+                                    createRiskItemSafe('Stop Loss', position.cycle_protection.stop_loss, '%') :
+                                    '<div class="risk-item-placeholder">Stop Loss: Não configurado</div>'
+                                }
+                                ${hasCycleProtection && position.cycle_protection.take_profit ? 
+                                    createRiskItemSafe('Take Profit', position.cycle_protection.take_profit, '%') :
+                                    '<div class="risk-item-placeholder">Take Profit: Não configurado</div>'
+                                }
+                            </div>
+                        </div>
+                        
+                        <!-- Nível 2: Proteção de Sessão -->
+                        <div class="risk-layer">
+                            <div class="risk-layer-header">
+                                <span>📊 Nível 2 - Proteção de Sessão</span>
+                            </div>
+                            <div class="risk-items">
+                                ${hasSessionProtection ? `
+                                    <div class="risk-item">
+                                        <div class="risk-item-label">
+                                            <span>PNL Sessão</span>
+                                        </div>
+                                        <div class="risk-item-value ${position.session_protection.current_session_pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
+                                            ${position.session_protection.current_session_pnl >= 0 ? '+' : ''}$${safeFloat(position.session_protection.current_session_pnl).toFixed(2)}
+                                        </div>
+                                    </div>
+                                    <div class="risk-item">
+                                        <div class="risk-item-label">
+                                            <span>Margem de Segurança</span>
+                                        </div>
+                                        <div class="risk-item-value">
+                                            $${safeFloat(position.session_protection.remaining_loss_buffer).toFixed(2)}
+                                        </div>
+                                    </div>
+                                ` : '<div class="risk-item-placeholder">Proteção de Sessão: Não configurada</div>'}
+                            </div>
+                        </div>
+                        
+                        <!-- Nível 3: Emergency System -->
+                        <div class="risk-layer">
+                            <div class="risk-layer-header">
+                                <span>🚨 Nível 3 - Sistema de Emergência</span>
+                            </div>
+                            <div class="risk-items">
+                                ${hasEmergencySystem && position.emergency_system.emergency_sl ? 
+                                    createRiskItemSafe('Emergency SL', position.emergency_system.emergency_sl, '%') :
+                                    '<div class="risk-item-placeholder">Emergency SL: Não configurado</div>'
+                                }
+                                ${hasEmergencySystem && position.emergency_system.time_monitoring ? `
+                                    <div class="risk-item">
+                                        <div class="risk-item-label">
+                                            <div class="risk-status-indicator status-${safeString(position.emergency_system.time_monitoring.status)}"></div>
+                                            <span>Tempo em Loss</span>
+                                        </div>
+                                        <div class="risk-item-value">
+                                            ${safeFloat(position.emergency_system.time_monitoring.time_in_loss_minutes)}min / 
+                                            ${safeFloat(position.emergency_system.time_monitoring.max_time_minutes)}min
+                                        </div>
+                                    </div>
+                                ` : '<div class="risk-item-placeholder">Monitoramento de Tempo: Não configurado</div>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
         
         // ========== CSV ANALYSIS VARIABLES ==========
         let csvWinrateChart = null;
@@ -2538,6 +3839,22 @@ function renderDailyPNLChart(data) {
         }
         
         console.log('✅ Módulo de Análise CSV carregado');
+    </script>
+
+    <script>
+    // ✅ CORREÇÃO: Função duplicada removida - usando a versão melhorada acima
+    // A função loadRiskStatus() melhorada já está definida na seção RISK MANAGEMENT FUNCTIONS
+    console.log('✅ Função loadRiskStatus duplicada removida - usando versão melhorada');
+    
+    // Atualiza o painel a cada 10 segundos usando as funções corrigidas
+    setInterval(() => {
+        updateRiskDashboard(); // Função do painel unificado
+    //    loadRiskPositionsMonitor(); // Função melhorada
+    }, 10000);
+    
+    // Carregar dados iniciais usando as funções corrigidas
+    updateRiskDashboard(); 
+    // loadRiskPositionsMonitor();
     </script>
 </body>
 </html>

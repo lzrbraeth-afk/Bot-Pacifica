@@ -28,6 +28,9 @@ from src.grid_risk_manager import GridRiskManager
 from src.margin_trend_protector import create_margin_trend_adapter
 from src.positions_tracker import PositionsTracker
 
+# Dashboard web será importado dinamicamente para evitar import circular
+init_web_components = None
+
 # Força UTF-8 no Windows para suportar emojis
 if sys.platform == 'win32':
     import io
@@ -223,10 +226,12 @@ class GridTradingBot:
             self.logger.info("🔧 Inicializando componentes...")
             
             # 1. Autenticação
+            self.logger.info("🔑 Iniciando autenticação...")
             self.auth = PacificaAuth()
             self.logger.info("✅ Auth Client inicializado")
 
             # 2. Telegram Notifier (antes do Risk Manager)
+            self.logger.info("📱 Iniciando Telegram Notifier...")
             self.telegram = TelegramNotifier()
             self.logger.info("✅ Telegram Notifier inicializado")
 
@@ -235,12 +240,15 @@ class GridTradingBot:
             if clean_on_start:
                 self.logger.warning("🧹 Limpando ordens antigas...")
                 self._clean_old_orders()
+                self.logger.info("✅ Ordens antigas limpas")
             
             # 4. Grid Calculator (COM auth para buscar market info)
+            self.logger.info("📊 Iniciando Grid Calculator...")
             self.calculator = GridCalculator(auth_client=self.auth)
             self.logger.info("✅ Grid Calculator inicializado")
             
             # 5. Position Manager
+            self.logger.info("📈 Iniciando Position Manager...")
             self.position_mgr = PositionManager(self.auth)
             self.logger.info("✅ Position Manager inicializado")
 
@@ -280,6 +288,37 @@ class GridTradingBot:
             except Exception as margin_error:
                 self.logger.error(f"❌ Erro ao inicializar proteção de margem: {margin_error}")
                 self.margin_adapter = None
+            
+            # 9. Criar arquivo de status para comunicação com Flask
+            try:
+                import json
+                from datetime import datetime
+                
+                bot_status = {
+                    'status': 'running',
+                    'pid': os.getpid(),
+                    'started_at': datetime.now().isoformat(),
+                    'strategy_type': self.strategy_type,
+                    'symbol': getattr(self, 'symbol', 'BTC')
+                }
+                
+                with open('bot_status.json', 'w') as f:
+                    json.dump(bot_status, f, indent=2)
+                    
+                self.logger.info("✅ Arquivo de status criado para comunicação com Flask")
+                
+                # Tentar inicializar componentes web se Flask estiver disponível
+                try:
+                    from app import initialize_components as init_web_components
+                    init_web_components(self.auth, self.position_mgr, self.calculator)
+                    self.logger.info("✅ Painel de risco web inicializado")
+                except ImportError:
+                    self.logger.debug("ℹ️ Dashboard web não disponível (será ativado quando Flask iniciar)")
+                except Exception as web_error:
+                    self.logger.debug(f"ℹ️ Dashboard web será ativado quando Flask iniciar: {web_error}")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erro ao criar arquivo de status: {e}")
             
             return True
             
@@ -426,11 +465,21 @@ class GridTradingBot:
         Busca dados REAIS da API Pacifica e salva via tracker
         """
         try:
-            # 1️⃣ BUSCAR POSIÇÕES REAIS DA API PACIFICA
-            api_positions = self.auth.get_positions(self.symbol)
-            
-            # 2️⃣ BUSCAR ORDENS REAIS DA API PACIFICA
-            api_orders = self.auth.get_open_orders(self.symbol)
+            # 🚨 ESTRATÉGIAS MULTI-ASSET TÊM SEU PRÓPRIO SISTEMA
+            if self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+                # Se a estratégia tem seu próprio método de salvar dados, usar ele
+                if hasattr(self.strategy, '_save_dashboard_data'):
+                    self.strategy._save_dashboard_data()
+                    self.logger.debug("📊 Interface atualizada via estratégia multi-asset")
+                    return
+                
+                # Senão, buscar para TODOS os símbolos (não apenas self.symbol)
+                api_positions = self.auth.get_positions()  # Todos os símbolos
+                api_orders = self.auth.get_open_orders()    # Todas as ordens
+            else:
+                # Estratégias de grid (symbol-specific)
+                api_positions = self.auth.get_positions(self.symbol)
+                api_orders = self.auth.get_open_orders(self.symbol)
             
             # 3️⃣ BUSCAR PREÇO ATUAL REAL
             try:
@@ -452,7 +501,7 @@ class GridTradingBot:
                         side = raw_side  # Manter como está se já for long/short
                     
                     positions.append({
-                        "symbol": pos.get("symbol", self.symbol),
+                        "symbol": pos.get("symbol", self.symbol or ""),
                         "side": side,
                         "size": float(pos.get("amount", 0) or pos.get("size", 0)),  # API v1 usa 'amount'
                         "entry_price": float(pos.get("entry_price", 0) or pos.get("avg_price", 0)),
@@ -473,7 +522,7 @@ class GridTradingBot:
                     
                     orders.append({
                         "order_id": order.get("order_id", "") or order.get("id", ""),
-                        "symbol": order.get("symbol", self.symbol),
+                        "symbol": order.get("symbol", self.symbol or ""),
                         "side": side,
                         "price": float(order.get("price", 0)),
                         "size": float(order.get("size", 0) or order.get("initial_amount", 0)),
@@ -952,6 +1001,15 @@ class GridTradingBot:
         except Exception as rm_error:
             self.logger.warning(f"⚠️ Erro ao fechar risk manager: {rm_error}")
         
+        # Limpar arquivo de status do bot
+        try:
+            status_file = 'bot_status.json'
+            if os.path.exists(status_file):
+                os.remove(status_file)
+                self.logger.info("🧹 Arquivo de status removido")
+        except Exception as status_error:
+            self.logger.warning(f"⚠️ Erro ao remover arquivo de status: {status_error}")
+        
         self.logger.info("🏁 Encerrando bot...")
         
         # Shutdown protegido
@@ -1012,10 +1070,29 @@ class GridTradingBot:
         if self.strategy and hasattr(self.strategy, 'performance_tracker'):
             self.strategy.print_performance_summary()
             
-            # 🆕 ESTATÍSTICAS ESPECÍFICAS DA VERSÃO ENHANCED
-            if self.strategy_type == 'multi_asset_enhanced' and hasattr(self.strategy, 'get_enhanced_statistics'):
-                self.strategy.log_performance_summary()
-                
+        # 🆕 ESTATÍSTICAS ESPECÍFICAS DA VERSÃO ENHANCED
+        if self.strategy_type == 'multi_asset_enhanced' and hasattr(self.strategy, 'get_enhanced_statistics'):
+            self.strategy.log_performance_summary()
+            
+            # Analytics: Display final summary when stopping
+            if hasattr(self.strategy, 'analytics') and self.strategy.analytics:
+                try:
+                    analytics_summary = self.strategy.analytics.get_analytics_summary()
+                    self.logger.info("📊 ANALYTICS SUMMARY:")
+                    self.logger.info(f"   🔍 Total signals analyzed: {analytics_summary.get('total_signals', 0)}")
+                    self.logger.info(f"   ✅ Signals executed: {analytics_summary.get('executed_signals', 0)}")
+                    self.logger.info(f"   ❌ Signals rejected: {analytics_summary.get('rejected_signals', 0)}")
+                    self.logger.info(f"   💼 Total trades: {analytics_summary.get('total_trades', 0)}")
+                    self.logger.info(f"   🔒 Total closures: {analytics_summary.get('total_closures', 0)}")
+                    
+                    if analytics_summary.get('total_trades', 0) > 0:
+                        avg_execution_time = analytics_summary.get('avg_execution_time', 0)
+                        self.logger.info(f"   ⏱️ Avg execution time: {avg_execution_time:.2f}s")
+                    
+                    self.logger.info(f"   📁 Data saved to: {analytics_summary.get('data_file', 'N/A')}")
+                except Exception as e:
+                    self.logger.error(f"❌ Analytics: Erro ao exibir resumo final: {e}")
+                    
         else:
             self.logger.warning("⚠️ Performance tracker não disponível")
     
@@ -1023,6 +1100,15 @@ class GridTradingBot:
         """Encerra o bot graciosamente"""
         
         self.logger.info("🔄 Iniciando shutdown...")
+        
+        # Limpar arquivo de status do bot
+        try:
+            status_file = 'bot_status.json'
+            if os.path.exists(status_file):
+                os.remove(status_file)
+                self.logger.info("🧹 Arquivo de status removido")
+        except Exception as status_error:
+            self.logger.warning(f"⚠️ Erro ao remover arquivo de status: {status_error}")
         
         # Cancelar todas as ordens
         # if self.strategy:
@@ -1054,6 +1140,16 @@ class GridTradingBot:
     def signal_handler(self, signum, frame):
         """Handler para sinais de sistema"""
         self.logger.info(f"🛑 Sinal recebido: {signum}")
+        
+        # Limpar arquivo de status antes de parar
+        try:
+            status_file = 'bot_status.json'
+            if os.path.exists(status_file):
+                os.remove(status_file)
+                self.logger.info("🧹 Arquivo de status removido")
+        except Exception as status_error:
+            self.logger.warning(f"⚠️ Erro ao remover arquivo de status: {status_error}")
+        
         self.stop()
 
 

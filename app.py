@@ -1,6 +1,19 @@
 """
 Interface Web Flask Melhorada - Bot Trading Pacifica.fi
-Versão 1.1 com Configurações Rápidas e Auto-apply
+Versão 1.2 - CORREÇÕES CRÍTICAS APLICADAS:
+1. Inicialização de componentes de risco implementada
+2. Respostas de erro padronizadas
+3. Endpoint duplicado removido (/risk_status)
+4. Sistema de fallback robusto
+5. Melhor tratamento de exceções
+
+CHANGELOG v1.1 → v1.2:
+- ✅ CORREÇÃO 1: Função initialize_risk_components() criada e chamada no startup
+- ✅ CORREÇÃO 2: Helper risk_error_response() para respostas consistentes
+- ✅ CORREÇÃO 4: Removido endpoint duplicado /risk_status
+- ✅ Adicionado sistema de fallback para arquivos JSON
+- ✅ Logs melhorados para debugging
+- ✅ Validação de componentes antes de uso
 """
 from flask import Flask, render_template, jsonify, request, send_file, Response
 from flask_cors import CORS
@@ -14,6 +27,9 @@ from src.csv_trade_parser import PacificaCSVParser, analyze_pacifica_csv
 # ===== IMPORT VOLUME TRACKER =====
 from src.volume_tracker import get_volume_tracker
 
+# ===== IMPORTS PARA GERENCIAMENTO DE RISCO =====
+# NOTA: Imports condicionais movidos para initialize_risk_components()
+
 import subprocess
 import psutil
 import os
@@ -24,6 +40,7 @@ from datetime import datetime, timedelta
 import logging
 import threading
 import time
+import traceback
 from io import StringIO, BytesIO
 from dotenv import load_dotenv
 
@@ -31,7 +48,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -60,6 +80,12 @@ ALLOWED_EXTENSIONS = {'csv'}
 app.config['UPLOAD_FOLDER'] = str(UPLOAD_FOLDER)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
+# ===== INSTÂNCIAS PRINCIPAIS PARA O PAINEL DE RISCO =====
+# ⚠️ CORREÇÃO 1: Variáveis globais serão inicializadas na função initialize_risk_components()
+grid_risk_manager = None
+emergency_sl = None
+strategy = None
+risk_components_initialized = False  # ✅ NOVO: Flag de controle
 
 # Configurações
 BOT_SCRIPT = "grid_bot.py"
@@ -79,6 +105,70 @@ PYTHON_EXECUTABLE = sys.executable
 monitor_thread = None
 monitor_active = False
 logs_monitor_thread = None
+
+# ========== ✅ CORREÇÃO 2: FUNÇÃO HELPER PARA RESPOSTAS DE ERRO PADRONIZADAS ==========
+
+def risk_error_response(error_msg, bot_status="unknown", http_code=503):
+    """
+    ✅ NOVO: Retorna resposta de erro padronizada para endpoints de risco
+    Garante que o frontend sempre recebe uma estrutura JSON válida
+    
+    Args:
+        error_msg: Mensagem de erro descritiva
+        bot_status: Status do bot (disconnected, running_separate, error, unknown)
+        http_code: Código HTTP a retornar (padrão: 503 Service Unavailable)
+    
+    Returns:
+        tuple: (jsonify(data), http_code)
+    """
+    return jsonify({
+        "status": "error",
+        "error": error_msg,
+        "bot_status": bot_status,
+        "initialized": risk_components_initialized,
+        "timestamp": datetime.now().isoformat(),
+        # Estruturas mínimas para não quebrar o frontend
+        "protection_config": {
+            "cycle_protection_enabled": False,
+            "session_protection_enabled": False
+        },
+        "session_status": {
+            "is_paused": False,
+            "session_start": None
+        },
+        "performance": {
+            "accumulated_pnl_usd": 0,
+            "cycles_closed": 0,
+            "win_rate": 0
+        },
+        "limits_analysis": {},
+        "emergency_system": {},
+        "positions": {
+            "active_count": 0,
+            "max_concurrent": 0
+        }
+    }), http_code
+
+def safe_read_json_file(file_path, default_value=None):
+    """
+    ✅ NOVO: Lê arquivo JSON com tratamento de erro robusto
+    
+    Args:
+        file_path: Caminho do arquivo
+        default_value: Valor padrão se arquivo não existir ou erro
+    
+    Returns:
+        Dados do arquivo ou default_value
+    """
+    try:
+        if not Path(file_path).exists():
+            return default_value
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao ler {file_path}: {e}")
+        return default_value
 
 # ========== FUNÇÕES DE GERENCIAMENTO DO BOT (MANTIDAS INTACTAS) ==========
 
@@ -234,7 +324,114 @@ def restart_bot():
         return start_bot()
     return stop_result
 
-# ========== FUNÇÕES DE DADOS (MANTIDAS + NOVAS) ==========
+# ========== ✅ CORREÇÃO 1: FUNÇÃO DE INICIALIZAÇÃO DE COMPONENTES DE RISCO ==========
+
+def initialize_risk_components():
+    """
+    ✅ NOVO: Inicializa componentes de gerenciamento de risco para o painel web
+    
+    Esta função tenta inicializar os componentes de risco que são usados
+    pelos endpoints /api/risk/*. Se falhar, o sistema funcionará com dados
+    dos arquivos JSON como fallback.
+    
+    Returns:
+        bool: True se pelo menos um componente foi inicializado, False caso contrário
+    """
+    global grid_risk_manager, emergency_sl, strategy, risk_components_initialized
+    
+    logger.info("🔧 Iniciando componentes de gerenciamento de risco...")
+    
+    try:
+        # Importar módulos necessários
+        from src.pacifica_auth import PacificaAuth
+        from src.position_manager import PositionManager
+        from src.grid_calculator import GridCalculator
+        from src.grid_risk_manager import GridRiskManager
+        from src.emergency_sl_system import EmergencyStopLoss
+        from src.multi_asset_enhanced_strategy import MultiAssetEnhancedStrategy
+        
+        success_count = 0
+        
+        # 1. Inicializar componentes básicos
+        logger.info("📡 Inicializando PacificaAuth...")
+        auth_client = PacificaAuth()
+        
+        logger.info("💼 Inicializando PositionManager...")
+        position_manager = PositionManager(auth_client)
+        
+        logger.info("🧮 Inicializando GridCalculator...")
+        calculator = GridCalculator(auth_client)
+        
+        # 2. Grid Risk Manager (essencial)
+        try:
+            logger.info("🛡️ Inicializando GridRiskManager...")
+            grid_risk_manager = GridRiskManager(
+                auth_client=auth_client,
+                position_manager=position_manager,
+                telegram_notifier=None,  # Telegram não é necessário para o dashboard
+                logger=logger
+            )
+            logger.info("✅ GridRiskManager inicializado com sucesso")
+            success_count += 1
+        except Exception as e:
+            logger.error(f"❌ Erro ao inicializar GridRiskManager: {e}")
+            logger.debug(traceback.format_exc())
+        
+        # 3. Estratégia (opcional para dashboard)
+        try:
+            logger.info("🎯 Inicializando MultiAssetEnhancedStrategy...")
+            strategy = MultiAssetEnhancedStrategy(
+                auth_client=auth_client,
+                calculator=calculator,
+                position_manager=position_manager
+            )
+            logger.info("✅ MultiAssetEnhancedStrategy inicializada")
+            success_count += 1
+        except Exception as e:
+            logger.warning(f"⚠️ Estratégia não inicializada (dashboard funciona sem ela): {e}")
+            logger.debug(traceback.format_exc())
+            strategy = None
+        
+        # 4. Emergency Stop Loss
+        try:
+            logger.info("🚨 Inicializando EmergencyStopLoss...")
+            emergency_logger = strategy.logger if strategy and hasattr(strategy, 'logger') else logger
+            emergency_sl = EmergencyStopLoss(
+                auth_client=auth_client,
+                position_manager=position_manager,
+                logger=emergency_logger
+            )
+            logger.info("✅ EmergencyStopLoss inicializado")
+            success_count += 1
+        except Exception as e:
+            logger.error(f"❌ Erro ao inicializar EmergencyStopLoss: {e}")
+            logger.debug(traceback.format_exc())
+        
+        # Atualizar flag de inicialização
+        if success_count > 0:
+            risk_components_initialized = True
+            logger.info(f"🎉 Painel de risco inicializado: {success_count}/3 componentes OK")
+            logger.info("✅ Dashboard operará com dados em tempo real dos componentes")
+            return True
+        else:
+            risk_components_initialized = False
+            logger.error("❌ Falha ao inicializar componentes de risco")
+            logger.info("ℹ️ Dashboard operará com fallback (arquivos JSON)")
+            return False
+            
+    except ImportError as e:
+        logger.error(f"❌ Erro ao importar módulos: {e}")
+        logger.info("ℹ️ Verifique se todos os arquivos src/*.py estão presentes")
+        logger.debug(traceback.format_exc())
+        risk_components_initialized = False
+        return False
+    except Exception as e:
+        logger.error(f"❌ Erro inesperado ao inicializar componentes: {e}")
+        logger.debug(traceback.format_exc())
+        risk_components_initialized = False
+        return False
+
+# ========== FUNÇÕES DE DADOS (MANTIDAS + MELHORIAS) ==========
 
 def get_metrics():
     """Obtém métricas de trading"""
@@ -254,13 +451,11 @@ def get_metrics():
         "profit_factor": 0
     }
     
-    if not PNL_HISTORY_FILE.exists():
+    data = safe_read_json_file(PNL_HISTORY_FILE, {})
+    if not data:
         return default_metrics
     
     try:
-        with open(PNL_HISTORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         cycles = data.get("cycles_history", [])
         
         if cycles:
@@ -295,18 +490,16 @@ def get_metrics():
             "profit_factor": round(profit_factor, 2)
         }
     except Exception as e:
-        logger.error(f"Erro ao ler métricas: {e}")
+        logger.error(f"Erro ao processar métricas: {e}")
         return default_metrics
 
 def get_pnl_history(hours=24):
     """Obtém histórico de PNL para gráficos"""
-    if not PNL_HISTORY_FILE.exists():
+    data = safe_read_json_file(PNL_HISTORY_FILE, {})
+    if not data:
         return []
     
     try:
-        with open(PNL_HISTORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         cycles = data.get("cycles_history", [])
         cutoff = datetime.now() - timedelta(hours=hours)
         
@@ -341,13 +534,11 @@ def get_pnl_history(hours=24):
 
 def get_trades_history(limit=100):
     """Obtém histórico de trades"""
-    if not PNL_HISTORY_FILE.exists():
+    data = safe_read_json_file(PNL_HISTORY_FILE, {})
+    if not data:
         return []
     
     try:
-        with open(PNL_HISTORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         cycles = data.get("cycles_history", [])
         trades = sorted(cycles, key=lambda x: x.get("timestamp", ""), reverse=True)
         return trades[:limit]
@@ -359,13 +550,11 @@ def get_trades_history(limit=100):
 
 def get_active_positions():
     """Obtém posições ativas do arquivo ou API"""
-    if not POSITIONS_FILE.exists():
+    data = safe_read_json_file(POSITIONS_FILE, {})
+    if not data:
         return []
     
     try:
-        with open(POSITIONS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         positions = data.get("positions", [])
         
         # Enriquecer com dados calculados
@@ -406,13 +595,11 @@ def get_active_positions():
 
 def get_active_orders():
     """Obtém ordens abertas do arquivo ou API"""
-    if not ORDERS_FILE.exists():
+    data = safe_read_json_file(ORDERS_FILE, {})
+    if not data:
         return []
     
     try:
-        with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         orders = data.get("orders", [])
         
         # Enriquecer com tempo ativo
@@ -614,46 +801,14 @@ def monitor_logs():
                 socketio.emit('logs_update', logs_data)
                 last_log_content = current_content
             
-            time.sleep(3)  # Atualizar a cada 3 segundos
+            time.sleep(3)
         except Exception as e:
             logger.error(f"Erro no logs monitor thread: {e}")
             time.sleep(5)
     
     logger.info("🛑 Logs monitor thread parada")
 
-# ========== ROTAS HTTP ==========
-
-
-# ===== FUNÇÕES HELPER CSV =====
-def allowed_file(filename):
-    """Verifica se arquivo tem extensão permitida"""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def get_latest_csv_analysis():
-    """Obtém a última análise de CSV salva"""
-    try:
-        analysis_file = DATA_DIR / "csv_trades_analysis.json"
-        if analysis_file.exists():
-            with open(analysis_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return None
-    except Exception as e:
-        logger.error(f"Erro ao ler análise CSV: {e}")
-        return None
-
-def process_uploaded_csv(file_path: str):
-    """Processa arquivo CSV e retorna estatísticas"""
-    try:
-        parser = PacificaCSVParser(file_path)
-        parser.parse_csv()
-        stats = parser.get_statistics()
-        parser.save_to_json()
-        logger.info(f"✅ CSV processado: {Path(file_path).name}")
-        return stats
-    except Exception as e:
-        logger.error(f"❌ Erro ao processar CSV: {e}")
-        return None
-
+# ========== ROTAS HTTP BÁSICAS ==========
 
 @app.route('/')
 def index():
@@ -726,9 +881,6 @@ def api_config_update():
         logger.error(f"Erro em /api/config/update: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-# ========== NOVAS ROTAS: POSIÇÕES E ORDENS ==========
-
 @app.route('/api/positions')
 def api_positions():
     """API: Posições ativas"""
@@ -753,28 +905,530 @@ def api_orders():
 def api_account_state():
     """API: Estado da conta (saldo e margem)"""
     try:
-        account_state_file = DATA_DIR / "account_state.json"
-        
-        if not account_state_file.exists():
-            # Retornar estado padrão se arquivo não existir
-            return jsonify({
-                "last_update": None,
-                "balance": 0,
-                "margin_used": 0,
-                "margin_available": 0,
-                "margin_free_percent": 0
-            })
-        
-        with open(account_state_file, 'r', encoding='utf-8') as f:
-            account_state = json.load(f)
+        account_state = safe_read_json_file(DATA_DIR / "account_state.json", {
+            "last_update": None,
+            "balance": 0,
+            "margin_used": 0,
+            "margin_available": 0,
+            "margin_free_percent": 0
+        })
         
         return jsonify(account_state)
     except Exception as e:
         logger.error(f"Erro em /api/account-state: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/logs')
+def api_logs():
+    """API: Obtém logs do bot"""
+    try:
+        lines = request.args.get('lines', 100, type=int)
+        log_data = tail_logs(lines)
+        return jsonify(log_data)
+    except Exception as e:
+        logger.error(f"Erro em /api/logs: {e}")
+        return jsonify({"error": str(e), "logs": [], "file": None}), 500
+
 # ==========================================
-# ROTAS DE API - VOLUME TRACKER
+# ✅ CORREÇÃO 2: ENDPOINTS DE RISCO MELHORADOS
+# ==========================================
+
+@app.route('/api/risk/status')
+def get_risk_status():
+    """
+    ✅ MELHORADO: Retorna status consolidado do gerenciamento de risco
+    Usa helper risk_error_response() para respostas consistentes
+    """
+    global grid_risk_manager, emergency_sl, strategy
+    
+    # Verificar se o bot está rodando
+    status_file = 'bot_status.json'
+    bot_running = os.path.exists(status_file)
+    
+    # Se bot não está rodando, retornar configurações do .env
+    if not bot_running:
+        logger.debug("Bot não está rodando - retornando configurações do .env")
+        
+        # Configurações do arquivo .env
+        try:
+            cycle_protection = os.getenv('ENABLE_CYCLE_PROTECTION', 'false').lower() == 'true'
+            session_protection = os.getenv('ENABLE_SESSION_PROTECTION', 'false').lower() == 'true'
+            
+            cycle_sl = float(os.getenv('GRID_CYCLE_STOP_LOSS_PERCENT', '5.0'))
+            cycle_tp = float(os.getenv('GRID_CYCLE_TAKE_PROFIT_PERCENT', '10.0'))
+            
+            session_max_loss = float(os.getenv('GRID_SESSION_MAX_LOSS_USD', '100.0'))
+            session_profit_target = float(os.getenv('GRID_SESSION_PROFIT_TARGET_USD', '200.0'))
+            
+            emergency_sl_pct = float(os.getenv('EMERGENCY_SL_PERCENT', '15.0'))
+            emergency_tp_pct = float(os.getenv('EMERGENCY_TP_PERCENT', '25.0'))
+            
+            action_on_limit = os.getenv('GRID_SESSION_ACTION_ON_LIMIT', 'PAUSE').upper()
+            
+            return jsonify({
+                'bot_status': 'disconnected',
+                'initialized': False,
+                'cycle_protection': cycle_protection,
+                'cycle_sl': cycle_sl,
+                'cycle_tp': cycle_tp,
+                'session_protection': session_protection,
+                'session_max_loss_usd': session_max_loss,
+                'session_profit_target_usd': session_profit_target,
+                'action_on_limit': action_on_limit,
+                'emergency_sl_percent': emergency_sl_pct,
+                'emergency_tp_percent': emergency_tp_pct,
+                'active_positions_count': 0,
+                'accumulated_pnl': 0.0,
+                'cycles_closed': 0,
+                'cycles_profit': 0,
+                'cycles_loss': 0,
+                'session_start': 'Bot não iniciado',
+                'last_check': datetime.now().strftime('%H:%M:%S'),
+                'is_paused': False,
+                'pause_until': None
+            })
+        except Exception as e:
+            logger.error(f"Erro ao ler configurações do .env: {e}")
+            return risk_error_response(
+                f"Erro ao ler configurações: {e}",
+                bot_status="disconnected"
+            )
+    
+    # Bot rodando mas componentes não inicializados
+    if not risk_components_initialized or not grid_risk_manager:
+        logger.debug("Componentes de risco não inicializados - tentando fallback para arquivos JSON")
+        
+        # Tentar ler dados dos arquivos JSON como fallback
+        try:
+            pnl_data = safe_read_json_file(PNL_HISTORY_FILE, {})
+            positions_data = safe_read_json_file(POSITIONS_FILE, {})
+            
+            # Configurações do .env
+            cycle_protection = os.getenv('ENABLE_CYCLE_PROTECTION', 'false').lower() == 'true'
+            session_protection = os.getenv('ENABLE_SESSION_PROTECTION', 'false').lower() == 'true'
+            
+            return jsonify({
+                'bot_status': 'running_separate',
+                'initialized': False,
+                'message': 'Bot rodando em processo separado - dados limitados',
+                'cycle_protection': cycle_protection,
+                'cycle_sl': float(os.getenv('GRID_CYCLE_STOP_LOSS_PERCENT', '5.0')),
+                'cycle_tp': float(os.getenv('GRID_CYCLE_TAKE_PROFIT_PERCENT', '10.0')),
+                'session_protection': session_protection,
+                'session_max_loss_usd': float(os.getenv('GRID_SESSION_MAX_LOSS_USD', '100.0')),
+                'session_profit_target_usd': float(os.getenv('GRID_SESSION_PROFIT_TARGET_USD', '200.0')),
+                'accumulated_pnl': pnl_data.get('accumulated_pnl', 0.0),
+                'cycles_closed': pnl_data.get('cycles_closed', 0),
+                'active_positions_count': len(positions_data.get('positions', [])),
+                'last_check': datetime.now().strftime('%H:%M:%S')
+            })
+        except Exception as e:
+            logger.error(f"Erro ao ler arquivos de fallback: {e}")
+            return risk_error_response(
+                "Bot rodando mas componentes não disponíveis via Flask",
+                bot_status="running_separate"
+            )
+    
+    # Componentes inicializados - retornar dados completos
+    try:
+        # Coletar dados detalhados dos componentes
+        accumulated_pnl = grid_risk_manager.accumulated_pnl
+        accumulated_pnl_percent = 0
+        if grid_risk_manager.initial_balance > 0:
+            accumulated_pnl_percent = (accumulated_pnl / grid_risk_manager.initial_balance) * 100
+
+        # Cálculos de limites
+        limits_analysis = {}
+        
+        if grid_risk_manager.enable_session_protection:
+            remaining_loss_usd = abs(grid_risk_manager.session_max_loss_usd) - abs(accumulated_pnl)
+            loss_percentage_used = (abs(accumulated_pnl) / abs(grid_risk_manager.session_max_loss_usd)) * 100 if grid_risk_manager.session_max_loss_usd != 0 else 0
+            
+            remaining_loss_percent = grid_risk_manager.session_max_loss_percent - abs(accumulated_pnl_percent)
+            
+            remaining_profit_usd = grid_risk_manager.session_profit_target_usd - accumulated_pnl
+            profit_percentage_reached = (accumulated_pnl / grid_risk_manager.session_profit_target_usd) * 100 if grid_risk_manager.session_profit_target_usd != 0 else 0
+            
+            remaining_profit_percent = grid_risk_manager.session_profit_target_percent - accumulated_pnl_percent
+            
+            limits_analysis = {
+                "stop_loss_usd": {
+                    "limit": -grid_risk_manager.session_max_loss_usd,
+                    "current": accumulated_pnl,
+                    "remaining": remaining_loss_usd,
+                    "percentage_used": loss_percentage_used,
+                    "is_safe": accumulated_pnl > -grid_risk_manager.session_max_loss_usd
+                },
+                "stop_loss_percent": {
+                    "limit": -grid_risk_manager.session_max_loss_percent,
+                    "current": accumulated_pnl_percent,
+                    "remaining": remaining_loss_percent,
+                    "is_safe": accumulated_pnl_percent > -grid_risk_manager.session_max_loss_percent
+                },
+                "take_profit_usd": {
+                    "target": grid_risk_manager.session_profit_target_usd,
+                    "current": accumulated_pnl,
+                    "remaining": remaining_profit_usd,
+                    "percentage_reached": profit_percentage_reached,
+                    "is_achieved": accumulated_pnl >= grid_risk_manager.session_profit_target_usd
+                },
+                "take_profit_percent": {
+                    "target": grid_risk_manager.session_profit_target_percent,
+                    "current": accumulated_pnl_percent,
+                    "remaining": remaining_profit_percent,
+                    "is_achieved": accumulated_pnl_percent >= grid_risk_manager.session_profit_target_percent
+                }
+            }
+
+        # Win rate
+        win_rate = 0
+        if grid_risk_manager.cycles_closed > 0:
+            win_rate = (grid_risk_manager.cycles_profit / grid_risk_manager.cycles_closed) * 100
+
+        # Uptime
+        uptime = datetime.now() - grid_risk_manager.session_start
+        uptime_str = f"{int(uptime.total_seconds() // 3600)}h {int((uptime.total_seconds() % 3600) // 60)}m"
+
+        # Estatísticas do EmergencyStopLoss
+        emergency_stats = {}
+        if emergency_sl:
+            try:
+                emergency_stats = emergency_sl.get_statistics()
+            except Exception as e:
+                logger.warning(f"Erro ao obter estatísticas do EmergencyStopLoss: {e}")
+
+        status = {
+            "initialized": True,
+            "bot_status": "connected",
+            "timestamp": datetime.now().isoformat(),
+            "last_check": datetime.now().strftime("%H:%M:%S"),
+            
+            # Configurações de Proteção
+            "protection_config": {
+                "cycle_protection_enabled": grid_risk_manager.enable_cycle_protection,
+                "cycle_sl_percent": grid_risk_manager.cycle_stop_loss_percent,
+                "cycle_tp_percent": grid_risk_manager.cycle_take_profit_percent,
+                "session_protection_enabled": grid_risk_manager.enable_session_protection,
+                "action_on_limit": grid_risk_manager.action_on_limit,
+                "pause_duration_minutes": getattr(grid_risk_manager, 'pause_duration_minutes', 120)
+            },
+            
+            # Status da Sessão
+            "session_status": {
+                "is_paused": grid_risk_manager.is_paused,
+                "pause_until": grid_risk_manager.pause_until.isoformat() if grid_risk_manager.pause_until else None,
+                "pause_reason": getattr(grid_risk_manager, 'pause_reason', None),
+                "session_start": grid_risk_manager.session_start.isoformat(),
+                "uptime": uptime_str,
+                "initial_balance": grid_risk_manager.initial_balance,
+                "current_cycle_id": grid_risk_manager.current_cycle_id
+            },
+            
+            # PNL e Performance
+            "performance": {
+                "accumulated_pnl_usd": accumulated_pnl,
+                "accumulated_pnl_percent": accumulated_pnl_percent,
+                "cycles_closed": grid_risk_manager.cycles_closed,
+                "cycles_profit": grid_risk_manager.cycles_profit,
+                "cycles_loss": grid_risk_manager.cycles_loss,
+                "win_rate": win_rate
+            },
+            
+            # Análise Detalhada de Limites
+            "limits_analysis": limits_analysis,
+            
+            # Emergency Stop Loss
+            "emergency_system": {
+                "enabled": True,
+                "sl_percent": emergency_sl.emergency_sl_percent if emergency_sl else 0,
+                "tp_percent": getattr(emergency_sl, 'emergency_tp_percent', 0) if emergency_sl else 0,
+                "statistics": emergency_stats
+            },
+            
+            # Posições Ativas
+            "positions": {
+                "active_count": len(strategy.active_positions) if strategy and hasattr(strategy, 'active_positions') else 0,
+                "max_concurrent": getattr(strategy, 'max_concurrent_trades', 0) if strategy else 0
+            }
+        }
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logger.error(f"Erro no endpoint /api/risk/status: {e}")
+        logger.debug(traceback.format_exc())
+        return risk_error_response(
+            f"Erro ao coletar dados de risco: {str(e)}",
+            bot_status="error",
+            http_code=500
+        )
+
+@app.route('/api/risk/positions')
+def get_risk_positions_monitor():
+    """
+    ✅ MELHORADO: Monitoramento detalhado de risco por posição
+    Sistema de fallback robusto para leitura de arquivos
+    """
+    global grid_risk_manager, emergency_sl, strategy
+    
+    try:
+        # Verificar se o bot está rodando
+        status_file = 'bot_status.json'
+        bot_running = os.path.exists(status_file)
+        
+        if not bot_running:
+            return jsonify({
+                "bot_status": "disconnected",
+                "positions": [],
+                "message": "Bot não está rodando - inicie com: python grid_bot.py"
+            })
+        
+        # Se componentes não estão disponíveis, usar arquivos JSON
+        if not risk_components_initialized or not grid_risk_manager or not emergency_sl:
+            logger.debug("Usando fallback - lendo dados dos arquivos JSON")
+            
+            # Ler posições ativas do arquivo
+            active_positions_file = DATA_DIR / "active_positions.json"
+            pnl_history_file = DATA_DIR / "grid_pnl_history.json"
+            
+            positions_data = []
+            
+            if active_positions_file.exists() and pnl_history_file.exists():
+                active_data = safe_read_json_file(active_positions_file, {})
+                pnl_data = safe_read_json_file(pnl_history_file, {})
+                
+                if active_data.get('positions'):
+                    for pos in active_data['positions']:
+                        positions_data.append({
+                            "symbol": pos.get('symbol', 'UNKNOWN'),
+                            "side": pos.get('side', 'unknown'),
+                            "quantity": pos.get('size', 0),
+                            "entry_price": pos.get('entry_price', 0),
+                            "current_price": pos.get('current_price', 0),
+                            "pnl_usd": pos.get('pnl_usd', 0),
+                            "pnl_percent": pos.get('pnl_percent', 0),
+                            "leverage": pos.get('leverage', 1),
+                            "overall_risk_level": 1  # Fallback seguro
+                        })
+                
+                return jsonify({
+                    "bot_status": "running_separate",
+                    "message": "✅ Bot rodando - dados dos arquivos (componentes em processo separado)",
+                    "positions": positions_data,
+                    "session_info": {
+                        "balance_inicial": pnl_data.get('initial_balance', 0),
+                        "pnl_acumulado": pnl_data.get('accumulated_pnl', 0),
+                        "ciclos_fechados": pnl_data.get('cycles_closed', 0),
+                        "ultima_atualizacao": active_data.get('last_update', 'N/A')
+                    }
+                })
+            
+            return jsonify({
+                "bot_status": "running_separate",
+                "positions": [],
+                "message": "Bot rodando - aguardando dados de posições"
+            })
+        
+        # Componentes disponíveis - processar posições com dados completos
+        positions_data = []
+        
+        # Configurações de risco (definir antes do loop)
+        cycle_sl_limit = grid_risk_manager.cycle_stop_loss_percent
+        cycle_tp_limit = grid_risk_manager.cycle_take_profit_percent
+        emergency_sl_limit = emergency_sl.emergency_sl_percent
+        emergency_tp_limit = getattr(emergency_sl, 'emergency_tp_percent', 5.0)
+        session_pnl = grid_risk_manager.accumulated_pnl
+        session_max_loss = grid_risk_manager.session_max_loss_usd
+        session_profit_target = grid_risk_manager.session_profit_target_usd
+        
+        # Obter posições ativas
+        active_positions = {}
+        if strategy and hasattr(strategy, 'active_positions'):
+            active_positions = strategy.active_positions
+        
+        # Se não tiver do strategy, tentar API
+        if not active_positions:
+            try:
+                positions_response = get_active_positions()
+                for pos in positions_response:
+                    if pos.get('size', 0) != 0:
+                        symbol = pos.get('symbol', 'UNKNOWN')
+                        active_positions[symbol] = {
+                            'quantity': pos.get('size', 0),
+                            'entry_price': pos.get('entry_price', 0),
+                            'current_price': pos.get('mark_price', 0),
+                            'pnl': pos.get('unrealized_pnl', 0),
+                            'side': 'long' if pos.get('size', 0) > 0 else 'short'
+                        }
+            except Exception as e:
+                logger.warning(f"Erro ao obter posições via API: {e}")
+        
+        # Processar cada posição com análise de risco completa
+        for symbol, position in active_positions.items():
+            
+            quantity = position.get('quantity', 0)
+            entry_price = position.get('entry_price', 0)
+            current_price = position.get('current_price', 0)
+            pnl_usd = position.get('pnl', 0)
+            
+            pnl_percent = 0
+            if entry_price > 0:
+                if quantity > 0:
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                else:
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+            
+            # Usar configurações de risco já definidas acima
+            
+            # Status dos níveis
+            cycle_sl_status = "safe"
+            cycle_tp_status = "safe"
+            emergency_status = "safe"
+            
+            if abs(pnl_percent) > cycle_sl_limit * 0.8:
+                cycle_sl_status = "critical"
+            elif abs(pnl_percent) > cycle_sl_limit * 0.6:
+                cycle_sl_status = "warning"
+            
+            if pnl_percent > cycle_tp_limit * 0.8:
+                cycle_tp_status = "near_target"
+            elif pnl_percent > cycle_tp_limit * 0.6:
+                cycle_tp_status = "approaching"
+            
+            if abs(pnl_percent) > emergency_sl_limit * 0.9:
+                emergency_status = "critical"
+            elif abs(pnl_percent) > emergency_sl_limit * 0.7:
+                emergency_status = "warning"
+            
+            # PNL de sessão já definidos acima
+            
+            position_data = {
+                "symbol": symbol,
+                "side": "long" if quantity > 0 else "short",
+                "quantity": abs(quantity),
+                "entry_price": entry_price,
+                "current_price": current_price,
+                "pnl_usd": pnl_usd,
+                "pnl_percent": pnl_percent,
+                
+                # Nível 1 - Proteção por Ciclo
+                "cycle_protection": {
+                    "stop_loss": {
+                        "current_percent": pnl_percent if pnl_percent < 0 else 0,
+                        "limit_percent": -cycle_sl_limit,
+                        "remaining_percent": cycle_sl_limit - abs(pnl_percent) if pnl_percent < 0 else cycle_sl_limit,
+                        "status": cycle_sl_status,
+                        "triggered": abs(pnl_percent) >= cycle_sl_limit and pnl_percent < 0
+                    },
+                    "take_profit": {
+                        "current_percent": pnl_percent if pnl_percent > 0 else 0,
+                        "target_percent": cycle_tp_limit,
+                        "remaining_percent": cycle_tp_limit - pnl_percent if pnl_percent > 0 else cycle_tp_limit,
+                        "status": cycle_tp_status,
+                        "triggered": pnl_percent >= cycle_tp_limit
+                    }
+                },
+                
+                # Nível 2 - Proteção de Sessão
+                "session_protection": {
+                    "current_session_pnl": session_pnl,
+                    "max_loss_limit": -session_max_loss,
+                    "profit_target": session_profit_target,
+                    "position_contribution": pnl_usd,
+                    "remaining_loss_buffer": session_max_loss - abs(session_pnl) if session_pnl < 0 else session_max_loss
+                },
+                
+                # Nível 3 - Emergency System
+                "emergency_system": {
+                    "emergency_sl": {
+                        "current_percent": pnl_percent if pnl_percent < 0 else 0,
+                        "limit_percent": -emergency_sl_limit,
+                        "status": emergency_status,
+                        "triggered": abs(pnl_percent) >= emergency_sl_limit and pnl_percent < 0
+                    },
+                    "emergency_tp": {
+                        "current_percent": pnl_percent if pnl_percent > 0 else 0,
+                        "limit_percent": emergency_tp_limit,
+                        "triggered": pnl_percent >= emergency_tp_limit
+                    },
+                    "time_monitoring": {
+                        "time_in_loss_minutes": 0,
+                        "max_time_minutes": getattr(emergency_sl, 'max_time_in_loss_minutes', 15),
+                        "status": "safe"
+                    }
+                },
+                
+                # Metadata
+                "last_update": datetime.now().isoformat(),
+                "overall_risk_level": max([
+                    1 if cycle_sl_status == "safe" else (2 if cycle_sl_status == "warning" else 3),
+                    1 if emergency_status == "safe" else (2 if emergency_status == "warning" else 3)
+                ])
+            }
+            
+            positions_data.append(position_data)
+        
+        return jsonify({
+            "bot_status": "connected",
+            "positions": positions_data,
+            "total_positions": len(positions_data),
+            "last_update": datetime.now().isoformat(),
+            "risk_config": {
+                "cycle_sl_percent": cycle_sl_limit,
+                "cycle_tp_percent": cycle_tp_limit,
+                "emergency_sl_percent": emergency_sl_limit,
+                "emergency_tp_percent": emergency_tp_limit,
+                "session_max_loss_usd": session_max_loss,
+                "session_profit_target_usd": session_profit_target
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro no endpoint /api/risk/positions: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({
+            "error": str(e),
+            "bot_status": "error",
+            "positions": []
+        }), 500
+
+# ✅ CORREÇÃO 5: Endpoint /risk_status readicionado para compatibilidade
+@app.route('/risk_status')
+def risk_status_compat():
+    """Endpoint de compatibilidade - usa a mesma função do /api/risk/status"""
+    return get_risk_status()
+
+# ==========================================
+# ENDPOINTS DE TELEMETRIA DE RISCO
+# ==========================================
+
+# Endpoints de telemetria de risco
+@app.route('/api/risk/telemetry/status')
+def risk_telemetry_status():
+    p = Path("data/risk/status.json")
+    return jsonify(json.loads(p.read_text(encoding='utf-8'))) if p.exists() else jsonify({})
+
+@app.route('/api/risk/telemetry/active')
+def risk_telemetry_active_trade():
+    p = Path("data/risk/active_trade.json")
+    return jsonify(json.loads(p.read_text(encoding='utf-8'))) if p.exists() else jsonify({"active": False})
+
+@app.route('/api/risk/telemetry/history')
+def risk_telemetry_history_list():
+    td = Path("data/risk/trades")
+    if not td.exists():
+        return jsonify([])
+    files = sorted(td.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[:50]
+    data = []
+    for f in files:
+        try:
+            data.append(json.loads(f.read_text(encoding='utf-8')))
+        except Exception:
+            continue
+    return jsonify(data)
+
+# ==========================================
+# ROTAS DE VOLUME TRACKER (MANTIDAS)
 # ==========================================
 
 @app.route('/api/volume/stats')
@@ -796,7 +1450,6 @@ def api_volume_stats():
     except Exception as e:
         logger.error(f"Erro em /api/volume/stats: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/api/volume/timeline')
 def api_volume_timeline():
@@ -822,7 +1475,6 @@ def api_volume_timeline():
         logger.error(f"Erro em /api/volume/timeline: {e}")
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/api/volume/comparison')
 def api_volume_comparison():
     """API: Comparação de volume com período anterior"""
@@ -833,11 +1485,9 @@ def api_volume_comparison():
         if not tracker:
             return jsonify({"error": "VolumeTracker não disponível"}), 500
         
-        # Período atual
         current_stats = tracker.get_volume_stats([period])
         current = current_stats.get(period, {})
         
-        # Período anterior (mesmo intervalo de tempo, mas deslocado)
         period_map = {
             '1h': 1,
             '24h': 24,
@@ -848,8 +1498,6 @@ def api_volume_comparison():
         hours_back = period_map.get(period, 24)
         
         now = datetime.now()
-        
-        # Buscar período anterior
         end_previous = now - timedelta(hours=hours_back)
         start_previous = end_previous - timedelta(hours=hours_back)
         
@@ -861,7 +1509,6 @@ def api_volume_comparison():
         
         previous = tracker.calculate_volume(previous_trades)
         
-        # Calcular variação
         current_volume = current.get('total_volume', 0)
         previous_volume = previous.get('total_volume', 0)
         
@@ -882,23 +1529,17 @@ def api_volume_comparison():
         logger.error(f"Erro em /api/volume/comparison: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ==========================================
-# FIM ROTAS VOLUME TRACKER
-# ==========================================
-
 @app.route('/api/trades')
 def api_trades():
-    """API: Histórico de trades usando Volume Tracker"""
+    """API: Histórico de trades"""
     try:
         limit = request.args.get('limit', 50, type=int)
         
-        # Usar Volume Tracker para buscar trades
         tracker = get_volume_tracker()
         if not tracker:
-            logger.warning("⚠️ VolumeTracker não disponível. Verifique MAIN_PUBLIC_KEY no .env")
+            logger.warning("⚠️ VolumeTracker não disponível")
             return jsonify([])
         
-        # Buscar trades dos últimos 30 dias
         now = datetime.now()
         start_time = now - timedelta(days=30)
         
@@ -909,24 +1550,20 @@ def api_trades():
         )
         
         if not trades_raw:
-            logger.info("📊 Nenhum trade encontrado nos últimos 30 dias")
+            logger.info("📊 Nenhum trade encontrado")
             return jsonify([])
         
-        # Formatar trades para o formato esperado pelo frontend
         trades_formatted = []
         accumulated_pnl = 0
         
         for trade in trades_raw:
-            # Timestamp
             created_at = trade.get("created_at", 0)
             timestamp = datetime.fromtimestamp(created_at / 1000).isoformat() if created_at else ""
             
-            # Dados do trade
             amount = float(trade.get("amount", 0))
             entry_price = float(trade.get("entry_price", 0))
             pnl_raw = trade.get("pnl", "0")
             
-            # Converter PNL para float (pode vir como string)
             try:
                 pnl_usd = float(pnl_raw)
             except (ValueError, TypeError):
@@ -934,29 +1571,64 @@ def api_trades():
             
             accumulated_pnl += pnl_usd
             
-            # Calcular PNL % baseado no valor investido
             invested = amount * entry_price
             pnl_percent = (pnl_usd / invested * 100) if invested > 0 else 0
             
-            # Formatar trade
             trades_formatted.append({
                 "timestamp": timestamp,
                 "symbol": trade.get("symbol", ""),
                 "pnl_usd": pnl_usd,
                 "pnl_percent": pnl_percent,
-                "duration_minutes": 0,  # Não disponível na API
+                "duration_minutes": 0,
                 "reason": trade.get("side", ""),
                 "accumulated_pnl": accumulated_pnl
             })
         
-        # Ordenar por timestamp (mais recente primeiro)
         trades_formatted.sort(key=lambda x: x["timestamp"], reverse=True)
         
-        # Aplicar limite
         return jsonify(trades_formatted[:limit])
         
     except Exception as e:
         logger.error(f"Erro em /api/trades: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/pnl-history')
+def api_pnl_history():
+    """API: Histórico de PnL do grid"""
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        
+        pnl_file = DATA_DIR / "grid_pnl_history.json"
+        
+        if not pnl_file.exists():
+            return jsonify({
+                "session_start": None,
+                "initial_balance": 0,
+                "current_balance": 0,
+                "accumulated_pnl": 0,
+                "cycles_closed": 0,
+                "cycles_history": [],
+                "last_update": None
+            })
+        
+        with open(pnl_file, 'r', encoding='utf-8') as f:
+            pnl_data = json.load(f)
+        
+        cycles_history = pnl_data.get('cycles_history', [])
+        if hours and cycles_history:
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            cutoff_timestamp = cutoff_time.timestamp()
+            
+            filtered_cycles = [
+                cycle for cycle in cycles_history 
+                if cycle.get('timestamp', 0) >= cutoff_timestamp
+            ]
+            pnl_data['cycles_history'] = filtered_cycles
+        
+        return jsonify(pnl_data)
+        
+    except Exception as e:
+        logger.error(f"Erro em /api/pnl-history: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/export/csv')
@@ -975,75 +1647,39 @@ def api_export_csv():
         logger.error(f"Erro em /api/export/csv: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ========== WEBSOCKET EVENTS ==========
+# ==========================================
+# ROTAS CSV (MANTIDAS)
+# ==========================================
 
-@socketio.on('connect')
-def handle_connect():
-    """Cliente conectado via WebSocket"""
+def allowed_file(filename):
+    """Verifica se arquivo tem extensão permitida"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_latest_csv_analysis():
+    """Obtém a última análise de CSV salva"""
     try:
-        logger.info(f"🔌 Cliente conectado: {request.sid}")
-        
-        # Enviar status inicial
-        status = get_bot_status()
-        emit('bot_status_update', status)
-        
-        metrics = get_metrics()
-        emit('metrics_update', metrics)
-        
-        pnl_history = get_pnl_history(hours=24)
-        emit('pnl_history_update', pnl_history)
-        
-        positions = get_active_positions()
-        emit('positions_update', positions)
-        
-        orders = get_active_orders()
-        emit('orders_update', orders)
-        
-        logs = tail_logs(lines=100)
-        emit('logs_update', logs)
-        
+        analysis_file = DATA_DIR / "csv_trades_analysis.json"
+        if analysis_file.exists():
+            with open(analysis_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return None
     except Exception as e:
-        logger.error(f"Erro ao conectar cliente WebSocket: {e}")
-        emit('error', {'message': 'Erro na conexão'})
+        logger.error(f"Erro ao ler análise CSV: {e}")
+        return None
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Cliente desconectado"""
+def process_uploaded_csv(file_path: str):
+    """Processa arquivo CSV e retorna estatísticas"""
     try:
-        logger.info(f"🔌 Cliente desconectado: {request.sid}")
+        parser = PacificaCSVParser(file_path)
+        parser.parse_csv()
+        stats = parser.get_statistics()
+        parser.save_to_json()
+        logger.info(f"✅ CSV processado: {Path(file_path).name}")
+        return stats
     except Exception as e:
-        logger.error(f"Erro ao desconectar cliente: {e}")
+        logger.error(f"❌ Erro ao processar CSV: {e}")
+        return None
 
-@socketio.on('request_update')
-def handle_request_update():
-    """Cliente solicitou atualização manual"""
-    try:
-        status = get_bot_status()
-        emit('bot_status_update', status)
-        
-        metrics = get_metrics()
-        emit('metrics_update', metrics)
-        
-        pnl_history = get_pnl_history(hours=24)
-        emit('pnl_history_update', pnl_history)
-        
-        positions = get_active_positions()
-        emit('positions_update', positions)
-        
-        orders = get_active_orders()
-        emit('orders_update', orders)
-        
-    except Exception as e:
-        logger.error(f"Erro ao atualizar dados: {e}")
-        emit('error', {'message': 'Erro na atualização'})
-    
-    logs = tail_logs(lines=100)
-    emit('logs_update', logs)
-
-# ========== INICIALIZAÇÃO ==========
-
-
-# ===== ROTAS API CSV =====
 @app.route('/api/csv/upload', methods=['POST'])
 def api_csv_upload():
     """API: Upload e análise de arquivo CSV"""
@@ -1157,20 +1793,87 @@ def api_csv_delete(filename):
         logger.error(f"Erro em /api/csv/delete/{filename}: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ========== WEBSOCKET EVENTS ==========
+
+@socketio.on('connect')
+def handle_connect():
+    """Cliente conectado via WebSocket"""
+    try:
+        logger.info(f"🔌 Cliente conectado: {request.sid}")
+        
+        # Enviar status inicial
+        status = get_bot_status()
+        emit('bot_status_update', status)
+        
+        metrics = get_metrics()
+        emit('metrics_update', metrics)
+        
+        pnl_history = get_pnl_history(hours=24)
+        emit('pnl_history_update', pnl_history)
+        
+        positions = get_active_positions()
+        emit('positions_update', positions)
+        
+        orders = get_active_orders()
+        emit('orders_update', orders)
+        
+        logs = tail_logs(lines=100)
+        emit('logs_update', logs)
+        
+    except Exception as e:
+        logger.error(f"Erro ao conectar cliente WebSocket: {e}")
+        emit('error', {'message': 'Erro na conexão'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Cliente desconectado"""
+    try:
+        logger.info(f"🔌 Cliente desconectado: {request.sid}")
+    except Exception as e:
+        logger.error(f"Erro ao desconectar cliente: {e}")
+
+@socketio.on('request_update')
+def handle_request_update():
+    """Cliente solicitou atualização manual"""
+    try:
+        status = get_bot_status()
+        emit('bot_status_update', status)
+        
+        metrics = get_metrics()
+        emit('metrics_update', metrics)
+        
+        pnl_history = get_pnl_history(hours=24)
+        emit('pnl_history_update', pnl_history)
+        
+        positions = get_active_positions()
+        emit('positions_update', positions)
+        
+        orders = get_active_orders()
+        emit('orders_update', orders)
+        
+        logs = tail_logs(lines=100)
+        emit('logs_update', logs)
+        
+    except Exception as e:
+        logger.error(f"Erro ao atualizar dados: {e}")
+        emit('error', {'message': 'Erro na atualização'})
+
+# ========== ✅ CORREÇÃO 1: INICIALIZAÇÃO NO STARTUP ==========
 
 if __name__ == '__main__':
-    print("="*60)
-    print("🚀 Interface Web Melhorada v1.1 iniciando...")
+    print("="*80)
+    print("🚀 Interface Web Melhorada v1.2 iniciando...")
+    print("="*80)
     print("📊 Dashboard: http://localhost:5000")
-    print("🔌 WebSocket: Ativado")
+    print("🔌 WebSocket: Ativado (polling)")
     print("📜 Logs: Auto-refresh ativado")
     print("📈 Posições: Monitoramento em tempo real")
     print("💹 Volume Tracker: Ativo")
-    print("⚙️  Config: Salvamento inteligente + Auto-restart")
-    print("🛑 Para parar: Ctrl+C")
-    print("="*60)
+    print("⚙️  Config: Salvamento + Auto-restart")
+    print("🛡️  Risk Management: Sistema de fallback robusto")
+    print("="*80)
     print(f"🐍 Python: {PYTHON_EXECUTABLE}")
-    print("="*60)
+    print("="*80)
     
     # Verificar arquivos necessários
     if not ENV_FILE.exists():
@@ -1183,6 +1886,25 @@ if __name__ == '__main__':
     LOGS_DIR.mkdir(exist_ok=True)
     DATA_DIR.mkdir(exist_ok=True)
     
+    # ✅ CORREÇÃO 1: Inicializar componentes de risco
+    print("="*80)
+    print("🔧 Inicializando componentes de gerenciamento de risco...")
+    print("="*80)
+    
+    risk_init_success = initialize_risk_components()
+    
+    if risk_init_success:
+        print("="*80)
+        print("✅ SUCESSO: Componentes de risco inicializados")
+        print("   Dashboard operará com dados em tempo real")
+        print("="*80)
+    else:
+        print("="*80)
+        print("⚠️  AVISO: Componentes de risco não inicializados")
+        print("   Dashboard operará com fallback (arquivos JSON)")
+        print("   Funcionalidades básicas continuarão funcionando")
+        print("="*80)
+    
     # Iniciar monitor threads
     monitor_active = True
     monitor_thread = threading.Thread(target=monitor_bot, daemon=True)
@@ -1190,6 +1912,10 @@ if __name__ == '__main__':
     
     logs_monitor_thread = threading.Thread(target=monitor_logs, daemon=True)
     logs_monitor_thread.start()
+    
+    print("="*80)
+    print("🛑 Para parar: Ctrl+C")
+    print("="*80)
     
     # Rodar app com SocketIO
     try:
@@ -1211,56 +1937,3 @@ if __name__ == '__main__':
         if logs_monitor_thread:
             logs_monitor_thread.join(timeout=5)
         print("👋 Interface web encerrada")
-
-# ========== NOVO ENDPOINT HISTÓRICO ==========
-@app.route('/api/historical-stats')
-def api_historical_stats():
-    """API: Estatísticas históricas agregadas"""
-    try:
-        file_path = DATA_DIR / "historical_trades.json"
-        if not file_path.exists():
-            return jsonify({"days": [], "pnl": [], "volume": [], "win_rate": []})
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            trades = json.load(f)
-
-        if not trades:
-            return jsonify({"days": [], "pnl": [], "volume": [], "win_rate": []})
-
-        daily = {}
-        for t in trades:
-            ts = t.get("timestamp", "")
-            if not ts:
-                continue
-            date = ts[:10]
-            pnl = float(t.get("pnl_usd", 0))
-            volume = abs(float(t.get("price", 0)) * float(t.get("size", 0)))
-            win = pnl > 0
-
-            if date not in daily:
-                daily[date] = {"pnl": 0, "volume": 0, "wins": 0, "trades": 0}
-            daily[date]["pnl"] += pnl
-            daily[date]["volume"] += volume
-            daily[date]["wins"] += 1 if win else 0
-            daily[date]["trades"] += 1
-
-        days_sorted = sorted(daily.keys())
-        pnl_values = [daily[d]["pnl"] for d in days_sorted]
-        volume_values = [daily[d]["volume"] for d in days_sorted]
-        win_rate_values = [
-            round((daily[d]["wins"] / daily[d]["trades"]) * 100, 1) if daily[d]["trades"] else 0
-            for d in days_sorted
-        ]
-
-        return jsonify({
-            "days": days_sorted,
-            "pnl": pnl_values,
-            "volume": volume_values,
-            "win_rate": win_rate_values
-        })
-
-    except Exception as e:
-        logger.error(f"Erro em /api/historical-stats: {e}")
-        return jsonify({"days": [], "pnl": [], "volume": [], "win_rate": []})
-
-# Novo endpoint para PNL não realizado e realizado

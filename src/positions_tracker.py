@@ -82,6 +82,18 @@ class PositionsTracker:
             
             logger.debug(f"✅ Posições atualizadas: {len(enriched_positions)} ativas")
             
+            # ------------------------------------------------------------
+            # INTEGRAÇÃO AUTOMÁTICA DE DETECÇÃO DE TRADES
+            # ------------------------------------------------------------
+            try:
+                # Integração com o Risk Manager
+                from src.grid_risk_manager import GridRiskManager
+                risk_manager = GridRiskManager()
+                risk_manager._auto_detect_active_trade()
+                print("✅ Sincronização automática de posições ativas com Risk Manager concluída.")
+            except Exception as e:
+                print(f"⚠️ Erro ao sincronizar detecção de trade ativo: {e}")
+            
         except Exception as e:
             logger.error(f"❌ Erro ao atualizar posições: {e}")
     
@@ -131,6 +143,18 @@ class PositionsTracker:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             
             logger.debug(f"✅ Ordens atualizadas: {len(enriched_orders)} abertas")
+            
+            # ------------------------------------------------------------
+            # INTEGRAÇÃO AUTOMÁTICA DE DETECÇÃO DE TRADES
+            # ------------------------------------------------------------
+            try:
+                # Integração com o Risk Manager
+                from src.grid_risk_manager import GridRiskManager
+                risk_manager = GridRiskManager()
+                risk_manager._auto_detect_active_trade()
+                print("✅ Sincronização automática de posições ativas com Risk Manager concluída.")
+            except Exception as e:
+                print(f"⚠️ Erro ao sincronizar detecção de trade ativo: {e}")
             
         except Exception as e:
             logger.error(f"❌ Erro ao atualizar ordens: {e}")
