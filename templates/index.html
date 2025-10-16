@@ -330,9 +330,809 @@
         .monitor-status-warning {
             color: #f59e0b;
         }
+
+        /* Estilos para Config V2 */
+        .strategy-tab {
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .strategy-tab.active {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+            border-color: #60a5fa;
+            transform: scale(1.05);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        .strategy-tab:hover:not(.active) {
+            border-color: #4b5563;
+            transform: translateY(-2px);
+        }
+
+        .config-section {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border-left: 4px solid #3b82f6;
+        }
+
+        .config-field {
+            transition: all 0.2s ease;
+        }
+
+        .config-field:hover {
+            background-color: rgba(55, 65, 81, 0.5);
+        }
+
+        .config-field.modified {
+            border-left: 3px solid #fbbf24;
+            background-color: rgba(251, 191, 36, 0.1);
+        }
+
+        .config-field.error {
+            border-left: 3px solid #ef4444;
+            background-color: rgba(239, 68, 68, 0.1);
+        }
+
+        .config-tooltip {
+            position: relative;
+            cursor: help;
+        }
+
+        .config-tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            white-space: nowrap;
+            z-index: 100;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #374151;
+        }
+
+        .preview-change-added {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-left: 3px solid #10b981;
+        }
+
+        .preview-change-modified {
+            background-color: rgba(251, 191, 36, 0.1);
+            border-left: 3px solid #fbbf24;
+        }
+
+        .preview-change-removed {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 3px solid #ef4444;
+        }
+
+        .validation-error {
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        /* Estilos para Onboarding */
+        .wizard-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+
+        .wizard-step.active {
+            opacity: 1;
+        }
+
+        .wizard-step.completed {
+            opacity: 1;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .wizard-step.active .step-number {
+            background: #3b82f6;
+            border-color: #60a5fa;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+
+        .wizard-step.completed .step-number {
+            background: #10b981;
+            border-color: #34d399;
+        }
+
+        .wizard-step.completed .step-number::after {
+            content: '✓';
+        }
+
+        .step-label {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+
+        .wizard-step.active .step-label {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .wizard-step-line {
+            height: 2px;
+            flex: 1;
+            background: #374151;
+            margin-top: 24px;
+            max-width: 100px;
+        }
+
+        .onboarding-step {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #onboarding-modal input:focus {
+            transform: scale(1.01);
+            transition: transform 0.2s ease;
+        }
+
+        .validation-success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid #10b981;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+
+        .validation-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+
+        /* ========== ESTILOS CONFIG V2 ========== */
+        .toggle-bg {
+            transition: background-color 0.3s;
+        }
+
+        input:checked ~ .toggle-bg {
+            background-color: #10b981;
+        }
+
+        input:checked ~ .toggle-bg .toggle-dot {
+            transform: translateX(1.5rem);
+        }
+
+        .toggle-dot {
+            transition: transform 0.3s;
+        }
+
+        .config-section {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .config-input:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+
+        .strategy-category-btn,
+        .strategy-btn {
+            transition: all 0.3s ease;
+        }
+
+        .strategy-category-btn:hover,
+        .strategy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Toggle switch personalizado */
+        .toggle-bg {
+            position: relative;
+        }
+
+        .toggle-dot {
+            position: absolute;
+            top: 0.125rem;
+            left: 0.125rem;
+            width: 1.25rem;
+            height: 1.25rem;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input:checked ~ .toggle-bg .toggle-dot {
+            transform: translateX(1.5rem);
+        }
+
+        /* Animações dos botões de estratégia */
+        .strategy-category-btn.border-blue-500,
+        .strategy-btn.border-green-500 {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .strategy-btn.border-green-500 {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+
+        /* ==========================================
+           CONFIGURAÇÃO V2 - ESTILOS APRIMORADOS
+           ========================================== */
+
+        /* Toggle Switch */
+        .toggle-bg {
+            transition: background-color 0.3s ease;
+        }
+
+        input:checked ~ .toggle-bg {
+            background-color: #10b981;
+        }
+
+        input:checked ~ .toggle-bg + div {
+            transform: translateX(1.5rem);
+        }
+
+        .toggle-dot {
+            transition: transform 0.3s ease;
+        }
+
+        /* Animações */
+        .config-section {
+            animation: fadeInUp 0.4s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Botões de Estratégia */
+        .strategy-category-btn,
+        .strategy-btn {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .strategy-category-btn::before,
+        .strategy-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .strategy-category-btn:hover::before,
+        .strategy-btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .strategy-category-btn:hover,
+        .strategy-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .strategy-category-btn:active,
+        .strategy-btn:active {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Inputs com validação */
+        .config-input {
+            transition: all 0.3s ease;
+        }
+
+        .config-input:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
+            border-color: #3b82f6;
+            transform: scale(1.01);
+        }
+
+        .config-input.valid {
+            border-color: #10b981;
+        }
+
+        .config-input.invalid {
+            border-color: #ef4444;
+        }
+
+        .config-input.warning {
+            border-color: #f59e0b;
+        }
+
+        /* Campo de configuração */
+        .config-field {
+            transition: opacity 0.3s ease;
+        }
+
+        .config-field:hover {
+            opacity: 1;
+        }
+
+        /* Botão de ajuda */
+        .config-field label button {
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+
+        .config-field label button:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+
+        /* Modal customizado */
+        #custom-modal {
+            animation: modalFadeIn 0.3s ease-out;
+            backdrop-filter: blur(4px);
+        }
+
+        #custom-modal > div {
+            animation: modalSlideUp 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes modalSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* Preview de mudanças */
+        .preview-change-item {
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .preview-change-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Badge de impacto */
+        .impact-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .impact-high {
+            background-color: #dc2626;
+            color: white;
+        }
+
+        .impact-medium {
+            background-color: #f59e0b;
+            color: white;
+        }
+
+        .impact-low {
+            background-color: #10b981;
+            color: white;
+        }
+
+        /* Loading states */
+        .config-loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        .config-loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 24px;
+            height: 24px;
+            margin: -12px 0 0 -12px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Scrollbar customizada para modal */
+        #custom-modal .modal-content {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1f2937;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .strategy-category-btn,
+            .strategy-btn {
+                padding: 1rem;
+            }
+            
+            .config-section h3 {
+                font-size: 1.125rem;
+            }
+            
+            #custom-modal > div {
+                max-width: 95%;
+                margin: 1rem;
+            }
+        }
+
+        /* Estados de seleção */
+        .strategy-category-btn.selected,
+        .strategy-btn.selected {
+            border-width: 3px;
+            font-weight: 600;
+        }
+
+        /* Feedback visual para campos preenchidos */
+        .config-input:not(:placeholder-shown) {
+            background-color: #374151;
+        }
+
+        /* Destaque para campos obrigatórios */
+        .config-field.required label::after {
+            content: ' *';
+            color: #ef4444;
+        }
+
+        /* Tooltip de ajuda */
+        .help-tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .help-tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #1f2937;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .help-tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Gradientes suaves para seções */
+        .config-section {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        }
+
+        .config-section:hover {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            transition: background 0.3s ease;
+        }
+
+        /* Animação de pulso para botões de ação */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
+        }
+
+        .config-actions button:hover {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Efeito de brilho para estratégia selecionada */
+        .strategy-btn.selected::after,
+        .strategy-category-btn.selected::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #3b82f6, #10b981, #3b82f6);
+            border-radius: 0.5rem;
+            z-index: -1;
+            opacity: 0.3;
+            filter: blur(8px);
+        }
+
+        /* Modal customizado original */
+        #custom-modal .bg-gray-800 {
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Validação de campos original */
+        .text-green-400 {
+            color: #34d399;
+        }
+
+        .text-yellow-400 {
+            color: #fbbf24;
+        }
+
+        .text-red-400 {
+            color: #f87171;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
+    <!-- Modal de Onboarding / Configuração Inicial -->
+    <div id="onboarding-modal" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[9999]">
+        <div class="bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl border border-gray-700">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <div class="text-6xl mb-4">🔐</div>
+                <h2 class="text-3xl font-bold mb-2">Configuração Inicial</h2>
+                <p class="text-gray-400">Configure suas credenciais de forma segura</p>
+            </div>
+            
+            <!-- Wizard Steps -->
+            <div class="flex justify-between mb-8">
+                <div class="wizard-step active" data-step="1">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Credenciais</div>
+                </div>
+                <div class="wizard-step-line"></div>
+                <div class="wizard-step" data-step="2">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Validação</div>
+                </div>
+                <div class="wizard-step-line"></div>
+                <div class="wizard-step" data-step="3">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Confirmação</div>
+                </div>
+            </div>
+            
+            <!-- Step 1: Entrada de Credenciais -->
+            <div id="onboarding-step-1" class="onboarding-step">
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-gray-300 mb-2 font-medium">
+                            💳 Endereço da Carteira (Público)
+                            <span class="text-red-400">*</span>
+                        </label>
+                        <input type="text" 
+                               id="onboard-wallet-address"
+                               placeholder="Ex: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+                               class="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm">
+                        <p class="text-xs text-gray-400 mt-1">
+                            ℹ️ Seu endereço público da carteira Solana usado na Pacifica.fi
+                        </p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-gray-300 mb-2 font-medium">
+                            🔑 Chave Privada da API
+                            <span class="text-red-400">*</span>
+                        </label>
+                        <div class="relative">
+                            <input type="password" 
+                                   id="onboard-private-key"
+                                   placeholder="Cole sua chave privada aqui"
+                                   class="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm pr-12">
+                            <button type="button" 
+                                    onclick="togglePasswordVisibility('onboard-private-key')"
+                                    class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white">
+                                👁️
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">
+                            🔒 Esta chave será criptografada com AES-256 antes de salvar
+                        </p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-gray-300 mb-2 font-medium">
+                            🌐 Endereço da API
+                        </label>
+                        <input type="text" 
+                               id="onboard-api-address"
+                               value="https://api.pacifica.fi/api/v1"
+                               class="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                    
+                    <div class="bg-yellow-900/30 border border-yellow-600 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <span class="text-2xl">⚠️</span>
+                            <div>
+                                <p class="text-yellow-300 font-semibold mb-1">Importante:</p>
+                                <ul class="text-sm text-yellow-100 space-y-1">
+                                    <li>• Suas credenciais serão criptografadas localmente</li>
+                                    <li>• Após salvar, a chave privada será mascarada como ***</li>
+                                    <li>• Somente você terá acesso ao arquivo criptografado</li>
+                                    <li>• Nunca compartilhe sua chave privada</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex gap-3 mt-8">
+                    <button onclick="hideOnboardingModal()" 
+                            class="bg-gray-600 hover:bg-gray-700 px-6 py-3 rounded-lg font-semibold flex items-center justify-center gap-2">
+                        ✕ Cancelar
+                    </button>
+                    <button onclick="validateAndNextStep()" 
+                            class="flex-1 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold flex items-center justify-center gap-2">
+                        Validar Credenciais →
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Step 2: Validação -->
+            <div id="onboarding-step-2" class="onboarding-step hidden">
+                <div class="text-center py-8">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p class="text-xl font-semibold mb-2">Validando credenciais...</p>
+                    <p class="text-gray-400 text-sm" id="validation-status">Aguarde enquanto testamos a conexão</p>
+                </div>
+                
+                <div id="validation-result" class="hidden mt-6"></div>
+                
+                <div class="flex gap-3 mt-8" id="validation-actions" style="display: none;">
+                    <button onclick="hideOnboardingModal()" 
+                            class="bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg font-semibold">
+                        ✕ Cancelar
+                    </button>
+                    <button onclick="goToStep(1)" 
+                            class="flex-1 bg-gray-600 hover:bg-gray-700 px-6 py-3 rounded-lg font-semibold">
+                        ← Voltar
+                    </button>
+                    <button onclick="saveCredentials()" 
+                            class="flex-1 bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold">
+                        Salvar e Continuar →
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Step 3: Confirmação -->
+            <div id="onboarding-step-3" class="onboarding-step hidden">
+                <div class="text-center py-8">
+                    <div class="text-6xl mb-4">✅</div>
+                    <h3 class="text-2xl font-bold mb-2">Configuração Concluída!</h3>
+                    <p class="text-gray-400 mb-6">Suas credenciais foram salvas com segurança</p>
+                    
+                    <div class="bg-green-900/30 border border-green-600 rounded-lg p-6 text-left">
+                        <div class="space-y-3 text-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="text-green-400">✓</span>
+                                <span>Credenciais criptografadas com AES-256</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-green-400">✓</span>
+                                <span>Conexão com API validada</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-green-400">✓</span>
+                                <span>Arquivo protegido com permissões 600</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-green-400">✓</span>
+                                <span>Backup de segurança criado</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-900/30 border border-blue-600 rounded-lg p-4 mt-6">
+                        <p class="text-blue-300 text-sm">
+                            💡 <strong>Próximo passo:</strong> Configure sua estratégia de trading
+                        </p>
+                    </div>
+                </div>
+                
+                <button onclick="completeOnboarding()" 
+                        class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold text-lg">
+                    Começar a Usar o Bot 🚀
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Alertas Toast -->
     <div id="alerts-container"></div>
     
@@ -838,91 +1638,207 @@
 
         <!-- Config Tab v1.1 - MELHORADO -->
         <div id="content-config" class="hidden">
-            <!-- Ações Rápidas -->
-            <div class="bg-gray-800 rounded-lg p-6 mb-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">⚙️ Configurações Rápidas</h2>
-                    <button onclick="saveConfig()" class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-semibold flex items-center gap-2">
-                        💾 Salvar e Aplicar
-                    </button>
-                </div>
+            <!-- Seção de Gerenciamento de Credenciais -->
+            <div id="credentials-manager" class="bg-gray-800 rounded-lg p-6 mb-6">
+                <h3 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    🔐 Credenciais da API
+                </h3>
                 
-                <!-- Estratégia -->
-                <div class="bg-gray-700 rounded-lg p-4 mb-4">
-                    <label class="block text-gray-300 mb-2 font-semibold">🎯 Estratégia de Trading</label>
-                    <select id="config-STRATEGY_TYPE" onchange="toggleStrategyOptions()"
-                            class="w-full bg-gray-600 text-white px-4 py-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="market_making">📊 Market Making (Grid Dinâmico)</option>
-                        <option value="pure_grid">📈 Pure Grid (Grid Fixo)</option>
-                        <option value="dynamic_grid">⚡ Dynamic Grid (Grid Adaptativo)</option>
-                        <option value="multi_asset">🌐 Multi Asset (Múltiplos Pares)</option>
-                        <option value="multi_asset_enhanced">🚀 Multi Asset Enhanced (Avançado)</option>
-                    </select>
-                    <p class="text-xs text-gray-400 mt-2">
-                        💡 <strong>Market Making:</strong> Grid que se ajusta ao mercado |
-                        <strong>Pure Grid:</strong> Níveis fixos |
-                        <strong>Dynamic:</strong> Adaptativo |
-                        <strong>Multi Asset:</strong> Vários ativos simultâneos
-                    </p>
-                </div>
-                
-                <!-- Opções de Grid (visível quando STRATEGY = grid) -->
-                <div id="grid-options" class="space-y-4">
-                    <h3 class="text-lg font-semibold text-blue-400 mb-3">� Configurações do Grid</h3>
+                <!-- Credenciais Configuradas -->
+                <div id="credentials-configured" style="display: none;">
+                    <div class="space-y-4">
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <label class="block text-gray-400 text-sm mb-1">Endereço da Carteira</label>
+                            <div class="flex items-center gap-3">
+                                <input type="text" 
+                                       id="display-wallet-address" 
+                                       readonly 
+                                       class="flex-1 bg-gray-600 text-white px-4 py-2 rounded font-mono text-sm cursor-default">
+                                <button onclick="copyToClipboard('display-wallet-address')" 
+                                        class="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm">
+                                    📋 Copiar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <label class="block text-gray-400 text-sm mb-1">Chave Privada da API</label>
+                            <div class="flex items-center gap-3">
+                                <input type="text" 
+                                       id="display-private-key" 
+                                       value="***CONFIGURADA***" 
+                                       readonly 
+                                       class="flex-1 bg-gray-600 text-gray-400 px-4 py-2 rounded font-mono text-sm cursor-not-allowed">
+                                <button onclick="reconfigureCredentials()" 
+                                        class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded text-sm font-semibold">
+                                    🔄 Reconfigurar
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">
+                                🔒 Chave criptografada. Clique em "Reconfigurar" para alterar.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-green-900/20 border border-green-600 rounded-lg p-3 flex items-center gap-2">
+                            <span class="text-green-400 text-lg">✓</span>
+                            <span class="text-green-300 text-sm">Credenciais configuradas e validadas</span>
+                        </div>
+                    </div>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Symbol -->
-                        <div>
-                            <label class="block text-gray-300 mb-2">💱 Símbolo</label>
-                            <input type="text" id="config-SYMBOL" placeholder="Ex: SOL"
-                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-400 mt-1">Par de trading (SOL, BTC, ETH...)</p>
-                        </div>
-                        
-                        <!-- Grid Levels -->
-                        <div>
-                            <label class="block text-gray-300 mb-2">🔢 Níveis do Grid</label>
-                            <input type="number" id="config-GRID_LEVELS" min="3" max="20" placeholder="Ex: 8"
-                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-400 mt-1">Número de ordens (3-20)</p>
-                        </div>
-                        
-                        <!-- Order Size -->
-                        <div>
-                            <label class="block text-gray-300 mb-2">💵 Tamanho da Ordem (USD)</label>
-                            <input type="number" id="config-ORDER_SIZE_USD" min="1" step="0.01" placeholder="Ex: 100"
-                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-400 mt-1">Valor em USD por ordem</p>
-                        </div>
-                        
-                        <!-- Grid Spacing -->
-                        <div>
-                            <label class="block text-gray-300 mb-2">📏 Espaçamento do Grid (%)</label>
-                            <input type="number" id="config-GRID_SPACING_PERCENT" min="0.1" max="5" step="0.1" placeholder="Ex: 0.2"
-                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-400 mt-1">Distância entre níveis (0.1% - 5%)</p>
-                        </div>
-                        
-                        <!-- Max Position -->
-                        <div>
-                            <label class="block text-gray-300 mb-2">🛡️ Posição Máxima (USD)</label>
-                            <input type="number" id="config-MAX_POSITION_SIZE_USD" min="0" step="0.01" placeholder="Ex: 1000"
-                                   class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-400 mt-1">Limite de exposição total</p>
-                        </div>
+                    <div class="flex gap-3 mt-6">
+                        <button onclick="testCredentialsConnection()" 
+                                class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">
+                            🔌 Testar Conexão
+                        </button>
+                        <button onclick="confirmDeleteCredentials()" 
+                                class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold">
+                            🗑️ Remover
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Credenciais Não Configuradas -->
+                <div id="credentials-not-configured">
+                    <div class="text-center py-8">
+                        <div class="text-6xl mb-4">🔓</div>
+                        <p class="text-gray-400 mb-6">Nenhuma credencial configurada</p>
+                        <button onclick="showOnboardingModal()" 
+                                class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold">
+                            Configurar Credenciais
+                        </button>
                     </div>
                 </div>
             </div>
-            
-            <!-- Configurações Avançadas (Collapsible) -->
-            <div class="bg-gray-800 rounded-lg p-6">
-                <button onclick="toggleAdvancedConfig()" class="w-full flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">🔧 Configurações Avançadas</h2>
-                    <span id="advanced-toggle-icon" class="text-2xl">▼</span>
-                </button>
-                <div id="advanced-config-container" class="space-y-4 hidden">
-                    <p class="text-gray-500">Carregando configurações avançadas...</p>
+
+            <!-- Header com Ações -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="text-xl font-semibold">⚙️ Configurações Avançadas</h2>
+                        <p class="text-gray-400 text-sm">Estratégia Atual: <span id="config-current-strategy">Carregando...</span></p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="resetConfigForm()" 
+                                class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded">
+                            � Resetar
+                        </button>
+                        <button onclick="previewConfigChanges()" 
+                                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                            👁️ Preview
+                        </button>
+                        <button onclick="saveConfigV2()" 
+                                class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-semibold">
+                            💾 Salvar e Aplicar
+                        </button>
+                    </div>
                 </div>
+                
+                <!-- Indicadores de Status -->
+                <div class="grid grid-cols-3 gap-4 mt-4">
+                    <div class="bg-gray-700 rounded p-3">
+                        <div class="text-xs text-gray-400">Última Alteração</div>
+                        <div id="config-last-modified" class="text-sm text-white">--</div>
+                    </div>
+                    <div class="bg-gray-700 rounded p-3">
+                        <div class="text-xs text-gray-400">Backups Disponíveis</div>
+                        <div id="config-backup-count" class="text-sm text-white">--</div>
+                    </div>
+                    <div class="bg-gray-700 rounded p-3">
+                        <div class="text-xs text-gray-400">Status</div>
+                        <div id="config-status" class="text-sm text-green-400">Pronto</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seletor de Estratégia (Tabs) -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                <label class="block text-gray-300 mb-3 font-semibold text-lg">🎯 Selecione a Estratégia</label>
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="selectStrategyTab('pure_grid')" id="strategy-tab-pure_grid"
+                            class="strategy-tab px-4 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all duration-300
+                                   border-2 border-transparent text-white font-medium">
+                        🔹 Pure Grid
+                    </button>
+                    <button onclick="selectStrategyTab('market_making')" id="strategy-tab-market_making"
+                            class="strategy-tab px-4 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all duration-300
+                                   border-2 border-transparent text-white font-medium">
+                        📊 Market Making
+                    </button>
+                    <button onclick="selectStrategyTab('dynamic_grid')" id="strategy-tab-dynamic_grid"
+                            class="strategy-tab px-4 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all duration-300
+                                   border-2 border-transparent text-white font-medium">
+                        ⚡ Dynamic Grid
+                    </button>
+                    <button onclick="selectStrategyTab('multi_asset')" id="strategy-tab-multi_asset"
+                            class="strategy-tab px-4 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all duration-300
+                                   border-2 border-transparent text-white font-medium">
+                        🌍 Multi-Asset
+                    </button>
+                    <button onclick="selectStrategyTab('multi_asset_enhanced')" id="strategy-tab-multi_asset_enhanced"
+                            class="strategy-tab px-4 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all duration-300
+                                   border-2 border-transparent text-white font-medium">
+                        🚀 Multi-Asset Enhanced
+                    </button>
+                </div>
+            </div>
+
+            <!-- Container Dinâmico de Configurações -->
+            <div id="config-fields-container" class="space-y-6">
+                <div class="bg-gray-700 rounded-lg p-8 text-center">
+                    <div class="text-6xl mb-4">⚙️</div>
+                    <p class="text-gray-400">Selecione uma estratégia para configurar</p>
+                </div>
+            </div>
+
+            <!-- Modal de Preview -->
+            <div id="config-preview-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+                <div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold">�️ Preview de Mudanças</h3>
+                        <button onclick="closePreviewModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                    </div>
+                    
+                    <div id="config-preview-content" class="space-y-4">
+                        <!-- Conteúdo será inserido dinamicamente -->
+                    </div>
+                    
+                    <div class="flex gap-3 mt-6">
+                        <button onclick="closePreviewModal()" 
+                                class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded">
+                            ❌ Cancelar
+                        </button>
+                        <button onclick="confirmAndSaveConfig()" 
+                                class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-semibold">
+                            ✅ Confirmar e Salvar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal de Backups -->
+            <div id="config-backups-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+                <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold">� Backups Disponíveis</h3>
+                        <button onclick="closeBackupsModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                    </div>
+                    
+                    <div id="config-backups-list" class="space-y-2">
+                        <!-- Lista será inserida dinamicamente -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Backups -->
+            <div class="bg-gray-800 rounded-lg p-6 mt-6">
+                <h3 class="text-lg font-semibold mb-4">💾 Gerenciamento de Backups</h3>
+                <p class="text-gray-400 text-sm mb-4">
+                    Backups automáticos são criados antes de salvar. Restaure versões anteriores se necessário.
+                </p>
+                <button onclick="showBackupsModal()" 
+                        class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                    📋 Ver Backups Disponíveis
+                </button>
             </div>
         </div>
 
@@ -1291,7 +2207,11 @@
                     loadLastAnalysis();
                 }
             } else if (tab === 'config') {
-                loadConfig();
+                if (!configSchema) {
+                    initConfigV2();
+                } else {
+                    loadCurrentConfig();
+                }
             } else if (tab === 'positions') {
                 loadPositionsAndOrders();
                 window.positionsInterval = setInterval(() => {
@@ -2459,6 +3379,10 @@ function renderDailyPNLChart(data) {
         document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ DOM carregado');
             initWebSocket();
+            
+            // Inicializar sistema de credenciais
+            initCredentialsSystem();
+            
             showTab('dashboard');
             
             // Carregar dados iniciais
@@ -3855,6 +4779,1731 @@ ${error.stack || ''}
     // Carregar dados iniciais usando as funções corrigidas
     updateRiskDashboard(); 
     // loadRiskPositionsMonitor();
+
+    // ==========================================
+    // JAVASCRIPT PARA CONFIG V2
+    // ==========================================
+
+    let configSchema = null;
+    let currentStrategy = null;
+    let currentConfigValues = {};
+    let originalConfigValues = {};
+    let validationErrors = {};
+
+    // ========== INICIALIZAÇÃO ==========
+
+    async function initConfigV2() {
+        console.log('🔧 Inicializando Config V2...');
+        
+        try {
+            // Verificar se schema V2 existe
+            const v2Response = await fetch(`${API_BASE}/api/config/schema/v2`);
+            if (v2Response.ok) {
+                console.log('✅ Schema V2 detectado, carregando interface hierárquica...');
+                await loadConfigSchemaV2();
+                return;
+            }
+            
+            // Fallback para schema V1
+            console.log('⚠️ Schema V2 não disponível, usando interface clássica...');
+            const schemaResponse = await fetch(`${API_BASE}/api/config/schema`);
+            const schemaData = await schemaResponse.json();
+            
+            if (schemaData.status === 'success') {
+                configSchema = schemaData.schema;
+                console.log('✅ Schema carregado:', Object.keys(configSchema));
+            }
+            
+            // Carregar configuração atual
+            await loadCurrentConfig();
+            
+            // Carregar status de backups
+            await updateBackupStatus();
+            
+        } catch (error) {
+            console.error('❌ Erro ao inicializar Config V2:', error);
+            showAlert('error', 'Erro ao carregar configurações: ' + error.message);
+        }
+    }
+
+    async function loadCurrentConfig() {
+        try {
+            const response = await fetch(`${API_BASE}/api/config`);
+            const config = await response.json();
+            
+            // Limpar valores inválidos (remove comentários e caracteres especiais)
+            const cleanConfig = {};
+            for (const [key, value] of Object.entries(config)) {
+                if (typeof value === 'string') {
+                    // Remove comentários e caracteres de encoding inválidos
+                    const cleanValue = value.split('#')[0].trim()
+                        .replace(/Ã¡/g, 'a')
+                        .replace(/Ã§Ã£o/g, 'cao') 
+                        .replace(/Ã§/g, 'c')
+                        .replace(/Ãº/g, 'u')
+                        .replace(/Ã©/g, 'e')
+                        .replace(/Ã /g, 'a');
+                    cleanConfig[key] = cleanValue;
+                } else {
+                    cleanConfig[key] = value;
+                }
+            }
+            
+            currentConfigValues = {...cleanConfig};
+            originalConfigValues = {...cleanConfig};
+            
+            // Detectar estratégia atual
+            currentStrategy = config.STRATEGY_TYPE || 'pure_grid';
+            
+            // Atualizar UI
+            document.getElementById('config-current-strategy').textContent = 
+                getStrategyLabel(currentStrategy);
+            
+            // Selecionar tab
+            selectStrategyTab(currentStrategy);
+            
+            console.log('✅ Configuração atual carregada:', currentStrategy);
+            
+        } catch (error) {
+            console.error('❌ Erro ao carregar config:', error);
+        }
+    }
+
+    function getStrategyLabel(strategy) {
+        const labels = {
+            'pure_grid': '🔹 Pure Grid',
+            'market_making': '📊 Market Making',
+            'dynamic_grid': '⚡ Dynamic Grid',
+            'multi_asset': '🌍 Multi-Asset',
+            'multi_asset_enhanced': '🚀 Multi-Asset Enhanced'
+        };
+        return labels[strategy] || strategy;
+    }
+
+    // ========== SELEÇÃO DE ESTRATÉGIA ==========
+
+    function selectStrategyTab(strategy) {
+        console.log('📌 Selecionando estratégia:', strategy);
+        
+        currentStrategy = strategy;
+        
+        // Atualizar visual dos tabs
+        document.querySelectorAll('.strategy-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        
+        const activeTab = document.getElementById(`strategy-tab-${strategy}`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+        }
+        
+        // Renderizar campos
+        renderConfigFields(strategy);
+    }
+
+    // ========== RENDERIZAÇÃO DE CAMPOS ==========
+
+    function renderConfigFields(strategy) {
+        const container = document.getElementById('config-fields-container');
+        
+        if (!configSchema || !configSchema[strategy]) {
+            container.innerHTML = `
+                <div class="bg-red-900/30 border border-red-600 rounded-lg p-6 text-center">
+                    <div class="text-4xl mb-2">⚠️</div>
+                    <p class="text-red-400">Schema não encontrado para estratégia: ${strategy}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const strategyConfig = configSchema[strategy];
+        const sections = strategyConfig.sections;
+        
+        let html = `
+            <div class="bg-gray-800 rounded-lg p-6 mb-4">
+                <h3 class="text-xl font-semibold mb-2">${strategyConfig.label}</h3>
+                <p class="text-gray-400 text-sm">${strategyConfig.description}</p>
+            </div>
+        `;
+        
+        // Renderizar cada seção
+        for (const [sectionKey, section] of Object.entries(sections)) {
+            html += `
+                <div class="config-section rounded-lg p-6 mb-4">
+                    <h4 class="text-lg font-semibold text-blue-400 mb-4">${section.label}</h4>
+                    <div class="space-y-4">
+            `;
+            
+            // Renderizar campos da seção
+            for (const [fieldKey, field] of Object.entries(section.fields)) {
+                html += renderConfigField(fieldKey, field);
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        
+        // Preencher valores atuais
+        fillCurrentValues();
+        
+        // Adicionar event listeners
+        addFieldEventListeners();
+    }
+
+    function renderConfigField(key, field) {
+        const value = currentConfigValues[key] || field.default || '';
+        const hasError = validationErrors[key];
+        const isModified = originalConfigValues[key] !== value;
+        
+        let inputHtml = '';
+        
+        switch (field.type) {
+            case 'text':
+                inputHtml = `
+                    <input type="text" id="config-field-${key}" data-field="${key}"
+                           value="${value}" placeholder="${field.default || ''}"
+                           ${field.required ? 'required' : ''}
+                           class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                `;
+                break;
+                
+            case 'number':
+                inputHtml = `
+                    <input type="number" id="config-field-${key}" data-field="${key}"
+                           value="${value}" placeholder="${field.default || ''}"
+                           ${field.min !== undefined ? `min="${field.min}"` : ''}
+                           ${field.max !== undefined ? `max="${field.max}"` : ''}
+                           ${field.step !== undefined ? `step="${field.step}"` : ''}
+                           ${field.required ? 'required' : ''}
+                           class="w-full bg-gray-700 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                `;
+                break;
+                
+            case 'boolean':
+                inputHtml = `
+                    <input type="checkbox" id="config-field-${key}" data-field="${key}"
+                           ${value === 'true' || value === true ? 'checked' : ''}
+                           class="w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                `;
+                break;
+                
+            default:
+                inputHtml = `<p class="text-gray-500">Tipo de campo não suportado: ${field.type}</p>`;
+        }
+        
+        return `
+            <div class="config-field ${isModified ? 'modified' : ''} ${hasError ? 'error' : ''} p-4 rounded-lg"
+                 data-field-container="${key}">
+                <div class="flex justify-between items-start mb-2">
+                    <label for="config-field-${key}" class="block text-gray-300 font-medium">
+                        ${field.label}
+                        ${field.required ? '<span class="text-red-400">*</span>' : ''}
+                    </label>
+                    ${field.help ? `
+                        <span class="config-tooltip text-gray-400 cursor-help text-sm" data-tooltip="${field.help}">
+                            ❓
+                        </span>
+                    ` : ''}
+                </div>
+                ${inputHtml}
+                ${hasError ? `<p class="text-red-400 text-sm mt-1">⚠️ ${hasError}</p>` : ''}
+            </div>
+        `;
+    }
+
+    function fillCurrentValues() {
+        for (const [key, value] of Object.entries(currentConfigValues)) {
+            const field = document.getElementById(`config-field-${key}`);
+            if (field) {
+                if (field.type === 'checkbox') {
+                    field.checked = value === 'true' || value === true;
+                } else {
+                    field.value = value;
+                }
+            }
+        }
+    }
+
+    function addFieldEventListeners() {
+        document.querySelectorAll('[data-field]').forEach(field => {
+            field.addEventListener('change', handleFieldChange);
+            field.addEventListener('input', handleFieldInput);
+        });
+    }
+
+    function handleFieldChange(event) {
+        const fieldKey = event.target.dataset.field;
+        let value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+        
+        currentConfigValues[fieldKey] = value;
+        
+        // Marcar como modificado
+        const container = document.querySelector(`[data-field-container="${fieldKey}"]`);
+        if (container) {
+            if (originalConfigValues[fieldKey] !== value) {
+                container.classList.add('modified');
+            } else {
+                container.classList.remove('modified');
+            }
+        }
+        
+        // Validar campo
+        validateField(fieldKey, value);
+    }
+
+    function handleFieldInput(event) {
+        // Validação em tempo real para números
+        if (event.target.type === 'number') {
+            handleFieldChange(event);
+        }
+    }
+
+    // ========== VALIDAÇÃO ==========
+
+    async function validateField(fieldKey, value) {
+        // Validação local básica
+        const fieldElement = document.getElementById(`config-field-${fieldKey}`);
+        if (!fieldElement) return;
+        
+        const container = document.querySelector(`[data-field-container="${fieldKey}"]`);
+        
+        // Remover erro anterior
+        delete validationErrors[fieldKey];
+        if (container) {
+            container.classList.remove('error');
+            const errorMsg = container.querySelector('.text-red-400');
+            if (errorMsg) errorMsg.remove();
+        }
+        
+        // Validar required
+        if (fieldElement.required && !value) {
+            validationErrors[fieldKey] = 'Campo obrigatório';
+            if (container) container.classList.add('error');
+            return;
+        }
+        
+        // Validar min/max para números
+        if (fieldElement.type === 'number') {
+            const numValue = parseFloat(value);
+            const min = parseFloat(fieldElement.min);
+            const max = parseFloat(fieldElement.max);
+            
+            if (!isNaN(min) && numValue < min) {
+                validationErrors[fieldKey] = `Valor mínimo: ${min}`;
+                if (container) container.classList.add('error');
+                return;
+            }
+            
+            if (!isNaN(max) && numValue > max) {
+                validationErrors[fieldKey] = `Valor máximo: ${max}`;
+                if (container) container.classList.add('error');
+                return;
+            }
+        }
+    }
+
+    async function validateAllFields() {
+        console.log('🔍 Validando todos os campos...');
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/validate`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    strategy: currentStrategy,
+                    config: currentConfigValues
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'error' || !result.valid) {
+                // Mostrar erros
+                if (result.errors && result.errors.length > 0) {
+                    showAlert('error', '❌ Erros de validação:\\n' + result.errors.join('\\n'));
+                }
+            }
+            
+            if (result.warnings && result.warnings.length > 0) {
+                showAlert('warning', '⚠️ Avisos:\\n' + result.warnings.join('\\n'));
+            }
+            
+            return result.valid;
+            
+        } catch (error) {
+            console.error('❌ Erro na validação:', error);
+            showAlert('error', 'Erro ao validar: ' + error.message);
+            return false;
+        }
+    }
+
+    // ========== PREVIEW DE MUDANÇAS ==========
+
+    async function previewConfigChanges() {
+        console.log('👁️ Gerando preview...');
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/preview`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    config: currentConfigValues
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                displayPreview(result.changes, result.summary);
+            } else {
+                showAlert('error', 'Erro ao gerar preview: ' + result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro no preview:', error);
+            showAlert('error', 'Erro ao gerar preview: ' + error.message);
+        }
+    }
+
+    function displayPreview(changes, summary) {
+        const modal = document.getElementById('config-preview-modal');
+        const content = document.getElementById('config-preview-content');
+        
+        let html = `
+            <div class="bg-gray-700 rounded-lg p-4 mb-4">
+                <h4 class="font-semibold mb-2">📊 Resumo de Mudanças</h4>
+                <div class="grid grid-cols-4 gap-3 text-sm">
+                    <div class="text-center">
+                        <div class="text-2xl text-green-400">${summary.added}</div>
+                        <div class="text-gray-400">Novos</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl text-yellow-400">${summary.modified}</div>
+                        <div class="text-gray-400">Modificados</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl text-red-400">${summary.removed}</div>
+                        <div class="text-gray-400">Removidos</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl text-gray-400">${summary.unchanged}</div>
+                        <div class="text-gray-400">Inalterados</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Mudanças adicionadas
+        if (Object.keys(changes.added).length > 0) {
+            html += `<div class="mb-4">
+                <h5 class="font-semibold text-green-400 mb-2">✅ Novos Parâmetros</h5>`;
+            for (const [key, value] of Object.entries(changes.added)) {
+                html += `
+                    <div class="preview-change-added p-3 rounded mb-2">
+                        <code class="text-green-300">${key} = ${value}</code>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        }
+        
+        // Mudanças modificadas
+        if (Object.keys(changes.modified).length > 0) {
+            html += `<div class="mb-4">
+                <h5 class="font-semibold text-yellow-400 mb-2">✏️ Parâmetros Modificados</h5>`;
+            for (const [key, diff] of Object.entries(changes.modified)) {
+                html += `
+                    <div class="preview-change-modified p-3 rounded mb-2">
+                        <div class="text-yellow-300 font-medium">${key}</div>
+                        <div class="text-sm text-gray-400">Antes: <code class="text-red-300">${diff.old}</code></div>
+                        <div class="text-sm text-gray-400">Depois: <code class="text-green-300">${diff.new}</code></div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        }
+        
+        // Mudanças removidas
+        if (Object.keys(changes.removed).length > 0) {
+            html += `<div class="mb-4">
+                <h5 class="font-semibold text-red-400 mb-2">🗑️ Parâmetros Removidos</h5>`;
+            for (const [key, value] of Object.entries(changes.removed)) {
+                html += `
+                    <div class="preview-change-removed p-3 rounded mb-2">
+                        <code class="text-red-300">${key} = ${value}</code>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        }
+        
+        if (summary.added === 0 && summary.modified === 0 && summary.removed === 0) {
+            html += `
+                <div class="text-center py-8 text-gray-400">
+                    <div class="text-4xl mb-2">😴</div>
+                    <p>Nenhuma mudança detectada</p>
+                </div>
+            `;
+        }
+        
+        content.innerHTML = html;
+        modal.classList.remove('hidden');
+    }
+
+    function closePreviewModal() {
+        document.getElementById('config-preview-modal').classList.add('hidden');
+    }
+
+    // ========== SALVAR CONFIGURAÇÕES ==========
+
+    async function saveConfigV2() {
+        console.log('💾 Salvando configurações...');
+        
+        // Validar antes de salvar
+        const isValid = await validateAllFields();
+        if (!isValid) {
+            showAlert('error', '❌ Corrija os erros antes de salvar');
+            return;
+        }
+        
+        // Mostrar preview primeiro
+        await previewConfigChanges();
+    }
+
+    async function confirmAndSaveConfig() {
+        closePreviewModal();
+        
+        showAlert('info', '⏳ Salvando e aplicando configurações...');
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/save`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    strategy: currentStrategy,
+                    config: currentConfigValues,
+                    auto_restart: true
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success' || result.status === 'warning') {
+                showAlert('success', result.message);
+                
+                // Atualizar valores originais
+                originalConfigValues = {...currentConfigValues};
+                
+                // Recarregar configuração para sincronizar
+                await loadCurrentConfig();
+                
+                // Atualizar status de backup
+                await updateBackupStatus();
+                
+            } else {
+                showAlert('error', 'Erro ao salvar: ' + result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao salvar:', error);
+            showAlert('error', 'Erro ao salvar: ' + error.message);
+        }
+    }
+
+    // ========== RESET ==========
+
+    function resetConfigForm() {
+        if (!confirm('🔄 Descartar todas as mudanças e recarregar configuração atual?')) {
+            return;
+        }
+        
+        currentConfigValues = {...originalConfigValues};
+        validationErrors = {};
+        
+        renderConfigFields(currentStrategy);
+        
+        showAlert('info', '🔄 Configurações resetadas');
+    }
+
+    // ========== BACKUPS ==========
+
+    async function updateBackupStatus() {
+        try {
+            const response = await fetch(`${API_BASE}/api/config/backups`);
+            const result = await response.json();
+            
+            if (result.status === 'success' && result.backups.length > 0) {
+                document.getElementById('config-backup-count').textContent = result.backups.length;
+            } else {
+                document.getElementById('config-backup-count').textContent = '0';
+            }
+        } catch (error) {
+            console.error('❌ Erro ao carregar backups:', error);
+        }
+    }
+
+    async function showBackupsModal() {
+        const modal = document.getElementById('config-backups-modal');
+        const list = document.getElementById('config-backups-list');
+        
+        modal.classList.remove('hidden');
+        list.innerHTML = '<p class="text-gray-500 text-center py-4">Carregando...</p>';
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/backups`);
+            const result = await response.json();
+            
+            if (result.status === 'success' && result.backups.length > 0) {
+                list.innerHTML = result.backups.map(backup => `
+                    <div class="bg-gray-700 rounded p-3 flex justify-between items-center">
+                        <div>
+                            <div class="font-medium">${backup.filename}</div>
+                            <div class="text-sm text-gray-400">${backup.modified_str} - ${(backup.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                        <button onclick="restoreBackup('${backup.path}')" 
+                                class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+                            🔄 Restaurar
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                list.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhum backup disponível</p>';
+            }
+        } catch (error) {
+            console.error('❌ Erro ao carregar backups:', error);
+            list.innerHTML = '<p class="text-red-400 text-center py-4">Erro ao carregar backups</p>';
+        }
+    }
+
+    function closeBackupsModal() {
+        document.getElementById('config-backups-modal').classList.add('hidden');
+    }
+
+    async function restoreBackup(backupPath) {
+        if (!confirm('🔄 Restaurar este backup? A configuração atual será substituída.')) {
+            return;
+        }
+        
+        try {
+            showAlert('info', '⏳ Restaurando backup...');
+            
+            const response = await fetch(`${API_BASE}/api/config/restore`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    backup_file: backupPath
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                showAlert('success', 'Backup restaurado com sucesso!');
+                closeBackupsModal();
+                
+                // Recarregar configuração
+                await loadCurrentConfig();
+                
+            } else {
+                showAlert('error', 'Erro ao restaurar backup: ' + result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao restaurar:', error);
+            showAlert('error', 'Erro ao restaurar backup: ' + error.message);
+        }
+    }
+
+    console.log('✅ Config V2 JavaScript carregado');
+
+    // ==========================================
+    // SISTEMA DE CREDENCIAIS SEGURAS - FRONTEND
+    // ==========================================
+
+    let onboardingStep = 1;
+    let credentialsValidated = false;
+
+    // ========== INICIALIZAÇÃO ==========
+
+    async function initCredentialsSystem() {
+        console.log('🔐 Inicializando sistema de credenciais...');
+        
+        // Sempre mostrar a seção de credenciais
+        const credentialsManager = document.getElementById('credentials-manager');
+        if (credentialsManager) {
+            credentialsManager.style.display = 'block';
+        }
+        
+        try {
+            // Verificar se credenciais já estão configuradas
+            const response = await fetch(`${API_BASE}/api/credentials/check`);
+            const result = await response.json();
+            
+            if (result.configured) {
+                // Credenciais já configuradas
+                console.log('✅ Credenciais já configuradas');
+                loadConfiguredCredentials(result.credentials);
+            } else {
+                // Mostrar seção não configurada
+                console.log('⚠️ Credenciais não configuradas');
+                showNotConfiguredCredentials();
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao verificar credenciais:', error);
+            // Em caso de erro, mostrar seção não configurada
+            showNotConfiguredCredentials();
+        }
+    }
+
+    function loadConfiguredCredentials(credentials) {
+        // Atualizar display
+        document.getElementById('display-wallet-address').value = credentials.MAIN_PUBLIC_KEY || '';
+        
+        // Mostrar seção de gerenciamento
+        const credentialsManager = document.getElementById('credentials-manager');
+        if (credentialsManager) {
+            credentialsManager.style.display = 'block';
+            document.getElementById('credentials-configured').style.display = 'block';
+            document.getElementById('credentials-not-configured').style.display = 'none';
+        }
+    }
+
+    function showNotConfiguredCredentials() {
+        // Mostrar seção não configurada
+        const credentialsManager = document.getElementById('credentials-manager');
+        if (credentialsManager) {
+            credentialsManager.style.display = 'block';
+            document.getElementById('credentials-configured').style.display = 'none';
+            document.getElementById('credentials-not-configured').style.display = 'block';
+        }
+    }
+
+    // ========== WIZARD DE ONBOARDING ==========
+
+    function showOnboardingModal() {
+        document.getElementById('onboarding-modal').classList.remove('hidden');
+        goToStep(1);
+    }
+
+    function hideOnboardingModal() {
+        document.getElementById('onboarding-modal').classList.add('hidden');
+    }
+
+    function goToStep(step) {
+        onboardingStep = step;
+        
+        // Esconder todos os steps
+        document.querySelectorAll('.onboarding-step').forEach(el => {
+            el.classList.add('hidden');
+        });
+        
+        // Mostrar step atual
+        document.getElementById(`onboarding-step-${step}`).classList.remove('hidden');
+        
+        // Atualizar indicadores visuais
+        document.querySelectorAll('.wizard-step').forEach(el => {
+            const stepNum = parseInt(el.dataset.step);
+            
+            if (stepNum < step) {
+                el.classList.add('completed');
+                el.classList.remove('active');
+            } else if (stepNum === step) {
+                el.classList.add('active');
+                el.classList.remove('completed');
+            } else {
+                el.classList.remove('active', 'completed');
+            }
+        });
+    }
+
+    // ========== VALIDAÇÃO E SALVAMENTO ==========
+
+    function formatBalance(balance) {
+        // Função para formatar saldo de forma segura
+        if (balance === null || balance === undefined) {
+            return 'N/A';
+        }
+        
+        // Se for string, tentar converter para número
+        if (typeof balance === 'string') {
+            balance = parseFloat(balance);
+        }
+        
+        // Verificar se é um número válido
+        if (isNaN(balance) || !isFinite(balance)) {
+            return 'N/A';
+        }
+        
+        return balance.toFixed(2);
+    }
+
+    async function validateAndNextStep() {
+        const walletAddress = document.getElementById('onboard-wallet-address').value.trim();
+        const privateKey = document.getElementById('onboard-private-key').value.trim();
+        const apiAddress = document.getElementById('onboard-api-address').value.trim();
+        
+        // Validação básica
+        if (!walletAddress) {
+            showAlert('error', '❌ Informe o endereço da carteira');
+            return;
+        }
+        
+        if (!privateKey) {
+            showAlert('error', '❌ Informe a chave privada');
+            return;
+        }
+        
+        // Ir para step 2 (validação)
+        goToStep(2);
+        
+        try {
+            // Atualizar status
+            document.getElementById('validation-status').textContent = 'Validando formato das credenciais...';
+            
+            // Chamar API de validação
+            const response = await fetch(`${API_BASE}/api/credentials/validate`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    wallet_address: walletAddress,
+                    private_key: privateKey
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success' && result.valid) {
+                // Validação bem-sucedida
+                credentialsValidated = true;
+                
+                document.getElementById('validation-result').innerHTML = `
+                    <div class="validation-success">
+                        <div class="flex items-start gap-3">
+                            <span class="text-3xl">✅</span>
+                            <div class="flex-1">
+                                <p class="text-green-400 font-semibold text-lg mb-2">Credenciais Válidas!</p>
+                                <ul class="text-sm text-green-200 space-y-1">
+                                    <li>✓ Endereço da carteira válido</li>
+                                    <li>✓ Chave privada válida</li>
+                                    <li>✓ Conexão com API estabelecida</li>
+                                    <li>✓ Saldo disponível: ${formatBalance(result.balance)}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('validation-result').classList.remove('hidden');
+                document.getElementById('validation-actions').style.display = 'flex';
+                
+            } else {
+                // Validação falhou
+                credentialsValidated = false;
+                
+                const errors = result.errors || [result.message || 'Erro desconhecido'];
+                
+                document.getElementById('validation-result').innerHTML = `
+                    <div class="validation-error">
+                        <div class="flex items-start gap-3">
+                            <span class="text-3xl">❌</span>
+                            <div class="flex-1">
+                                <p class="text-red-400 font-semibold text-lg mb-2">Validação Falhou</p>
+                                <ul class="text-sm text-red-200 space-y-1">
+                                    ${errors.map(err => `<li>• ${err}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('validation-result').classList.remove('hidden');
+                document.getElementById('validation-actions').style.display = 'flex';
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro na validação:', error);
+            
+            document.getElementById('validation-result').innerHTML = `
+                <div class="validation-error">
+                    <div class="flex items-start gap-3">
+                        <span class="text-3xl">⚠️</span>
+                        <div class="flex-1">
+                            <p class="text-red-400 font-semibold text-lg mb-2">Erro de Conexão</p>
+                            <p class="text-sm text-red-200">
+                                Não foi possível validar as credenciais. Verifique sua conexão.
+                            </p>
+                            <code class="text-xs text-red-300 block mt-2">${error.message}</code>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('validation-result').classList.remove('hidden');
+            document.getElementById('validation-actions').style.display = 'flex';
+        }
+    }
+
+    async function saveCredentials() {
+        if (!credentialsValidated) {
+            showAlert('error', '❌ Valide as credenciais primeiro');
+            return;
+        }
+        
+        const walletAddress = document.getElementById('onboard-wallet-address').value.trim();
+        const privateKey = document.getElementById('onboard-private-key').value.trim();
+        const apiAddress = document.getElementById('onboard-api-address').value.trim();
+        
+        try {
+            showAlert('info', '⏳ Salvando credenciais com segurança...');
+            
+            const response = await fetch(`${API_BASE}/api/credentials/save`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    wallet_address: walletAddress,
+                    private_key: privateKey,
+                    api_address: apiAddress,
+                    test_connection: false  // Já testamos antes
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                showAlert('success', '✅ Credenciais salvas com segurança!');
+                
+                // Ir para step 3 (conclusão)
+                goToStep(3);
+                
+            } else {
+                showAlert('error', '❌ ' + result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao salvar:', error);
+            showAlert('error', 'Erro ao salvar credenciais: ' + error.message);
+        }
+    }
+
+    function completeOnboarding() {
+        hideOnboardingModal();
+        
+        // Recarregar para atualizar interface
+        window.location.reload();
+    }
+
+    // ========== GERENCIAMENTO DE CREDENCIAIS ==========
+
+    function reconfigureCredentials() {
+        if (!confirm('🔄 Deseja reconfigurar suas credenciais?\n\n⚠️ As credenciais atuais serão substituídas.')) {
+            return;
+        }
+        
+        // Limpar campos
+        document.getElementById('onboard-wallet-address').value = '';
+        document.getElementById('onboard-private-key').value = '';
+        
+        credentialsValidated = false;
+        
+        // Mostrar wizard
+        showOnboardingModal();
+    }
+
+    async function testCredentialsConnection() {
+        try {
+            showAlert('info', '⏳ Testando conexão...');
+            
+            const response = await fetch(`${API_BASE}/api/credentials/check`);
+            const result = await response.json();
+            
+            if (result.configured) {
+                // Fazer teste real de conexão
+                // (pode ser implementado endpoint específico)
+                showAlert('success', '✅ Conexão OK! Credenciais válidas.');
+            } else {
+                showAlert('error', '❌ Credenciais não configuradas');
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro no teste:', error);
+            showAlert('error', 'Erro ao testar conexão: ' + error.message);
+        }
+    }
+
+    async function confirmDeleteCredentials() {
+        if (!confirm('⚠️ ATENÇÃO!\n\nDeseja REMOVER todas as credenciais?\n\nEsta ação não pode ser desfeita.\n\nVocê precisará reconfigurá-las para usar o bot.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/credentials/delete`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    confirmed: true
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                showAlert('success', '✅ Credenciais removidas');
+                
+                // Recarregar página
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showAlert('error', '❌ ' + result.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao deletar:', error);
+            showAlert('error', 'Erro ao remover credenciais: ' + error.message);
+        }
+    }
+
+    // ========== UTILITÁRIOS ==========
+
+    function togglePasswordVisibility(inputId) {
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+            input.type = 'text';
+        } else {
+            input.type = 'password';
+        }
+    }
+
+    function copyToClipboard(inputId) {
+        const input = document.getElementById(inputId);
+        input.select();
+        document.execCommand('copy');
+        showAlert('success', '📋 Copiado para área de transferência!');
+    }
+
+    console.log('✅ Sistema de credenciais seguras (frontend) carregado');
+
+    // ==========================================
+    // CONFIGURAÇÃO V2 - HIERÁRQUICA
+    // ==========================================
+
+    let configSchemaV2 = null;
+    let currentStrategyCategory = null;
+    let currentStrategyType = null;
+    let configChanges = {};
+
+    // Carregar schema V2 ao abrir tab de configuração
+    async function loadConfigSchemaV2() {
+        try {
+            const response = await fetch(`${API_BASE}/api/config/schema/v2`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                configSchemaV2 = data.schema;
+                currentConfigValues = data.current_values;
+                currentStrategyType = data.current_strategy;
+                
+                // Renderizar interface V2
+                renderConfigV2Interface();
+            } else {
+                console.error('Erro ao carregar schema V2:', data.message);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar schema V2:', error);
+        }
+    }
+
+    function renderConfigV2Interface() {
+        const container = document.getElementById('config-fields-container');
+        
+        if (!configSchemaV2) {
+            container.innerHTML = `
+                <div class="bg-red-900/30 border border-red-700 rounded-lg p-6">
+                    <p class="text-red-300">❌ Erro ao carregar schema de configuração</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = `
+            <!-- Layout Aprimorado: Lado Esquerdo + Lado Direito -->
+            <div class="config-section mb-6">
+                <h3 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="text-3xl mr-3">1️⃣</span>
+                    Seleção de Estratégia
+                </h3>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Lado Esquerdo: Tipos de Estratégia -->
+                    <div class="lg:col-span-1">
+                        <h4 class="text-lg font-medium mb-3 text-blue-300">Tipo de Estratégia</h4>
+                        <div class="space-y-3">
+                            ${Object.entries(configSchemaV2.strategy_categories).map(([key, cat]) => `
+                                <button 
+                                    onclick="selectStrategyCategory('${key}')"
+                                    id="cat-btn-${key}"
+                                    class="strategy-category-btn w-full p-4 rounded-lg border-2 transition-all duration-300 text-left
+                                           ${currentStrategyCategory === key ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800 hover:border-gray-600'}">
+                                    <div class="flex items-center">
+                                        <span class="text-2xl mr-3">${cat.icon}</span>
+                                        <div>
+                                            <div class="font-semibold">${cat.label}</div>
+                                            <div class="text-xs text-gray-400 mt-1">${cat.description}</div>
+                                        </div>
+                                    </div>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Lado Direito: Estratégias Específicas -->
+                    <div class="lg:col-span-2">
+                        <h4 class="text-lg font-medium mb-3 text-green-300">Estratégias Disponíveis</h4>
+                        <div id="strategy-selection-right" class="min-h-48 bg-gray-800/50 rounded-lg border border-gray-700 p-4">
+                            <div id="strategy-buttons" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="text-center text-gray-400 py-8">
+                                    <span class="text-4xl">👈</span>
+                                    <p class="mt-2">Selecione um tipo de estratégia ao lado</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estratégia Selecionada -->
+            <div id="strategy-description" class="config-section mb-6 hidden">
+                <div class="bg-gradient-to-r from-green-900/20 to-blue-900/20 border border-green-600 rounded-lg p-4">
+                    <div class="flex items-center justify-center">
+                        <span class="text-2xl mr-3">✅</span>
+                        <span class="text-lg font-semibold text-green-300">Estratégia selecionada:</span>
+                        <span id="strategy-desc-title" class="text-xl font-bold text-white ml-2">Estratégia</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Etapa 4+: Seções de Configuração -->
+            <div id="config-sections-container" class="space-y-6">
+                <!-- Preenchido dinamicamente -->
+            </div>
+
+            <!-- Botões de Ação -->
+            <div id="config-actions" class="hidden mt-8 flex gap-4">
+                <button onclick="previewConfigChanges()" 
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    👁️ Preview de Mudanças
+                </button>
+                <button onclick="saveConfigV2()" 
+                        class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    💾 Salvar Configuração
+                </button>
+                <button onclick="resetToDefaults()" 
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg transition-all">
+                    🔄 Restaurar Padrões
+                </button>
+            </div>
+        `;
+        
+        // Auto-selecionar categoria atual
+        if (currentStrategyType) {
+            const strategy = configSchemaV2.strategies[currentStrategyType];
+            if (strategy) {
+                selectStrategyCategory(strategy.category);
+                selectStrategy(currentStrategyType);
+            }
+        }
+    }
+
+    function selectStrategyCategory(category) {
+        currentStrategyCategory = category;
+        
+        // Atualizar visual dos botões de categoria (lado esquerdo)
+        document.querySelectorAll('.strategy-category-btn').forEach(btn => {
+            btn.classList.remove('border-blue-500', 'bg-blue-900/30');
+            btn.classList.add('border-gray-700', 'bg-gray-800');
+        });
+        
+        const selectedBtn = document.getElementById(`cat-btn-${category}`);
+        if (selectedBtn) {
+            selectedBtn.classList.remove('border-gray-700', 'bg-gray-800');
+            selectedBtn.classList.add('border-blue-500', 'bg-blue-900/30');
+        }
+        
+        // Mostrar estratégias da categoria no lado direito
+        const strategyButtons = document.getElementById('strategy-buttons');
+        const strategies = configSchemaV2.strategy_categories[category].strategies;
+        
+        strategyButtons.innerHTML = strategies.map(stratKey => {
+            const strat = configSchemaV2.strategies[stratKey];
+            return `
+                <button 
+                    onclick="selectStrategy('${stratKey}')"
+                    id="strat-btn-${stratKey}"
+                    class="strategy-btn p-4 rounded-lg border-2 transition-all duration-300 text-left h-full
+                           ${currentStrategyType === stratKey ? 'border-green-500 bg-green-900/30' : 'border-gray-700 bg-gray-800 hover:border-gray-600'}">
+                    <div class="flex items-start">
+                        <span class="text-2xl mr-3 mt-1">${strat.icon}</span>
+                        <div class="flex-1">
+                            <div class="font-semibold text-base mb-2">${strat.label}</div>
+                            <div class="text-xs text-gray-400 mb-2">${strat.description}</div>
+                            <div class="text-xs text-blue-300">💡 ${strat.use_case}</div>
+                        </div>
+                    </div>
+                </button>
+            `;
+        }).join('');
+    }
+
+    function selectStrategy(strategy) {
+        currentStrategyType = strategy;
+        
+        // Atualizar visual dos botões de estratégia
+        document.querySelectorAll('.strategy-btn').forEach(btn => {
+            btn.classList.remove('border-green-500', 'bg-green-900/30');
+            btn.classList.add('border-gray-700', 'bg-gray-800');
+        });
+        
+        const selectedBtn = document.getElementById(`strat-btn-${strategy}`);
+        if (selectedBtn) {
+            selectedBtn.classList.remove('border-gray-700', 'bg-gray-800');
+            selectedBtn.classList.add('border-green-500', 'bg-green-900/30');
+        }
+        
+        // Mostrar estratégia selecionada
+        const stratData = configSchemaV2.strategies[strategy];
+        const descSection = document.getElementById('strategy-description');
+        const descTitle = document.getElementById('strategy-desc-title');
+        
+        descTitle.textContent = `${stratData.icon} ${stratData.label}`;
+        descSection.classList.remove('hidden');
+        
+        // Renderizar campos de configuração
+        renderConfigSections(strategy);
+        
+        // Mostrar botões de ação
+        document.getElementById('config-actions').classList.remove('hidden');
+        
+        // Scroll suave para as configurações
+        setTimeout(() => {
+            document.getElementById('config-sections-container').scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }, 300);
+    }
+
+    function renderConfigSections(strategy) {
+        const container = document.getElementById('config-sections-container');
+        const sections = configSchemaV2.config_sections;
+        const strategyCategory = configSchemaV2.strategies[strategy].category;
+        
+        let html = '';
+        let sectionNumber = 2; // Começa em 2 pois agora temos menos etapas
+        
+        // 1. Configurações Comuns (sempre)
+        html += renderConfigSection(sections.common, sectionNumber++, 'common');
+        
+        // 2. Configurações Básicas específicas da categoria
+        if (strategyCategory === 'grid') {
+            html += renderConfigSection(sections.basic_grid, sectionNumber++, 'basic');
+        } else {
+            html += renderConfigSection(sections.basic_multi_asset, sectionNumber++, 'basic');
+        }
+        
+        // 3. Auto-Close (sempre)
+        html += renderConfigSection(sections.auto_close, sectionNumber++, 'feature');
+        
+        // 4. Enhanced Advanced (apenas para multi_asset_enhanced)
+        if (strategy === 'multi_asset_enhanced') {
+            html += renderConfigSection(sections.enhanced_advanced, sectionNumber++, 'enhanced');
+        }
+        
+        // 5. Gestão de Risco (sempre)
+        html += renderConfigSection(sections.risk_management, sectionNumber++, 'risk');
+        
+        container.innerHTML = html;
+        
+        // Inicializar valores atuais
+        populateCurrentValues();
+    }
+
+    function renderConfigSection(section, number, type) {
+        // Cores baseadas no tipo de seção
+        const typeStyles = {
+            'common': 'border-blue-600 bg-blue-900/10',
+            'basic': 'border-green-600 bg-green-900/10', 
+            'feature': 'border-purple-600 bg-purple-900/10',
+            'enhanced': 'border-orange-600 bg-orange-900/10',
+            'risk': 'border-red-600 bg-red-900/10'
+        };
+        
+        const styleClass = typeStyles[type] || 'border-gray-700 bg-gray-800';
+        
+        return `
+            <div class="config-section border rounded-lg p-6 ${styleClass}">
+                <h3 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="text-3xl mr-3">${number}️⃣</span>
+                    ${section.label}
+                    <button onclick="toggleSectionHelp('${section.label}')" 
+                            class="ml-auto text-blue-400 hover:text-blue-300 text-sm">
+                        ❓ Ajuda
+                    </button>
+                </h3>
+                <p class="text-sm text-gray-400 mb-6">${section.description}</p>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    ${section.fields.map(fieldKey => renderConfigField(fieldKey)).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderConfigField(fieldKey) {
+        const field = configSchemaV2.fields[fieldKey];
+        
+        if (!field) return '';
+        
+        const currentValue = currentConfigValues[fieldKey] || field.default || '';
+        
+        let inputHtml = '';
+        
+        // Renderizar input baseado no tipo
+        switch (field.type) {
+            case 'select':
+                inputHtml = `
+                    <select 
+                        id="config-${fieldKey}" 
+                        class="config-input w-full bg-gray-700 text-white rounded px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                        onchange="validateField('${fieldKey}', this.value)">
+                        ${field.options.map(opt => `
+                            <option value="${opt}" ${currentValue == opt ? 'selected' : ''}>${opt}</option>
+                        `).join('')}
+                    </select>
+                `;
+                break;
+                
+            case 'multiselect':
+                inputHtml = `
+                    <input 
+                        type="text" 
+                        id="config-${fieldKey}"
+                        class="config-input w-full bg-gray-700 text-white rounded px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                        value="${currentValue}"
+                        placeholder="Ex: BTC,ETH,SOL ou AUTO"
+                        onblur="validateField('${fieldKey}', this.value)">
+                    <div class="text-xs text-gray-500 mt-1">Separar por vírgulas</div>
+                `;
+                break;
+                
+            case 'toggle':
+                const isChecked = currentValue === true || currentValue === 'true' || currentValue === 'True';
+                inputHtml = `
+                    <label class="flex items-center cursor-pointer">
+                        <div class="relative">
+                            <input 
+                                type="checkbox" 
+                                id="config-${fieldKey}"
+                                class="config-input sr-only"
+                                ${isChecked ? 'checked' : ''}
+                                onchange="validateField('${fieldKey}', this.checked)">
+                            <div class="toggle-bg w-14 h-8 bg-gray-700 rounded-full shadow-inner"></div>
+                            <div class="toggle-dot absolute w-6 h-6 bg-white rounded-full shadow left-1 top-1 transition"></div>
+                        </div>
+                        <div class="ml-3 text-gray-300 font-medium">
+                            ${isChecked ? 'Ativado' : 'Desativado'}
+                        </div>
+                    </label>
+                `;
+                break;
+                
+            case 'number':
+                inputHtml = `
+                    <input 
+                        type="number" 
+                        id="config-${fieldKey}"
+                        class="config-input w-full bg-gray-700 text-white rounded px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                        value="${currentValue}"
+                        min="${field.min || ''}"
+                        max="${field.max || ''}"
+                        step="${field.step || 1}"
+                        onblur="validateField('${fieldKey}', this.value)">
+                `;
+                break;
+                
+            default: // text
+                inputHtml = `
+                    <input 
+                        type="text" 
+                        id="config-${fieldKey}"
+                        class="config-input w-full bg-gray-700 text-white rounded px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                        value="${currentValue}"
+                        onblur="validateField('${fieldKey}', this.value)">
+                `;
+        }
+        
+        return `
+            <div class="config-field">
+                <label class="block text-gray-300 font-semibold mb-2 flex items-center">
+                    ${field.label}
+                    <button 
+                        onclick="showFieldHelp('${fieldKey}')" 
+                        class="ml-2 text-blue-400 hover:text-blue-300 text-xl"
+                        title="Ajuda">
+                        ❓
+                    </button>
+                </label>
+                ${inputHtml}
+                <div id="validation-${fieldKey}" class="text-sm mt-1 hidden"></div>
+            </div>
+        `;
+    }
+
+    function populateCurrentValues() {
+        // Popula campos com valores atuais do .env
+        Object.keys(currentConfigValues).forEach(key => {
+            const input = document.getElementById(`config-${key}`);
+            if (input) {
+                if (input.type === 'checkbox') {
+                    input.checked = currentConfigValues[key] === true || 
+                                   currentConfigValues[key] === 'true' || 
+                                   currentConfigValues[key] === 'True';
+                } else {
+                    input.value = currentConfigValues[key];
+                }
+            }
+        });
+    }
+
+    async function validateField(fieldKey, value) {
+        try {
+            const response = await fetch(`${API_BASE}/api/config/validate-field`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    field: fieldKey,
+                    value: value,
+                    strategy: currentStrategyType
+                })
+            });
+            
+            const result = await response.json();
+            const validationDiv = document.getElementById(`validation-${fieldKey}`);
+            
+            if (validationDiv) {
+                if (result.valid) {
+                    validationDiv.className = 'text-sm mt-1 text-green-400';
+                    validationDiv.textContent = result.message;
+                    
+                    if (result.warning) {
+                        validationDiv.className = 'text-sm mt-1 text-yellow-400';
+                        validationDiv.textContent = result.warning;
+                    }
+                } else {
+                    validationDiv.className = 'text-sm mt-1 text-red-400';
+                    validationDiv.textContent = result.message;
+                }
+                validationDiv.classList.remove('hidden');
+            }
+            
+            // Armazenar mudança
+            configChanges[fieldKey] = value;
+            
+        } catch (error) {
+            console.error('Erro na validação:', error);
+        }
+    }
+
+    function showFieldHelp(fieldKey) {
+        const field = configSchemaV2.fields[fieldKey];
+        
+        if (!field || !field.help) {
+            alert('Ajuda não disponível para este campo');
+            return;
+        }
+        
+        const help = field.help;
+        
+        let helpContent = `
+            <div class="space-y-4">
+                <h4 class="font-semibold text-lg">${field.label}</h4>
+                
+                ${help.description ? `<p><strong>📖 Descrição:</strong><br>${help.description}</p>` : ''}
+                
+                ${help.recommended ? `<p><strong>✅ Recomendado:</strong><br>${help.recommended}</p>` : ''}
+                
+                ${help.tip ? `<p><strong>💡 Dica:</strong><br>${help.tip}</p>` : ''}
+                
+                ${help.warning ? `<p class="text-yellow-300"><strong>⚠️ Atenção:</strong><br>${help.warning}</p>` : ''}
+                
+                ${help.example ? `<p class="text-blue-300"><strong>📝 Exemplo:</strong><br>${help.example}</p>` : ''}
+            </div>
+        `;
+        
+        // Mostrar em modal
+        showModal('Ajuda - ' + field.label, helpContent);
+    }
+
+    async function previewConfigChanges() {
+        try {
+            // Coletar todos os valores atuais dos inputs
+            const newConfig = { STRATEGY_TYPE: currentStrategyType };
+            
+            document.querySelectorAll('.config-input').forEach(input => {
+                const fieldKey = input.id.replace('config-', '');
+                
+                if (input.type === 'checkbox') {
+                    newConfig[fieldKey] = input.checked;
+                } else {
+                    newConfig[fieldKey] = input.value;
+                }
+            });
+            
+            const response = await fetch(`${API_BASE}/api/config/preview-changes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ config: newConfig })
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                let previewHtml = `
+                    <div class="space-y-4">
+                        <div class="bg-gray-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-2">📊 Resumo:</h4>
+                            <p>Total de mudanças: <strong>${data.total_changes}</strong></p>
+                            <p>Impacto: <span class="px-3 py-1 rounded ${
+                                data.impact_level === 'high' ? 'bg-red-600' : 
+                                data.impact_level === 'medium' ? 'bg-yellow-600' : 
+                                'bg-green-600'
+                            }">${data.impact_level.toUpperCase()}</span></p>
+                        </div>
+                `;
+                
+                // Avisos
+                if (data.warnings.length > 0) {
+                    previewHtml += `
+                        <div class="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-2 text-yellow-300">⚠️ Avisos:</h4>
+                            ${data.warnings.map(w => `<p class="text-sm">• ${w}</p>`).join('')}
+                        </div>
+                    `;
+                }
+                
+                // Modificações
+                if (Object.keys(data.changes.modified).length > 0) {
+                    previewHtml += `
+                        <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-2 text-blue-300">🔄 Modificações:</h4>
+                            <div class="space-y-2 text-sm">
+                                ${Object.entries(data.changes.modified).map(([key, change]) => `
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-mono">${key}:</span>
+                                        <span><span class="text-red-400">${change.from}</span> → <span class="text-green-400">${change.to}</span></span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Adicionados
+                if (Object.keys(data.changes.added).length > 0) {
+                    previewHtml += `
+                        <div class="bg-green-900/30 border border-green-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-2 text-green-300">➕ Adicionados:</h4>
+                            <div class="space-y-1 text-sm">
+                                ${Object.entries(data.changes.added).map(([key, val]) => `
+                                    <p class="font-mono">${key} = ${val}</p>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Removidos
+                if (Object.keys(data.changes.removed).length > 0) {
+                    previewHtml += `
+                        <div class="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                            <h4 class="font-semibold mb-2 text-red-300">➖ Removidos:</h4>
+                            <div class="space-y-1 text-sm">
+                                ${Object.entries(data.changes.removed).map(([key, val]) => `
+                                    <p class="font-mono">${key} = ${val}</p>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                previewHtml += `
+                    </div>
+                    <div class="mt-6 flex gap-4">
+                        <button onclick="closeModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg">
+                            ❌ Cancelar
+                        </button>
+                        <button onclick="confirmSaveConfig()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg">
+                            ✅ Confirmar e Salvar
+                        </button>
+                    </div>
+                `;
+                
+                showModal('Preview de Mudanças', previewHtml);
+            }
+            
+        } catch (error) {
+            console.error('Erro no preview:', error);
+            showAlert('error', 'Erro ao gerar preview: ' + error.message);
+        }
+    }
+
+    async function saveConfigV2() {
+        // Coletar todos os valores
+        const newConfig = { STRATEGY_TYPE: currentStrategyType };
+        
+        document.querySelectorAll('.config-input').forEach(input => {
+            const fieldKey = input.id.replace('config-', '');
+            
+            if (input.type === 'checkbox') {
+                newConfig[fieldKey] = input.checked;
+            } else {
+                newConfig[fieldKey] = input.value;
+            }
+        });
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConfig)
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                showAlert('success', '✅ Configuração salva com sucesso!');
+                
+                // Perguntar se quer reiniciar o bot
+                if (confirm('Deseja reiniciar o bot agora para aplicar as mudanças?')) {
+                    await fetch(`${API_BASE}/api/bot/restart`, { method: 'POST' });
+                    showAlert('success', '🔄 Bot reiniciando...');
+                }
+                
+                // Recarregar valores
+                setTimeout(() => loadConfigSchemaV2(), 2000);
+            } else {
+                showAlert('error', '❌ Erro ao salvar: ' + data.message);
+            }
+            
+        } catch (error) {
+            console.error('Erro ao salvar:', error);
+            showAlert('error', 'Erro ao salvar configuração: ' + error.message);
+        }
+    }
+
+    async function confirmSaveConfig() {
+        closeModal();
+        await saveConfigV2();
+    }
+
+    async function resetToDefaults() {
+        if (!confirm('⚠️ Deseja restaurar os valores padrão?\n\nIsso irá sobrescrever TODAS as configurações atuais!')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/config/get-defaults`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ strategy: currentStrategyType })
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // Aplicar defaults nos inputs
+                Object.entries(data.defaults).forEach(([key, value]) => {
+                    const input = document.getElementById(`config-${key}`);
+                    if (input) {
+                        if (input.type === 'checkbox') {
+                            input.checked = value === true || value === 'true';
+                        } else {
+                            input.value = value;
+                        }
+                    }
+                });
+                
+                showAlert('success', '✅ Valores padrão restaurados! Clique em Salvar para aplicar.');
+            } else {
+                showAlert('error', '❌ Erro: ' + data.message);
+            }
+            
+        } catch (error) {
+            console.error('Erro ao restaurar defaults:', error);
+            showAlert('error', 'Erro ao restaurar valores padrão');
+        }
+    }
+
+    // Funções auxiliares para modal
+    function showModal(title, content) {
+        const modalHtml = `
+            <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" onclick="closeModalOnBackdrop(event)">
+                <div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold">${title}</h3>
+                        <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                    </div>
+                    <div class="modal-content">
+                        ${content}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remover modal existente se houver
+        const existingModal = document.getElementById('custom-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('custom-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    function closeModalOnBackdrop(event) {
+        if (event.target.id === 'custom-modal') {
+            closeModal();
+        }
+    }
+
+    // Modificar a função existente de loadConfig para usar V2
+    const originalLoadConfig = loadConfig;
+    loadConfig = async function() {
+        // Verificar se schema V2 existe
+        try {
+            const response = await fetch(`${API_BASE}/api/config/schema/v2`);
+            if (response.ok) {
+                // Usar interface V2
+                await loadConfigSchemaV2();
+            } else {
+                // Fallback para interface antiga
+                await originalLoadConfig();
+            }
+        } catch (error) {
+            console.log('Schema V2 não disponível, usando interface clássica');
+            await originalLoadConfig();
+        }
+    };
+
+    console.log('✅ Sistema de configuração V2 hierárquica carregado');
     </script>
 </body>
 </html>

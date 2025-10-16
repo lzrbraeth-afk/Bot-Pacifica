@@ -38,11 +38,23 @@ import csv
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging
+import shutil
+import re
+import signal
 import threading
 import time
 import traceback
 from io import StringIO, BytesIO
 from dotenv import load_dotenv
+
+# importas de credenciais seguras
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import base64
+import json
+import secrets
+import hashlib
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -57,6 +69,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'pacifica-bot-secret-key-2024'
 CORS(app)
+
+# Criar diretório de backups se não existir
+Path('backups').mkdir(exist_ok=True)
+
+# Inicializar bot_manager (será implementado se necessário)
+bot_manager = None
 
 # CONFIGURAÇÃO MAIS CONSERVADORA PARA WINDOWS  
 socketio = SocketIO(
@@ -810,6 +828,430 @@ def monitor_logs():
 
 # ========== ROTAS HTTP BÁSICAS ==========
 
+# ========== 1. GERAÇÃO E GERENCIAMENTO DE CHAVE DE CRIPTOGRAFIA ==========
+
+def get_or_create_encryption_key():
+    """Obtém ou cria chave mestra de criptografia"""
+    key_file = Path('.encryption_key')
+    
+    if key_file.exists():
+        with open(key_file, 'rb') as f:
+            return f.read()
+    
+    # Gerar nova chave
+    key = Fernet.generate_key()
+    
+    # Salvar com permissões restritas
+    with open(key_file, 'wb') as f:
+        f.write(key)
+    
+    # Definir permissões 600 (somente owner)
+    key_file.chmod(0o600)
+    
+    logger.info("🔐 Nova chave de criptografia gerada")
+    return key
+
+
+def derive_key_from_password(password: str, salt: bytes = None) -> tuple:
+    """Deriva chave de criptografia a partir de senha"""
+    if salt is None:
+        salt = secrets.token_bytes(32)
+    
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    return key, salt
+
+
+# ========== 2. FUNÇÕES DE CRIPTOGRAFIA ==========
+
+def encrypt_credential(plaintext: str) -> str:
+    """Criptografa credencial sensível"""
+    try:
+        key = get_or_create_encryption_key()
+        f = Fernet(key)
+        encrypted = f.encrypt(plaintext.encode())
+        return base64.urlsafe_b64encode(encrypted).decode()
+    except Exception as e:
+        logger.error(f"❌ Erro ao criptografar: {e}")
+        raise
+
+
+def decrypt_credential(encrypted_text: str) -> str:
+    """Descriptografa credencial"""
+    try:
+        key = get_or_create_encryption_key()
+        f = Fernet(key)
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_text.encode())
+        decrypted = f.decrypt(encrypted_bytes)
+        return decrypted.decode()
+    except Exception as e:
+        logger.error(f"❌ Erro ao descriptografar: {e}")
+        raise
+
+
+# ========== 3. GERENCIAMENTO DE CREDENCIAIS ==========
+
+def save_credentials_secure(credentials: dict) -> dict:
+    """Salva credenciais de forma segura"""
+    try:
+        credentials_file = Path('.credentials_secure.json')
+        
+        # Campos sensíveis para criptografar
+        sensitive_fields = ['PRIVATE_KEY', 'AGENT_PRIVATE_KEY_B58', 'API_SECRET']
+        
+        encrypted_data = {}
+        
+        for key, value in credentials.items():
+            if key in sensitive_fields and value:
+                # Criptografar campos sensíveis
+                encrypted_data[key] = {
+                    'encrypted': True,
+                    'value': encrypt_credential(value)
+                }
+            else:
+                # Campos não sensíveis (endereço público, etc)
+                encrypted_data[key] = {
+                    'encrypted': False,
+                    'value': value
+                }
+        
+        # Adicionar metadados
+        encrypted_data['_metadata'] = {
+            'created_at': datetime.now().isoformat(),
+            'version': '1.0',
+            'algorithm': 'Fernet-AES256'
+        }
+        
+        # Salvar com permissões restritas
+        with open(credentials_file, 'w') as f:
+            json.dump(encrypted_data, f, indent=2)
+        
+        credentials_file.chmod(0o600)
+        
+        logger.info("✅ Credenciais salvas com segurança")
+        
+        return {
+            'status': 'success',
+            'message': 'Credenciais criptografadas e salvas',
+            'fields_encrypted': len([k for k, v in encrypted_data.items() 
+                                    if isinstance(v, dict) and v.get('encrypted')])
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar credenciais: {e}")
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
+
+
+def load_credentials_secure() -> dict:
+    """Carrega credenciais descriptografadas"""
+    try:
+        credentials_file = Path('.credentials_secure.json')
+        
+        if not credentials_file.exists():
+            return {
+                'status': 'not_configured',
+                'credentials': {}
+            }
+        
+        with open(credentials_file, 'r') as f:
+            encrypted_data = json.load(f)
+        
+        # Remover metadados
+        metadata = encrypted_data.pop('_metadata', {})
+        
+        decrypted_credentials = {}
+        
+        for key, data in encrypted_data.items():
+            if isinstance(data, dict):
+                if data.get('encrypted'):
+                    # Descriptografar campos sensíveis
+                    try:
+                        decrypted_credentials[key] = decrypt_credential(data['value'])
+                    except Exception as e:
+                        logger.error(f"❌ Erro ao descriptografar {key}: {e}")
+                        decrypted_credentials[key] = None
+                else:
+                    decrypted_credentials[key] = data['value']
+        
+        return {
+            'status': 'success',
+            'credentials': decrypted_credentials,
+            'metadata': metadata
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar credenciais: {e}")
+        return {
+            'status': 'error',
+            'message': str(e),
+            'credentials': {}
+        }
+
+
+def get_credentials_masked() -> dict:
+    """Retorna credenciais com campos sensíveis mascarados"""
+    result = load_credentials_secure()
+    
+    if result['status'] != 'success':
+        return result
+    
+    credentials = result['credentials']
+    
+    # Mascarar campos sensíveis
+    sensitive_fields = ['PRIVATE_KEY', 'AGENT_PRIVATE_KEY_B58', 'API_SECRET']
+    
+    masked = {}
+    for key, value in credentials.items():
+        if key in sensitive_fields and value:
+            # Mostrar apenas primeiros 4 e últimos 4 caracteres
+            if len(value) > 8:
+                masked[key] = f"{value[:4]}...{value[-4:]}"
+            else:
+                masked[key] = "***CONFIGURED***"
+        else:
+            masked[key] = value
+    
+    return {
+        'status': 'success',
+        'credentials': masked,
+        'is_configured': bool(credentials)
+    }
+
+
+def check_credentials_configured() -> bool:
+    """Verifica se credenciais já foram configuradas"""
+    credentials_file = Path('.credentials_secure.json')
+    return credentials_file.exists()
+
+
+# ========== 4. VALIDAÇÃO DE CREDENCIAIS ==========
+
+def validate_wallet_address(address: str) -> dict:
+    """Valida endereço de carteira Solana"""
+    try:
+        # Endereço Solana tem 32-44 caracteres base58
+        if not address or len(address) < 32 or len(address) > 44:
+            return {
+                'valid': False,
+                'error': 'Endereço inválido: tamanho incorreto'
+            }
+        
+        # Verificar se é base58 válido
+        import base58
+        try:
+            decoded = base58.b58decode(address)
+            if len(decoded) != 32:
+                return {
+                    'valid': False,
+                    'error': 'Endereço inválido: decodificação incorreta'
+                }
+        except Exception:
+            return {
+                'valid': False,
+                'error': 'Endereço inválido: não é base58 válido'
+            }
+        
+        return {'valid': True}
+        
+    except Exception as e:
+        return {
+            'valid': False,
+            'error': f'Erro na validação: {str(e)}'
+        }
+
+
+def validate_private_key(private_key: str) -> dict:
+    """Valida chave privada"""
+    try:
+        # Chave privada Solana em base58 tem ~88 caracteres
+        if not private_key or len(private_key) < 80:
+            return {
+                'valid': False,
+                'error': 'Chave privada muito curta'
+            }
+        
+        # Tentar decodificar
+        import base58
+        try:
+            decoded = base58.b58decode(private_key)
+            if len(decoded) != 64:
+                return {
+                    'valid': False,
+                    'error': 'Chave privada inválida: tamanho incorreto após decodificação'
+                }
+        except Exception:
+            return {
+                'valid': False,
+                'error': 'Chave privada inválida: não é base58 válido'
+            }
+        
+        return {'valid': True}
+        
+    except Exception as e:
+        return {
+            'valid': False,
+            'error': f'Erro na validação: {str(e)}'
+        }
+
+
+def test_api_connection(wallet_address: str, private_key: str) -> dict:
+    """Testa conexão com API usando credenciais"""
+    try:
+        # Salvar valores originais das variáveis de ambiente
+        original_main_key = os.environ.get('MAIN_PUBLIC_KEY')
+        original_private_key = os.environ.get('AGENT_PRIVATE_KEY_B58')
+        original_api_address = os.environ.get('API_ADDRESS')
+        
+        # Definir credenciais temporárias no ambiente
+        os.environ['MAIN_PUBLIC_KEY'] = wallet_address
+        os.environ['AGENT_PRIVATE_KEY_B58'] = private_key
+        if not os.environ.get('API_ADDRESS'):
+            os.environ['API_ADDRESS'] = 'https://api.pacifica.fi/api/v1'
+        
+        try:
+            # Importar PacificaAuth
+            from src.pacifica_auth import PacificaAuth
+            
+            # Criar instância (agora vai usar as variáveis de ambiente que definimos)
+            auth = PacificaAuth()
+            
+            # Tentar buscar informações da conta (operação simples para validar)
+            account_info = auth.get_account_info()
+            
+            if account_info is not None:
+                # Extrair balance da resposta
+                balance = 0.0  # Default para 0.0
+                if 'data' in account_info:
+                    data = account_info['data']
+                    if isinstance(data, list) and len(data) > 0:
+                        raw_balance = data[0].get('balance')
+                    elif isinstance(data, dict):
+                        raw_balance = data.get('balance')
+                    else:
+                        raw_balance = None
+                        
+                    # Converter balance para float de forma segura
+                    if raw_balance is not None:
+                        try:
+                            balance = float(raw_balance)
+                        except (ValueError, TypeError):
+                            logger.warning(f"⚠️ Não foi possível converter balance para número: {raw_balance}")
+                            balance = 0.0
+                
+                return {
+                    'valid': True,
+                    'message': 'Conexão estabelecida com sucesso',
+                    'balance': balance,
+                    'account_info': account_info
+                }
+            else:
+                return {
+                    'valid': False,
+                    'error': 'Não foi possível obter informações da conta. Verifique as credenciais.'
+                }
+                
+        finally:
+            # Restaurar valores originais das variáveis de ambiente
+            if original_main_key is not None:
+                os.environ['MAIN_PUBLIC_KEY'] = original_main_key
+            elif 'MAIN_PUBLIC_KEY' in os.environ:
+                del os.environ['MAIN_PUBLIC_KEY']
+                
+            if original_private_key is not None:
+                os.environ['AGENT_PRIVATE_KEY_B58'] = original_private_key
+            elif 'AGENT_PRIVATE_KEY_B58' in os.environ:
+                del os.environ['AGENT_PRIVATE_KEY_B58']
+                
+            if original_api_address is not None:
+                os.environ['API_ADDRESS'] = original_api_address
+            elif 'API_ADDRESS' in os.environ:
+                del os.environ['API_ADDRESS']
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao testar API: {e}")
+        return {
+            'valid': False,
+            'error': f'Erro na conexão: {str(e)}'
+        }
+
+# ========== 4.5. FUNÇÕES AUXILIARES DE CREDENCIAIS ==========
+
+def update_env_with_credentials(credentials: dict):
+    """Atualiza .env com credenciais (mantém compatibilidade)"""
+    try:
+        env_path = Path('.env')
+        
+        # Ler conteúdo atual
+        lines = []
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                lines = f.readlines()
+        
+        # Atualizar ou adicionar credenciais
+        keys_to_update = set(credentials.keys())
+        updated_keys = set()
+        
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#') and '=' in stripped:
+                key = stripped.split('=', 1)[0].strip()
+                if key in keys_to_update:
+                    new_lines.append(f"{key}={credentials[key]}\n")
+                    updated_keys.add(key)
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        
+        # Adicionar chaves que não existiam
+        if updated_keys != keys_to_update:
+            new_lines.append("\n# Credenciais de API\n")
+            for key in keys_to_update - updated_keys:
+                new_lines.append(f"{key}={credentials[key]}\n")
+        
+        # Salvar
+        with open(env_path, 'w') as f:
+            f.writelines(new_lines)
+        
+        env_path.chmod(0o600)
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar .env: {e}")
+
+
+def backup_credentials():
+    """Cria backup das credenciais antes de modificar"""
+    try:
+        credentials_file = Path('.credentials_secure.json')
+        
+        if not credentials_file.exists():
+            return
+        
+        backup_dir = Path('backups/credentials')
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = backup_dir / f'credentials_backup_{timestamp}.json'
+        
+        shutil.copy2(credentials_file, backup_path)
+        backup_path.chmod(0o600)
+        
+        logger.info(f"📦 Backup de credenciais criado: {backup_path}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao criar backup: {e}")
+
+# ========== 5. ENDPOINTS DA API ==========# 
+
 @app.route('/')
 def index():
     """Página principal"""
@@ -880,6 +1322,821 @@ def api_config_update():
     except Exception as e:
         logger.error(f"Erro em /api/config/update: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# ==========================================
+# NOVOS ENDPOINTS PARA CONFIG V2
+# ==========================================
+
+@app.route('/api/config/schema', methods=['GET'])
+def get_config_schema():
+    """Retorna estrutura de configuração organizada por estratégia"""
+    try:
+        schema = {
+            "dynamic_grid": {
+                "label": "� Dynamic Grid",
+                "description": "Grid adaptativo inteligente com algoritmo avançado",
+                "sections": {
+                    "basics": {
+                        "label": "Configurações Básicas",
+                        "fields": {
+                            "SYMBOL": {
+                                "type": "text",
+                                "label": "Símbolo",
+                                "default": "BTC",
+                                "required": True,
+                                "help": "Par de trading (ex: BTC, ETH, SOL)"
+                            },
+                            "LEVERAGE": {
+                                "type": "number",
+                                "label": "Alavancagem",
+                                "default": 10,
+                                "min": 1,
+                                "max": 20,
+                                "required": True,
+                                "help": "Multiplicador de capital (1-20x)"
+                            },
+                            "ORDER_SIZE_USD": {
+                                "type": "number",
+                                "label": "Tamanho da Ordem (USD)",
+                                "default": 250,
+                                "min": 10,
+                                "required": True,
+                                "help": "Valor em USD por ordem"
+                            }
+                        }
+                    },
+                    "grid": {
+                        "label": "Configurações do Grid",
+                        "fields": {
+                            "GRID_LEVELS": {
+                                "type": "number",
+                                "label": "Níveis do Grid",
+                                "default": 10,
+                                "min": 2,
+                                "max": 50,
+                                "required": True,
+                                "help": "Número de níveis do grid (2-50)"
+                            },
+                            "GRID_SPACING_PERCENT": {
+                                "type": "number",
+                                "label": "Espaçamento (%)",
+                                "default": 0.15,
+                                "min": 0.01,
+                                "max": 5.0,
+                                "step": 0.01,
+                                "required": True,
+                                "help": "Distância entre níveis (0.01-5%)"
+                            },
+                            "GRID_DISTRIBUTION": {
+                                "type": "select",
+                                "label": "Distribuição do Grid",
+                                "default": "symmetric",
+                                "options": [
+                                    {"value": "symmetric", "label": "Simétrico (50/50)"},
+                                    {"value": "bullish", "label": "Otimista (60% buy)"},
+                                    {"value": "bearish", "label": "Pessimista (60% sell)"}
+                                ],
+                                "help": "Como distribuir ordens buy/sell"
+                            }
+                        }
+                    }
+                }
+            },
+            "multi_asset_enhanced": {
+                "label": "🧠 Multi-Asset Enhanced",
+                "description": "Algoritmo avançado com 5 indicadores técnicos",
+                "sections": {
+                    "assets": {
+                        "label": "Configuração de Ativos",
+                        "fields": {
+                            "SYMBOLS": {
+                                "type": "text",
+                                "label": "Símbolos",
+                                "default": "AUTO",
+                                "required": True,
+                                "help": "AUTO para todos ou BTC,ETH,SOL"
+                            },
+                            "SYMBOLS_USE_BLACKLIST": {
+                                "type": "boolean",
+                                "label": "Usar Blacklist",
+                                "default": True,
+                                "help": "Filtrar símbolos indesejados"
+                            },
+                            "SYMBOLS_BLACKLIST": {
+                                "type": "text",
+                                "label": "Blacklist",
+                                "default": "PUMP,kPEPE,FARTCOIN",
+                                "help": "Símbolos para excluir (separados por vírgula)"
+                            },
+                            "SYMBOLS_MAX_COUNT": {
+                                "type": "number",
+                                "label": "Máximo de Símbolos (0 = sem limite)",
+                                "default": 0,
+                                "min": 0,
+                                "help": "Limitar quantidade total de símbolos"
+                            }
+                        }
+                    },
+                    "strategy": {
+                        "label": "Configurações de Trading",
+                        "fields": {
+                            "POSITION_SIZE_USD": {
+                                "type": "number",
+                                "label": "Tamanho da Posição (USD)",
+                                "default": 100,
+                                "min": 10,
+                                "required": True,
+                                "help": "Valor em USD por posição"
+                            },
+                            "MAX_CONCURRENT_TRADES": {
+                                "type": "number",
+                                "label": "Máximo de trades simultâneos",
+                                "default": 5,
+                                "min": 1,
+                                "max": 20,
+                                "required": True,
+                                "help": "Máximo de posições abertas"
+                            },
+                            "LEVERAGE": {
+                                "type": "number",
+                                "label": "Alavancagem",
+                                "default": 10,
+                                "min": 1,
+                                "max": 20,
+                                "required": True,
+                                "help": "Multiplicador de capital"
+                            }
+                        }
+                    },
+                    "protection": {
+                        "label": "Proteções",
+                        "fields": {
+                            "STOP_LOSS_PERCENT": {
+                                "type": "number",
+                                "label": "Stop Loss (%)",
+                                "default": 1.0,
+                                "min": 0.1,
+                                "max": 10.0,
+                                "step": 0.1,
+                                "required": True,
+                                "help": "Perda máxima por trade"
+                            },
+                            "TAKE_PROFIT_PERCENT": {
+                                "type": "number",
+                                "label": "Take Profit (%)",
+                                "default": 1.5,
+                                "min": 0.1,
+                                "max": 20.0,
+                                "step": 0.1,
+                                "required": True,
+                                "help": "Meta de lucro por trade"
+                            },
+                            "AUTO_CLOSE_ENABLED": {
+                                "type": "boolean",
+                                "label": "Auto Close Habilitado",
+                                "default": True,
+                                "help": "Sistema automático de TP/SL"
+                            },
+                            "USE_API_TP_SL": {
+                                "type": "boolean",
+                                "label": "Usar TP/SL via API",
+                                "default": True,
+                                "help": "Usar ordens TP/SL da corretora"
+                            }
+                        }
+                    },
+                    "enhanced": {
+                        "label": "Configurações Avançadas",
+                        "fields": {
+                            "ENHANCED_MIN_SIGNAL_QUALITY": {
+                                "type": "number",
+                                "label": "Qualidade Mínima do Sinal",
+                                "default": 65,
+                                "min": 0,
+                                "max": 100,
+                                "help": "Qualidade mínima do sinal (0-100)"
+                            },
+                            "ENHANCED_MIN_CONFIDENCE": {
+                                "type": "number",
+                                "label": "Confiança Mínima",
+                                "default": 75,
+                                "min": 0,
+                                "max": 100,
+                                "help": "Confiança mínima (0-100)"
+                            },
+                            "ENHANCED_USE_RSI_FILTER": {
+                                "type": "boolean",
+                                "label": "Filtrar RSI Extremos",
+                                "default": True,
+                                "help": "Usar filtro RSI para melhor entrada"
+                            },
+                            "ENHANCED_MAX_VOLATILITY": {
+                                "type": "number",
+                                "label": "Máx Volatilidade Permitida (%)",
+                                "default": 4.0,
+                                "min": 0.1,
+                                "max": 20.0,
+                                "step": 0.1,
+                                "help": "Máxima volatilidade aceita"
+                            },
+                            "ENHANCED_MIN_HISTORY": {
+                                "type": "number",
+                                "label": "Min Períodos para Análise",
+                                "default": 25,
+                                "min": 10,
+                                "max": 100,
+                                "help": "Mínimo de períodos para análise"
+                            }
+                        }
+                    }
+                }
+            },
+            "pure_grid": {
+                "label": "🔹 Pure Grid Trading",
+                "description": "Grid trading clássico com níveis fixos",
+                "sections": {
+                    "basics": {
+                        "label": "Configurações Básicas",
+                        "fields": {
+                            "SYMBOL": {
+                                "type": "text",
+                                "label": "Símbolo",
+                                "default": "BTC",
+                                "required": True,
+                                "help": "Par de trading (ex: BTC, ETH, SOL)"
+                            },
+                            "LEVERAGE": {
+                                "type": "number",
+                                "label": "Alavancagem",
+                                "default": 10,
+                                "min": 1,
+                                "max": 100,
+                                "required": True,
+                                "help": "Multiplicador de capital (1-100x)"
+                            }
+                        }
+                    },
+                    "grid": {
+                        "label": "Parâmetros do Grid",
+                        "fields": {
+                            "GRID_LEVELS": {
+                                "type": "number",
+                                "label": "Níveis do Grid",
+                                "default": 10,
+                                "min": 3,
+                                "max": 20,
+                                "required": True,
+                                "help": "Número de ordens buy/sell (3-20)"
+                            },
+                            "GRID_SPACING_PERCENT": {
+                                "type": "number",
+                                "label": "Espaçamento (%)",
+                                "default": 0.15,
+                                "min": 0.1,
+                                "max": 5.0,
+                                "step": 0.1,
+                                "required": True,
+                                "help": "Distância entre níveis (0.1-5%)"
+                            },
+                            "ORDER_SIZE_USD": {
+                                "type": "number",
+                                "label": "Tamanho da Ordem (USD)",
+                                "default": 250,
+                                "min": 1,
+                                "required": True,
+                                "help": "Valor em USD por ordem"
+                            }
+                        }
+                    },
+                    "risk": {
+                        "label": "Gestão de Risco",
+                        "fields": {
+                            "RANGE_MIN": {
+                                "type": "number",
+                                "label": "Range Mínimo",
+                                "default": 90000,
+                                "min": 0,
+                                "help": "Preço mínimo para operação"
+                            },
+                            "RANGE_MAX": {
+                                "type": "number",
+                                "label": "Range Máximo", 
+                                "default": 110000,
+                                "min": 0,
+                                "help": "Preço máximo para operação"
+                            }
+                        }
+                    }
+                }
+            },
+            "market_making": {
+                "label": "📊 Market Making",
+                "description": "Grid dinâmico adaptativo ao mercado",
+                "sections": {
+                    "basics": {
+                        "label": "Configurações Básicas",
+                        "fields": {
+                            "SYMBOL": {
+                                "type": "text",
+                                "label": "Símbolo",
+                                "default": "BTC",
+                                "required": True
+                            },
+                            "LEVERAGE": {
+                                "type": "number",
+                                "label": "Alavancagem",
+                                "default": 10,
+                                "min": 1,
+                                "max": 100,
+                                "required": True
+                            }
+                        }
+                    },
+                    "grid": {
+                        "label": "Grid Dinâmico",
+                        "fields": {
+                            "GRID_LEVELS": {
+                                "type": "number",
+                                "label": "Níveis do Grid",
+                                "default": 10,
+                                "min": 3,
+                                "max": 20,
+                                "required": True
+                            },
+                            "GRID_SPACING_PERCENT": {
+                                "type": "number",
+                                "label": "Espaçamento Base (%)",
+                                "default": 0.15,
+                                "min": 0.1,
+                                "max": 5.0,
+                                "step": 0.1,
+                                "required": True
+                            },
+                            "ORDER_SIZE_USD": {
+                                "type": "number",
+                                "label": "Tamanho da Ordem (USD)",
+                                "default": 250,
+                                "min": 1,
+                                "required": True
+                            }
+                        }
+                    }
+                }
+            },
+            "multi_asset": {
+                "label": "🌍 Multi-Asset Trading",
+                "description": "Trading simultâneo em múltiplos ativos",
+                "sections": {
+                    "assets": {
+                        "label": "Ativos e Exposição",
+                        "fields": {
+                            "SYMBOLS": {
+                                "type": "text",
+                                "label": "Símbolos",
+                                "default": "AUTO",
+                                "required": True,
+                                "help": "Lista separada por vírgula ou AUTO"
+                            },
+                            "POSITION_SIZE_USD": {
+                                "type": "number",
+                                "label": "Tamanho por Posição (USD)",
+                                "default": 100,
+                                "min": 1,
+                                "required": True,
+                                "help": "Valor em USD por trade"
+                            },
+                            "MAX_CONCURRENT_TRADES": {
+                                "type": "number",
+                                "label": "Trades Simultâneos",
+                                "default": 5,
+                                "min": 1,
+                                "max": 10,
+                                "required": True,
+                                "help": "Máximo de posições abertas"
+                            }
+                        }
+                    },
+                    "strategy": {
+                        "label": "Estratégia de Trading",
+                        "fields": {
+                            "PRICE_CHANGE_THRESHOLD": {
+                                "type": "number",
+                                "label": "Limite de Variação de Preço (%)",
+                                "default": 0.3,
+                                "min": 0.1,
+                                "max": 5.0,
+                                "step": 0.1,
+                                "required": True,
+                                "help": "Mudança de preço para gerar sinal"
+                            }
+                        }
+                    },
+                    "protection": {
+                        "label": "Proteção Automática",
+                        "fields": {
+                            "AUTO_CLOSE_ENABLED": {
+                                "type": "boolean",
+                                "label": "Habilitar AUTO_CLOSE",
+                                "default": True,
+                                "help": "Sistema de TP/SL automático"
+                            },
+                            "STOP_LOSS_PERCENT": {
+                                "type": "number",
+                                "label": "Stop Loss (%)",
+                                "default": 1.0,
+                                "min": 0.5,
+                                "max": 10.0,
+                                "step": 0.1,
+                                "help": "Perda máxima por trade"
+                            },
+                            "TAKE_PROFIT_PERCENT": {
+                                "type": "number",
+                                "label": "Take Profit (%)",
+                                "default": 1.5,
+                                "min": 0.5,
+                                "max": 10.0,
+                                "step": 0.1,
+                                "help": "Meta de lucro por trade"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return jsonify({
+            "status": "success",
+            "schema": schema
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao carregar schema: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/config/validate', methods=['POST'])
+def validate_config():
+    """Valida configurações antes de salvar"""
+    try:
+        data = request.json
+        strategy = data.get('strategy')
+        config = data.get('config', {})
+        
+        errors = []
+        warnings = []
+        
+        # Validações básicas
+        if not strategy:
+            errors.append("Estratégia não especificada")
+        
+        # Validar campos obrigatórios
+        required_fields = {
+            'dynamic_grid': ['SYMBOL', 'LEVERAGE', 'GRID_LEVELS', 'GRID_SPACING_PERCENT', 'ORDER_SIZE_USD'],
+            'multi_asset_enhanced': ['SYMBOLS', 'POSITION_SIZE_USD', 'MAX_CONCURRENT_TRADES', 'LEVERAGE'],
+            'pure_grid': ['SYMBOL', 'LEVERAGE', 'GRID_LEVELS', 'GRID_SPACING_PERCENT'],
+            'market_making': ['SYMBOL', 'LEVERAGE', 'GRID_LEVELS'],
+            'multi_asset': ['SYMBOLS', 'POSITION_SIZE_USD', 'MAX_CONCURRENT_TRADES']
+        }
+        
+        if strategy in required_fields:
+            for field in required_fields[strategy]:
+                if field not in config or config[field] == '':
+                    errors.append(f"Campo obrigatório: {field}")
+        
+        # Validar tipos e ranges
+        if 'LEVERAGE' in config:
+            try:
+                leverage = float(config['LEVERAGE'])
+                if leverage < 1 or leverage > 100:
+                    errors.append("Alavancagem deve estar entre 1 e 100")
+            except (ValueError, TypeError):
+                errors.append("Alavancagem deve ser um número válido")
+        
+        if 'GRID_LEVELS' in config:
+            try:
+                levels = int(config['GRID_LEVELS'])
+                if levels < 3 or levels > 20:
+                    errors.append("Níveis do grid devem estar entre 3 e 20")
+            except (ValueError, TypeError):
+                errors.append("Níveis do grid deve ser um número inteiro")
+        
+        if 'GRID_SPACING_PERCENT' in config:
+            try:
+                spacing = float(config['GRID_SPACING_PERCENT'])
+                if spacing < 0.1:
+                    warnings.append("Espaçamento muito pequeno pode causar muitas ordens")
+                if spacing > 5.0:
+                    warnings.append("Espaçamento grande pode perder oportunidades")
+            except (ValueError, TypeError):
+                errors.append("Espaçamento deve ser um número válido")
+        
+        # Validar símbolos
+        if 'SYMBOLS' in config:
+            symbols = config['SYMBOLS']
+            if symbols != 'AUTO':
+                symbol_list = [s.strip() for s in symbols.split(',')]
+                if len(symbol_list) == 0:
+                    errors.append("Lista de símbolos não pode estar vazia")
+                for symbol in symbol_list:
+                    if not symbol or len(symbol) < 2:
+                        errors.append(f"Símbolo inválido: {symbol}")
+        
+        # Validar capital suficiente
+        if 'POSITION_SIZE_USD' in config and 'MAX_CONCURRENT_TRADES' in config:
+            try:
+                total_exposure = float(config['POSITION_SIZE_USD']) * int(config['MAX_CONCURRENT_TRADES'])
+                if total_exposure > 10000:  # Ajustar conforme seu capital
+                    warnings.append(f"Exposição total alta: ${total_exposure:.2f}")
+            except (ValueError, TypeError):
+                pass  # Erro já capturado acima
+        
+        return jsonify({
+            "status": "success" if len(errors) == 0 else "error",
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro na validação: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/config/backup', methods=['POST'])
+def create_config_backup():
+    """Cria backup da configuração atual"""
+    try:
+        env_path = Path('.env')
+        if not env_path.exists():
+            return jsonify({
+                "status": "error",
+                "message": "Arquivo .env não encontrado"
+            }), 404
+        
+        # Criar diretório de backups
+        backup_dir = Path('backups')
+        backup_dir.mkdir(exist_ok=True)
+        
+        # Nome do backup com timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = backup_dir / f'.env.backup_{timestamp}'
+        
+        # Copiar arquivo
+        shutil.copy2(env_path, backup_path)
+        
+        # Manter apenas últimos 5 backups
+        backups = sorted(backup_dir.glob('.env.backup_*'))
+        if len(backups) > 5:
+            for old_backup in backups[:-5]:
+                old_backup.unlink()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Backup criado com sucesso",
+            "backup_file": str(backup_path)
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao criar backup: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/config/restore', methods=['POST'])
+def restore_config_backup():
+    """Restaura backup de configuração"""
+    try:
+        backup_file = request.json.get('backup_file')
+        if not backup_file:
+            return jsonify({
+                "status": "error",
+                "message": "Arquivo de backup não especificado"
+            }), 400
+        
+        backup_path = Path(backup_file)
+        if not backup_path.exists():
+            return jsonify({
+                "status": "error",
+                "message": "Backup não encontrado"
+            }), 404
+        
+        env_path = Path('.env')
+        
+        # Criar backup do atual antes de restaurar
+        if env_path.exists():
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            shutil.copy2(env_path, f'.env.before_restore_{timestamp}')
+        
+        # Restaurar backup
+        shutil.copy2(backup_path, env_path)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Configuração restaurada com sucesso"
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao restaurar backup: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/config/save', methods=['POST'])
+def save_config_advanced():
+    """Salva configurações com validação e backup automático"""
+    try:
+        data = request.json
+        config = data.get('config', {})
+        strategy = data.get('strategy')
+        auto_restart = data.get('auto_restart', True)
+        
+        # 1. Validar antes de salvar
+        validation_data = {
+            'strategy': strategy,
+            'config': config
+        }
+        
+        # Fazer validação inline para evitar problemas de contexto
+        errors = []
+        warnings = []
+        
+        # Validações básicas
+        if not strategy:
+            errors.append("Estratégia não especificada")
+        
+        # Validar campos obrigatórios
+        required_fields = {
+            'pure_grid': ['SYMBOL', 'LEVERAGE', 'GRID_LEVELS', 'GRID_SPACING_PERCENT'],
+            'market_making': ['SYMBOL', 'LEVERAGE', 'GRID_LEVELS'],
+            'multi_asset': ['SYMBOLS', 'POSITION_SIZE_USD', 'MAX_CONCURRENT_TRADES']
+        }
+        
+        if strategy in required_fields:
+            for field in required_fields[strategy]:
+                if field not in config or config[field] == '':
+                    errors.append(f"Campo obrigatório: {field}")
+        
+        if errors:
+            return jsonify({
+                "status": "error",
+                "message": "Configuração inválida",
+                "errors": errors
+            }), 400
+        
+        # 2. Criar backup automático
+        try:
+            env_path = Path('.env')
+            if env_path.exists():
+                backup_dir = Path('backups')
+                backup_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup_path = backup_dir / f'.env.backup_{timestamp}'
+                shutil.copy2(env_path, backup_path)
+                
+                # Manter apenas últimos 5 backups
+                backups = sorted(backup_dir.glob('.env.backup_*'))
+                if len(backups) > 5:
+                    for old_backup in backups[:-5]:
+                        old_backup.unlink()
+                        
+                backup_created = True
+            else:
+                backup_created = False
+        except Exception as backup_error:
+            logger.warning(f"Falha ao criar backup: {backup_error}")
+            backup_created = False
+        
+        # 3. Atualizar STRATEGY_TYPE
+        config['STRATEGY_TYPE'] = strategy
+        
+        # 4. Salvar no .env
+        env_path = Path('.env')
+        
+        # Ler conteúdo atual preservando comentários
+        current_lines = []
+        if env_path.exists():
+            with open(env_path, 'r', encoding='utf-8') as f:
+                current_lines = f.readlines()
+        
+        # Criar novo conteúdo
+        new_lines = []
+        updated_keys = set()
+        
+        for line in current_lines:
+            stripped = line.strip()
+            
+            # Preservar comentários e linhas vazias
+            if not stripped or stripped.startswith('#'):
+                new_lines.append(line)
+                continue
+            
+            if '=' in stripped:
+                key = stripped.split('=', 1)[0].strip()
+                
+                # Atualizar valor se foi modificado
+                if key in config:
+                    new_lines.append(f"{key}={config[key]}\n")
+                    updated_keys.add(key)
+                else:
+                    new_lines.append(line)
+        
+        # Adicionar novas chaves
+        if updated_keys != set(config.keys()):
+            new_lines.append("\n# Novas configurações adicionadas via web\n")
+            for key, value in config.items():
+                if key not in updated_keys:
+                    new_lines.append(f"{key}={value}\n")
+        
+        # Escrever arquivo
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        
+        response_data = {
+            "status": "success",
+            "message": "Configurações salvas com sucesso",
+            "backup_created": backup_created
+        }
+        
+        # 5. Reiniciar bot se solicitado
+        if auto_restart:
+            # Verificar se bot está rodando usando bot_manager se disponível
+            bot_running = False
+            try:
+                # Verificar se existe bot_manager global
+                if bot_manager and hasattr(bot_manager, 'is_running'):
+                    if bot_manager.is_running():
+                        bot_running = True
+                        logger.info("Parando bot para aplicar novas configurações...")
+                        bot_manager.stop()
+                        time.sleep(2)  # Aguardar término
+                        
+                        # Reiniciar
+                        if bot_manager.start():
+                            response_data["bot_restarted"] = True
+                            response_data["message"] += " - Bot reiniciado automaticamente"
+                        else:
+                            response_data["status"] = "warning"
+                            response_data["message"] += " - Erro ao reiniciar bot automaticamente"
+                else:
+                    response_data["message"] += " - Bot manager não disponível, reinicie manualmente se necessário"
+            except Exception as restart_error:
+                logger.error(f"Erro ao reiniciar bot: {restart_error}")
+                response_data["status"] = "warning"
+                response_data["message"] += f" - Erro ao reiniciar bot: {restart_error}"
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Erro ao salvar configuração: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/config/backups', methods=['GET'])
+def list_config_backups():
+    """Lista backups disponíveis"""
+    try:
+        backup_dir = Path('backups')
+        if not backup_dir.exists():
+            return jsonify({
+                "status": "success",
+                "backups": []
+            })
+        
+        backups = []
+        for backup_file in sorted(backup_dir.glob('.env.backup_*'), reverse=True):
+            stat = backup_file.stat()
+            backups.append({
+                "filename": backup_file.name,
+                "path": str(backup_file),
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "modified_str": datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y %H:%M:%S')
+            })
+        
+        return jsonify({
+            "status": "success",
+            "backups": backups
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar backups: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route('/api/positions')
 def api_positions():
@@ -1858,6 +3115,504 @@ def handle_request_update():
         logger.error(f"Erro ao atualizar dados: {e}")
         emit('error', {'message': 'Erro na atualização'})
 
+# ========== 7. MIDDLEWARE PARA CARREGAR CREDENCIAIS ==========
+
+def load_credentials_to_env():
+    """Carrega credenciais descriptografadas para variáveis de ambiente"""
+    try:
+        result = load_credentials_secure()
+        
+        if result['status'] == 'success':
+            for key, value in result['credentials'].items():
+                if value:
+                    os.environ[key] = str(value)
+            
+            logger.info("✅ Credenciais carregadas em memória")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar credenciais: {e}")
+
+# ========== ENDPOINTS DE CREDENCIAIS SEGURAS ==========
+
+@app.route('/api/credentials/check', methods=['GET'])
+def check_credentials():
+    """Verifica se credenciais estão configuradas"""
+    try:
+        is_configured = check_credentials_configured()
+        
+        if is_configured:
+            masked = get_credentials_masked()
+            return jsonify({
+                'status': 'success',
+                'configured': True,
+                'credentials': masked.get('credentials', {})
+            })
+        else:
+            return jsonify({
+                'status': 'success',
+                'configured': False,
+                'credentials': {}
+            })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar credenciais: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/credentials/save', methods=['POST'])
+def save_credentials():
+    """Salva credenciais com criptografia"""
+    try:
+        data = request.json
+        
+        # Extrair credenciais
+        credentials = {
+            'MAIN_PUBLIC_KEY': data.get('wallet_address'),
+            'AGENT_PRIVATE_KEY_B58': data.get('private_key'),
+            'API_ADDRESS': data.get('api_address', 'https://api.pacifica.fi/api/v1')
+        }
+        
+        # Validar campos obrigatórios
+        if not credentials['MAIN_PUBLIC_KEY']:
+            return jsonify({
+                'status': 'error',
+                'message': 'Endereço da carteira é obrigatório'
+            }), 400
+        
+        if not credentials['AGENT_PRIVATE_KEY_B58']:
+            return jsonify({
+                'status': 'error',
+                'message': 'Chave privada é obrigatória'
+            }), 400
+        
+        # Validar endereço
+        wallet_validation = validate_wallet_address(credentials['MAIN_PUBLIC_KEY'])
+        if not wallet_validation['valid']:
+            return jsonify({
+                'status': 'error',
+                'message': wallet_validation['error']
+            }), 400
+        
+        # Validar chave privada
+        key_validation = validate_private_key(credentials['AGENT_PRIVATE_KEY_B58'])
+        if not key_validation['valid']:
+            return jsonify({
+                'status': 'error',
+                'message': key_validation['error']
+            }), 400
+        
+        # Testar conexão (opcional, pode ser lento)
+        test_connection = data.get('test_connection', True)
+        if test_connection:
+            api_test = test_api_connection(
+                credentials['MAIN_PUBLIC_KEY'],
+                credentials['AGENT_PRIVATE_KEY_B58']
+            )
+            
+            if not api_test['valid']:
+                return jsonify({
+                    'status': 'error',
+                    'message': api_test['error']
+                }), 400
+        
+        # Salvar credenciais criptografadas
+        result = save_credentials_secure(credentials)
+        
+        if result['status'] == 'success':
+            # Também salvar no .env (sem criptografia, mas protegido por permissões)
+            update_env_with_credentials(credentials)
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Credenciais salvas com segurança',
+                'fields_encrypted': result.get('fields_encrypted', 0)
+            })
+        else:
+            return jsonify(result), 500
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar credenciais: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/credentials/update', methods=['POST'])
+def update_credentials():
+    """Atualiza credenciais existentes (requer confirmação)"""
+    try:
+        data = request.json
+        
+        # Verificar se usuário confirmou
+        if not data.get('confirmed'):
+            return jsonify({
+                'status': 'error',
+                'message': 'Atualização de credenciais requer confirmação'
+            }), 400
+        
+        # Criar backup das credenciais antigas
+        backup_credentials()
+        
+        # Salvar novas credenciais
+        return save_credentials()
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar credenciais: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/credentials/validate', methods=['POST'])
+def validate_credentials_endpoint():
+    """Valida credenciais sem salvar"""
+    try:
+        data = request.json
+        
+        wallet_address = data.get('wallet_address')
+        private_key = data.get('private_key')
+        
+        errors = []
+        
+        # Validar endereço
+        if wallet_address:
+            wallet_validation = validate_wallet_address(wallet_address)
+            if not wallet_validation['valid']:
+                errors.append(wallet_validation['error'])
+        else:
+            errors.append('Endereço da carteira é obrigatório')
+        
+        # Validar chave privada
+        if private_key:
+            key_validation = validate_private_key(private_key)
+            if not key_validation['valid']:
+                errors.append(key_validation['error'])
+        else:
+            errors.append('Chave privada é obrigatória')
+        
+        # Se não houver erros, testar conexão
+        if not errors:
+            api_test = test_api_connection(wallet_address, private_key)
+            if not api_test['valid']:
+                errors.append(api_test['error'])
+            else:
+                return jsonify({
+                    'status': 'success',
+                    'valid': True,
+                    'message': 'Credenciais válidas',
+                    'balance': api_test.get('balance')
+                })
+        
+        return jsonify({
+            'status': 'error',
+            'valid': False,
+            'errors': errors
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"❌ Erro na validação: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/credentials/delete', methods=['POST'])
+def delete_credentials():
+    """Remove credenciais (requer confirmação)"""
+    try:
+        data = request.json
+        
+        if not data.get('confirmed'):
+            return jsonify({
+                'status': 'error',
+                'message': 'Exclusão de credenciais requer confirmação'
+            }), 400
+        
+        credentials_file = Path('.credentials_secure.json')
+        
+        if credentials_file.exists():
+            # Criar backup antes de deletar
+            backup_credentials()
+            
+            # Deletar arquivo
+            credentials_file.unlink()
+            
+            logger.warning("⚠️ Credenciais deletadas pelo usuário")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Credenciais removidas com sucesso'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nenhuma credencial configurada'
+            }), 404
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao deletar credenciais: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# ==========================================
+# ENDPOINTS PARA CONFIGURAÇÃO V2 - HIERÁRQUICA
+# ==========================================
+
+@app.route('/api/config/schema/v2', methods=['GET'])
+def get_config_schema_v2():
+    """Retorna estrutura hierárquica completa de configuração"""
+    try:
+        schema_file = Path('config_schema.json')
+        
+        if not schema_file.exists():
+            return jsonify({
+                'status': 'error',
+                'message': 'Arquivo config_schema.json não encontrado'
+            }), 404
+        
+        with open(schema_file, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        
+        # Carregar valores atuais do .env
+        current_config = read_env()
+        
+        return jsonify({
+            'status': 'success',
+            'schema': schema,
+            'current_values': current_config,
+            'current_strategy': current_config.get('STRATEGY_TYPE', 'pure_grid')
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar schema v2: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/config/validate-field', methods=['POST'])
+def validate_config_field():
+    """Valida um campo individual em tempo real"""
+    try:
+        data = request.json
+        field_name = data.get('field')
+        field_value = data.get('value')
+        strategy = data.get('strategy', 'pure_grid')
+        
+        if not field_name:
+            return jsonify({
+                'valid': False,
+                'message': 'Campo não especificado'
+            }), 400
+        
+        # Carregar schema
+        schema_file = Path('config_schema.json')
+        with open(schema_file, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        
+        field_config = schema['fields'].get(field_name)
+        
+        if not field_config:
+            return jsonify({
+                'valid': True,
+                'message': 'Campo não requer validação específica'
+            })
+        
+        # Validações por tipo
+        field_type = field_config.get('type')
+        validation_result = {
+            'valid': True,
+            'message': '✅ Valor válido',
+            'warning': None
+        }
+        
+        # Validação numérica
+        if field_type == 'number':
+            try:
+                num_value = float(field_value)
+                min_val = field_config.get('min')
+                max_val = field_config.get('max')
+                
+                if min_val is not None and num_value < min_val:
+                    validation_result['valid'] = False
+                    validation_result['message'] = f'❌ Valor deve ser ≥ {min_val}'
+                elif max_val is not None and num_value > max_val:
+                    validation_result['valid'] = False
+                    validation_result['message'] = f'❌ Valor deve ser ≤ {max_val}'
+                else:
+                    # Avisos baseados em recomendações
+                    if field_name == 'LEVERAGE' and num_value > 10:
+                        validation_result['warning'] = '⚠️ Leverage alto aumenta risco de liquidação'
+                    elif field_name == 'STOP_LOSS_PERCENT' and num_value < 1:
+                        validation_result['warning'] = '⚠️ Stop Loss muito apertado pode gerar stops falsos'
+                    elif field_name == 'TAKE_PROFIT_PERCENT' and num_value < field_config.get('default', 0):
+                        validation_result['warning'] = '⚠️ Take Profit abaixo do recomendado'
+                        
+            except ValueError:
+                validation_result['valid'] = False
+                validation_result['message'] = '❌ Valor deve ser numérico'
+        
+        # Validação de toggle/boolean
+        elif field_type == 'toggle':
+            if not isinstance(field_value, bool) and field_value not in ['true', 'false', 'True', 'False']:
+                validation_result['valid'] = False
+                validation_result['message'] = '❌ Valor deve ser true/false'
+        
+        return jsonify(validation_result)
+        
+    except Exception as e:
+        logger.error(f"❌ Erro na validação: {e}")
+        return jsonify({
+            'valid': False,
+            'message': f'Erro: {str(e)}'
+        }), 500
+
+
+@app.route('/api/config/get-defaults', methods=['POST'])
+def get_config_defaults():
+    """Retorna valores padrão para uma estratégia específica"""
+    try:
+        data = request.json
+        strategy = data.get('strategy', 'pure_grid')
+        
+        # Carregar schema
+        schema_file = Path('config_schema.json')
+        with open(schema_file, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        
+        # Coletar defaults relevantes para a estratégia
+        defaults = {}
+        
+        # Sempre incluir configurações comuns
+        common_fields = schema['config_sections']['common']['fields']
+        for field in common_fields:
+            if field in schema['fields']:
+                defaults[field] = schema['fields'][field].get('default')
+        
+        # Adicionar configurações específicas da estratégia
+        strategy_category = schema['strategies'][strategy]['category']
+        
+        if strategy_category == 'grid':
+            basic_fields = schema['config_sections']['basic_grid']['fields']
+        else:
+            basic_fields = schema['config_sections']['basic_multi_asset']['fields']
+        
+        for field in basic_fields:
+            if field in schema['fields']:
+                defaults[field] = schema['fields'][field].get('default')
+        
+        # Configurações de auto-close (comum a todas)
+        autoclose_fields = schema['config_sections']['auto_close']['fields']
+        for field in autoclose_fields:
+            if field in schema['fields']:
+                defaults[field] = schema['fields'][field].get('default')
+        
+        # Risk management (comum a todas)
+        risk_fields = schema['config_sections']['risk_management']['fields']
+        for field in risk_fields:
+            if field in schema['fields']:
+                defaults[field] = schema['fields'][field].get('default')
+        
+        # Enhanced (apenas se aplicável)
+        if strategy == 'multi_asset_enhanced':
+            enhanced_fields = schema['config_sections']['enhanced_advanced']['fields']
+            for field in enhanced_fields:
+                if field in schema['fields']:
+                    defaults[field] = schema['fields'][field].get('default')
+        
+        # Adicionar STRATEGY_TYPE
+        defaults['STRATEGY_TYPE'] = strategy
+        
+        return jsonify({
+            'status': 'success',
+            'strategy': strategy,
+            'defaults': defaults
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar defaults: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/config/preview-changes', methods=['POST'])
+def preview_config_changes():
+    """Preview das mudanças antes de salvar"""
+    try:
+        new_config = request.json.get('config', {})
+        
+        # Carregar config atual
+        current_config = read_env()
+        
+        # Comparar mudanças
+        changes = {
+            'added': {},
+            'modified': {},
+            'removed': {},
+            'unchanged': {}
+        }
+        
+        # Detectar mudanças
+        all_keys = set(list(current_config.keys()) + list(new_config.keys()))
+        
+        for key in all_keys:
+            current_val = current_config.get(key)
+            new_val = new_config.get(key)
+            
+            if current_val is None and new_val is not None:
+                changes['added'][key] = new_val
+            elif current_val is not None and new_val is None:
+                changes['removed'][key] = current_val
+            elif str(current_val) != str(new_val):
+                changes['modified'][key] = {
+                    'from': current_val,
+                    'to': new_val
+                }
+            else:
+                changes['unchanged'][key] = current_val
+        
+        # Avaliar impacto
+        impact_level = 'low'
+        warnings = []
+        
+        # Mudanças críticas
+        critical_changes = ['LEVERAGE', 'STRATEGY_TYPE', 'STOP_LOSS_PERCENT']
+        for key in critical_changes:
+            if key in changes['modified']:
+                impact_level = 'high'
+                warnings.append(f"⚠️ {key} foi alterado - Bot será reiniciado")
+        
+        # Mudanças médias
+        moderate_changes = ['GRID_LEVELS', 'MAX_CONCURRENT_TRADES', 'ORDER_SIZE_USD']
+        for key in moderate_changes:
+            if key in changes['modified'] and impact_level == 'low':
+                impact_level = 'medium'
+        
+        return jsonify({
+            'status': 'success',
+            'changes': changes,
+            'impact_level': impact_level,
+            'warnings': warnings,
+            'total_changes': len(changes['added']) + len(changes['modified']) + len(changes['removed'])
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no preview: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 # ========== ✅ CORREÇÃO 1: INICIALIZAÇÃO NO STARTUP ==========
 
 if __name__ == '__main__':
@@ -1905,6 +3660,17 @@ if __name__ == '__main__':
         print("   Funcionalidades básicas continuarão funcionando")
         print("="*80)
     
+    # Chamar ao iniciar a aplicação
+    load_credentials_to_env()
+    
+    print("="*80)
+    print("✅ Sistema de credenciais seguras carregado")
+    print("   - Criptografia AES-256 (Fernet)")
+    print("   - Validação de wallet Solana")
+    print("   - Teste de conexão API")
+    print("   - Backup automático")
+    print("="*80)
+    
     # Iniciar monitor threads
     monitor_active = True
     monitor_thread = threading.Thread(target=monitor_bot, daemon=True)
@@ -1937,3 +3703,6 @@ if __name__ == '__main__':
         if logs_monitor_thread:
             logs_monitor_thread.join(timeout=5)
         print("👋 Interface web encerrada")
+
+
+

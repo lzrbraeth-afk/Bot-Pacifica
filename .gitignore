@@ -26,6 +26,8 @@ data/
 bot.pid
 csv.txt
 *.backup*
+backups/
+backup/
 
 # OS
 .DS_Store
