@@ -35,3 +35,7 @@ Thumbs.db
 
 # Arquivos renomeados
 *_old.*
+
+# Market Vision
+market_vision/indicators/__pycache__/
+market_vision/docs/

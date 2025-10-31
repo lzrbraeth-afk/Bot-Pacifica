@@ -30,6 +30,18 @@ class StrategyLogger:
             'rebalanceamento', 'rebalancing'
         ]
         
+        # Substituições específicas para scalping
+        self.scalping_replacements = {
+            'Grid': 'Scalping',
+            'grid': 'análise direcional',
+            'níveis': 'sinais de entrada',
+            'levels': 'entry signals',
+            'rebalanceamento': 'análise de direção',
+            'rebalancing': 'direction analysis',
+            'ordens': 'trades',
+            'orders': 'trades'
+        }
+        
         # Substituições específicas para multi_asset
         self.multi_asset_replacements = {
             'Grid': 'Multi-Asset',
@@ -56,6 +68,12 @@ class StrategyLogger:
             'scalping', 'Scalping', 'SCALPING'
         ]
         
+        # Palavras que devem ser filtradas para scalping strategy
+        self.scalping_filters = [
+            'grid', 'Grid', 'GRID',
+            'multi-asset', 'Multi-Asset', 'MULTI-ASSET'
+        ]
+        
     def _should_filter_message(self, message: str) -> bool:
         """Determinar se uma mensagem deve ser filtrada"""
         
@@ -69,14 +87,20 @@ class StrategyLogger:
         if any(word in message.lower() for word in init_keywords):
             return True
         
-        if self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
+        if self.strategy_type == 'scalping':
+            # Para scalping, filtrar mensagens relacionadas ao grid e multi-asset
+            for filter_word in self.scalping_filters:
+                if filter_word.lower() in message.lower():
+                    return False  # Filtrar (não mostrar)
+                    
+        elif self.strategy_type in ['multi_asset', 'multi_asset_enhanced']:
             # Para multi_asset e enhanced, filtrar mensagens relacionadas ao grid tradicional
             for filter_word in self.multi_asset_filters:
                 if filter_word.lower() in message.lower():
                     return False  # Filtrar (não mostrar)
                     
-        elif self.strategy_type in ['pure_grid', 'market_making']:
-            # Para grid strategies, filtrar mensagens de multi-asset
+        elif self.strategy_type in ['grid', 'pure_grid', 'market_making', 'dynamic_grid']:
+            # Para grid strategies, filtrar mensagens de multi-asset e scalping
             for filter_word in self.grid_filters:
                 if filter_word.lower() in message.lower():
                     return False  # Filtrar (não mostrar)
@@ -88,7 +112,11 @@ class StrategyLogger:
         
         adapted_message = message
         
-        if self.strategy_type == 'multi_asset':
+        if self.strategy_type == 'scalping':
+            # Substituir termos específicos para scalping direcional
+            for old_term, new_term in self.scalping_replacements.items():
+                adapted_message = adapted_message.replace(old_term, new_term)
+        elif self.strategy_type == 'multi_asset':
             # Substituir termos específicos do grid para multi_asset básico
             for old_term, new_term in self.multi_asset_replacements.items():
                 adapted_message = adapted_message.replace(old_term, new_term)
@@ -103,10 +131,13 @@ class StrategyLogger:
         """Obter prefixo específico da estratégia"""
         
         prefixes = {
-            'multi_asset': '🌐',
-            'multi_asset_enhanced': '🧠',
-            'pure_grid': '📊',
-            'market_making': '🎯'
+            'scalping': '🚀',           # Foguete para velocidade do scalping
+            'multi_asset': '🌐',        # Globo para múltiplos mercados
+            'multi_asset_enhanced': '🧠', # Cérebro para IA avançada
+            'grid': '📊',               # Gráfico para grid genérico
+            'pure_grid': '�',          # Régua para grid fixo/preciso
+            'market_making': '🎯',      # Alvo para market making
+            'dynamic_grid': '⚡'        # Raio para grid dinâmico/adaptativo
         }
         
         return prefixes.get(self.strategy_type, '🤖')
@@ -182,17 +213,31 @@ def create_strategy_logger(name: str, strategy_type: str) -> StrategyLogger:
     base_logger = logging.getLogger(name)
     return StrategyLogger(base_logger, strategy_type)
 
-
 def get_strategy_specific_messages(strategy_type: str) -> Dict[str, str]:
     """Obter mensagens específicas por estratégia"""
     
     messages = {
+        'scalping': {
+            'initialization': '🚀 Inicializando estratégia Directional Scalping...',
+            'ready': '✅ Estratégia de Scalping Direcional ativa',
+            'monitoring': '⚡ Analisando direção do mercado para scalping',
+            'position_opened': '🚀 Posição de scalping aberta',
+            'position_closed': '🔒 Posição de scalping fechada',
+            'target_reached': '🎯 Target de scalping atingido',
+            'stop_loss_hit': '🛡️ Stop loss de scalping acionado',
+            'analysis_complete': '📊 Análise de direção completa',
+            'signal_detected': '🔔 Sinal de entrada detectado',
+            'no_signal': '⏸️ Aguardando sinal de entrada válido',
+            'cooldown_active': '⏳ Cooldown entre trades ativo',
+            'no_opportunities': '🔍 Aguardando oportunidades de scalping...'
+        },
         'multi_asset': {
             'initialization': '🌐 Inicializando estratégia Multi-Asset Scalping...',
             'ready': '✅ Estratégia Multi-Asset pronta para trading',
             'monitoring': '👀 Monitorando oportunidades em múltiplos ativos',
             'position_opened': '📈 Nova posição aberta',
             'position_closed': '💰 Posição fechada com',
+            'signal_detected': '🔔 Sinal detectado em múltiplos ativos',
             'no_opportunities': '⏳ Aguardando oportunidades de mercado...'
         },
         'multi_asset_enhanced': {
@@ -205,21 +250,43 @@ def get_strategy_specific_messages(strategy_type: str) -> Dict[str, str]:
             'no_opportunities': '🤔 Aguardando sinais de alta qualidade...',
             'analyzing': '📊 Analisando 5 indicadores técnicos...'
         },
+        'grid': {
+            'initialization': '📊 Inicializando estratégia Grid Trading...',
+            'ready': '✅ Grid Trading configurado e operacional',
+            'monitoring': '🔍 Monitorando execuções do grid',
+            'grid_executed': '🎯 Ordem do grid executada',
+            'grid_rebalanced': '⚖️ Grid rebalanceado',
+            'out_of_range': '⚠️ Preço saiu do range do grid',
+            'no_opportunities': '⏳ Aguardando condições para criar grid...'
+        },
         'pure_grid': {
             'initialization': '📊 Inicializando estratégia Pure Grid...',
             'ready': '✅ Grid fixo configurado e operacional',
             'monitoring': '🔍 Monitorando execuções no grid fixo',
             'grid_executed': '🎯 Ordem do grid executada',
             'grid_rebalanced': '⚖️ Grid rebalanceado',
-            'out_of_range': '⚠️ Preço saiu do range configurado'
+            'out_of_range': '⚠️ Preço saiu do range configurado',
+            'no_opportunities': '⏳ Aguardando margem para grid fixo...'
         },
         'market_making': {
             'initialization': '🎯 Inicializando estratégia Market Making...',
             'ready': '✅ Grid dinâmico ativo e adaptativo',
             'monitoring': '📈 Monitorando mercado para ajustes dinâmicos',
             'grid_shifted': '🔄 Grid reposicionado por movimento de mercado',
-            'spread_adjusted': '📏 Spread ajustado por volatilidade'
+            'spread_adjusted': '📏 Spread ajustado por volatilidade',
+            'grid_executed': '🎯 Ordem de market making executada',
+            'no_opportunities': '⏳ Aguardando condições de mercado...'
+        },
+        'dynamic_grid': {
+            'initialization': '⚡ Inicializando estratégia Dynamic Grid...',
+            'ready': '✅ Grid dinâmico com ajustes automáticos ativo',
+            'monitoring': '🔄 Monitorando volatilidade para ajustes do grid',
+            'grid_adjusted': '⚡ Grid ajustado dinamicamente',
+            'threshold_reached': '🎯 Threshold de ajuste atingido',
+            'grid_executed': '🎯 Ordem do grid dinâmico executada',
+            'volatility_change': '📊 Mudança de volatilidade detectada',
+            'no_opportunities': '⏳ Aguardando condições para grid dinâmico...'
         }
     }
     
-    return messages.get(strategy_type.lower(), messages['multi_asset'])
+    return messages.get(strategy_type.lower(), messages['grid'])

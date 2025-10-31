@@ -21,12 +21,15 @@ from src.grid_strategy import GridStrategy
 from src.dynamic_grid_strategy import DynamicGridStrategy
 from src.multi_asset_strategy import MultiAssetStrategy
 from src.multi_asset_enhanced_strategy import MultiAssetEnhancedStrategy
+from src.directional_scalping_integrated import DirectionalScalping 
 from src.performance_tracker import PerformanceTracker
 from src.strategy_logger import create_strategy_logger, get_strategy_specific_messages
 from src.telegram_notifier import TelegramNotifier
 from src.grid_risk_manager import GridRiskManager
 from src.margin_trend_protector import create_margin_trend_adapter
 from src.positions_tracker import PositionsTracker
+
+
 
 # Dashboard web será importado dinamicamente para evitar import circular
 init_web_components = None
@@ -43,10 +46,13 @@ if sys.platform == 'win32':
 
 class GridTradingBot:
     def __init__(self):
-        # Carregar configurações
+        # Carregar configurações do .env primeiro
         load_dotenv()
         
-        # Criar dicionário config com todas as variáveis de ambiente
+        # 🔒 INTEGRAÇÃO COM CREDENCIAIS CRIPTOGRAFADAS
+        self._load_secure_credentials_if_available()
+        
+        # Criar dicionário config com todas as variáveis de ambiente (incluindo credenciais descriptografadas)
         self.config = dict(os.environ)
         
         # Determinar tipo de estratégia - APENAS UMA VARIÁVEL: STRATEGY_TYPE
@@ -57,6 +63,8 @@ class GridTradingBot:
             self.strategy_type = 'multi_asset'
         elif strategy_type_env == 'multi_asset_enhanced':
             self.strategy_type = 'multi_asset_enhanced'
+        elif strategy_type_env == 'scalping': 
+            self.strategy_type = 'scalping'
         elif strategy_type_env in ['pure_grid', 'market_making', 'dynamic_grid']:
             self.strategy_type = 'grid'
             self.grid_type = strategy_type_env  # Salvar tipo específico do grid
@@ -123,7 +131,39 @@ class GridTradingBot:
         self.logger.info("🤖 PACIFICA TRADING BOT", force=True)
         self.logger.info("=" * 80, force=True)
         
-        if self.strategy_type == 'grid':
+        if self.strategy_type == 'scalping':
+            self.logger.info(f"Estratégia: 🚀 DIRECTIONAL SCALPING", force=True)
+            self.logger.info(f"Símbolo: {self.symbol}", force=True)
+            
+            # Mostrar configurações específicas do scalping
+            duration = os.getenv('SCALPING_TRADE_DURATION', '30')
+            min_pnl = os.getenv('SCALPING_MIN_PNL', '0.5')
+            max_loss = os.getenv('SCALPING_MAX_LOSS_PERCENT', '-2.0')
+            position_size = os.getenv('SCALPING_POSITION_SIZE', '100')
+            cooldown = os.getenv('SCALPING_COOLDOWN', '10')
+            confidence = os.getenv('SCALPING_MIN_CONFIDENCE', '0.6')
+            
+            self.logger.info(f"Duração do Trade: {duration}s", force=True)
+            self.logger.info(f"Min PNL Alvo: ${min_pnl}", force=True)
+            self.logger.info(f"Max Loss: {max_loss}%", force=True)
+            self.logger.info(f"Tamanho Posição: ${position_size}", force=True)
+            self.logger.info(f"Cooldown: {cooldown}s", force=True)
+            self.logger.info(f"Min Confidence: {confidence}", force=True)
+            
+            # Mostrar configurações do analyzer
+            use_ema = os.getenv('ANALYZER_USE_EMA', 'true').lower() == 'true'
+            use_rsi = os.getenv('ANALYZER_USE_RSI', 'true').lower() == 'true'
+            use_volume = os.getenv('ANALYZER_USE_VOLUME', 'true').lower() == 'true'
+            min_confirmation = os.getenv('ANALYZER_MIN_CONFIRMATION', '0.6')
+            
+            indicators = []
+            if use_ema: indicators.append("EMA")
+            if use_rsi: indicators.append("RSI")
+            if use_volume: indicators.append("Volume")
+            
+            self.logger.info(f"Indicadores: {', '.join(indicators)}", force=True)
+            self.logger.info(f"Min Confirmation: {min_confirmation}", force=True)
+        elif self.strategy_type == 'grid':
             grid_type = getattr(self, 'grid_type', 'market_making').upper()
             if grid_type == 'DYNAMIC_GRID':
                 self.logger.info(f"Estratégia: 🎯 DYNAMIC GRID TRADING", force=True)
@@ -219,11 +259,107 @@ class GridTradingBot:
         except Exception as e:
             self.logger.debug(f"⚠️ Erro durante validações: {e}")
     
+    def _load_secure_credentials_if_available(self):
+        """Carrega credenciais criptografadas se disponíveis, mantendo compatibilidade com .env"""
+        try:
+            # Verificar se existe arquivo de credenciais criptografadas
+            from pathlib import Path
+            credentials_file = Path('.credentials_secure.json')
+            
+            if not credentials_file.exists():
+                # Se não existe, usar .env normalmente
+                return
+            
+            # Importar funções do app.py
+            try:
+                from app import load_credentials_secure, decrypt_credential
+                
+                # Carregar credenciais descriptografadas
+                result = load_credentials_secure()
+                
+                if result['status'] == 'success':
+                    credentials = result['credentials']
+                    
+                    # Mapear credenciais para variáveis de ambiente
+                    credential_mapping = {
+                        'MAIN_PUBLIC_KEY': credentials.get('MAIN_PUBLIC_KEY'),
+                        'AGENT_PRIVATE_KEY_B58': credentials.get('AGENT_PRIVATE_KEY_B58'),
+                        'API_ADDRESS': credentials.get('API_ADDRESS', 'https://api.pacifica.fi/api/v1')
+                    }
+                    
+                    # Aplicar apenas credenciais válidas (não sobrescrever se já existe no .env)
+                    for key, value in credential_mapping.items():
+                        if value and (not os.getenv(key) or os.getenv(key) == ''):
+                            os.environ[key] = str(value)
+                    
+                    # Criar um logger temporário para informar sobre o carregamento
+                    print("🔒 Credenciais criptografadas carregadas com sucesso")
+                    
+                elif result['status'] == 'not_configured':
+                    print("📋 Credenciais criptografadas não configuradas, usando .env")
+                
+            except ImportError:
+                # Se não conseguir importar do app.py, usar .env normalmente
+                print("⚠️ Módulo de credenciais não disponível, usando .env")
+                
+        except Exception as e:
+            # Em caso de erro, continuar usando .env
+            print(f"⚠️ Erro ao carregar credenciais criptografadas: {e}")
+            print("📋 Continuando com credenciais do .env")
+    
+    def _verify_credentials(self) -> bool:
+        """Verifica se as credenciais necessárias estão configuradas"""
+        required_credentials = [
+            'MAIN_PUBLIC_KEY',
+            'AGENT_PRIVATE_KEY_B58'
+        ]
+        
+        missing_credentials = []
+        
+        for cred in required_credentials:
+            value = os.getenv(cred)
+            if not value or value.strip() == '':
+                missing_credentials.append(cred)
+        
+        if missing_credentials:
+            self.logger.error("❌ Credenciais obrigatórias não encontradas:")
+            for cred in missing_credentials:
+                self.logger.error(f"   • {cred}")
+            
+            self.logger.error("📋 Configure através de:")
+            self.logger.error("   1. Interface web: http://localhost:5000")
+            self.logger.error("   2. Arquivo .env na raiz do projeto")
+            return False
+        
+        # Verificar se as credenciais são válidas (formato básico)
+        main_key = os.getenv('MAIN_PUBLIC_KEY')
+        agent_key = os.getenv('AGENT_PRIVATE_KEY_B58')
+        
+        if len(main_key) < 32:
+            self.logger.error("❌ MAIN_PUBLIC_KEY muito curta")
+            return False
+            
+        if len(agent_key) < 32:
+            self.logger.error("❌ AGENT_PRIVATE_KEY_B58 muito curta")
+            return False
+        
+        self.logger.info("✅ Credenciais verificadas com sucesso")
+        self.logger.info(f"🔑 Wallet: {main_key[:8]}...{main_key[-8:]}")
+        self.logger.info(f"🔐 Agent Key: {agent_key[:8]}...{agent_key[-8:]}")
+        
+        return True
+    
     def initialize_components(self) -> bool:
         """Inicializa todos os componentes do bot"""
         
         try:
             self.logger.info("🔧 Inicializando componentes...")
+            
+            # 🔒 Verificar se credenciais estão configuradas
+            if not self._verify_credentials():
+                self.logger.error("❌ Credenciais não configuradas!")
+                self.logger.error("📋 Configure através da interface web ou arquivo .env")
+                return False
             
             # 1. Autenticação
             self.logger.info("🔑 Iniciando autenticação...")
@@ -264,7 +400,15 @@ class GridTradingBot:
                 self.logger.info("✅ Grid Risk Manager inicializado")
             
             # 7. Inicializar strategy baseada no tipo configurado
-            if self.strategy_type == 'multi_asset':
+            if self.strategy_type == 'scalping':
+                self.logger.info("🚀 Inicializando estratégia Directional Scalping...")
+                self.strategy = DirectionalScalping(
+                    auth_client=self.auth,
+                    calculator=self.calculator,
+                    position_manager=self.position_mgr
+                )
+                self.logger.info("✅ Estratégia Directional Scalping inicializada")
+            elif self.strategy_type == 'multi_asset':
                 self.logger.info("🎯 Inicializando estratégia Multi-Asset Scalping...")
                 self.strategy = MultiAssetStrategy(self.auth, self.calculator, self.position_mgr)
             elif self.strategy_type == 'multi_asset_enhanced':
@@ -327,6 +471,40 @@ class GridTradingBot:
             import traceback
             self.logger.error(traceback.format_exc())
             return False
+    
+    def _update_symbols_cache(self):
+        """Atualiza cache de símbolos da Pacifica.fi durante inicialização do bot"""
+        try:
+            self.logger.info("📦 Atualizando cache de símbolos da Pacifica.fi...")
+            
+            # Usar o cache de símbolos com método dedicado
+            from src.cache import SymbolsCache
+            symbols_cache = SymbolsCache(cache_duration_hours=24)
+            
+            # Atualizar usando método específico que fornece mais informações
+            result = symbols_cache.update_cache(api_client=self.auth)
+            
+            self.logger.info(f"📊 Resultado: {result['message']}")
+            self.logger.info(f"🎯 Fonte dos dados: {result['source']}")
+            self.logger.info(f"📈 Total de símbolos: {result['symbols_count']}")
+            
+            if result['success'] and result['source'] in ['api_fresh', 'api_cached']:
+                # Símbolos obtidos da API real da Pacifica.fi
+                symbols = result['symbols']
+                self.logger.info(f"✅ Símbolos REAIS da Pacifica.fi disponíveis para trade")
+                self.logger.info(f"📋 Amostra: {', '.join(symbols[:10])}")
+                
+            elif result['symbols_count'] > 0:
+                # Fallback funcionando
+                self.logger.warning(f"⚠️ Usando fallback: {result.get('error', 'API temporariamente indisponível')}")
+                
+            else:
+                # Problema grave
+                self.logger.error("❌ Falha ao obter símbolos - verifique configuração da API")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erro ao atualizar cache de símbolos: {e}")
+            self.logger.info("ℹ️ Interface web usará símbolos padrão como fallback")
     
     def _clean_old_orders(self):
         """Cancela todas as ordens abertas do símbolo com verificação robusta"""
@@ -552,6 +730,9 @@ class GridTradingBot:
         if not self.initialize_components():
             self.logger.error("❌ Falha na inicialização - abortando")
             return
+
+        # ✅ NOVA FUNCIONALIDADE: Atualizar cache de símbolos durante inicialização
+        self._update_symbols_cache()
 
         # Inicializando teste de symbol info (apenas para estratégia grid)
         if self.strategy_type == 'grid':

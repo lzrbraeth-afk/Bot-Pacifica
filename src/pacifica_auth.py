@@ -12,6 +12,8 @@ import requests
 import logging
 import traceback
 import uuid
+import aiohttp
+import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path
@@ -1654,6 +1656,278 @@ class PacificaAuth:
         except Exception as e:
             self.logger.error(f"❌ Erro ao buscar histórico de trades: {e}")
             return []
+        
+    # ============================================================================
+    # MÉTODO 1: get_klines() - Buscar Candles Históricos
+    # ============================================================================
+
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str = '1m',
+        limit: int = 100,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Busca candles (klines) históricos
+        
+        Args:
+            symbol: Símbolo do par (ex: 'SOL', 'BTC')
+            interval: Intervalo dos candles
+                    Opções: '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'
+            limit: Número de candles (max 1000)
+            start_time: Timestamp de início (milissegundos)
+            end_time: Timestamp de fim (milissegundos)
+        
+        Returns:
+            Lista de dicionários com formato:
+            [
+                {
+                    'timestamp': 1234567890000,
+                    'open': '100.50',
+                    'high': '101.20',
+                    'low': '99.80',
+                    'close': '100.90',
+                    'volume': '12345.67'
+                },
+                ...
+            ]
+        """
+        try:
+            # Valida símbolo
+            if not symbol:
+                raise ValueError("Símbolo não pode ser vazio")
+            
+            # Valida intervalo - conforme documentação Pacifica
+            valid_intervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d']
+            if interval not in valid_intervals:
+                raise ValueError(f"Intervalo inválido. Use: {valid_intervals}")
+            
+            # Limita quantidade
+            limit = min(limit, 1000)
+            
+            # 🔍 ENDPOINT CORRETO DA PACIFICA.FI - conforme documentação
+            # base_url já contém '/api/v1', então só precisamos adicionar '/kline'
+            endpoint = f"{self.base_url}/kline"
+            
+            # Calcular start_time se não fornecido (baseado no limit)
+            if not start_time:
+                import time
+                # Calcular tempo baseado no intervalo e limite
+                interval_seconds = {
+                    '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+                    '1h': 3600, '2h': 7200, '4h': 14400, '8h': 28800, '12h': 43200, '1d': 86400
+                }
+                seconds_back = interval_seconds.get(interval, 60) * limit
+                start_time = int((time.time() - seconds_back) * 1000)  # Converter para milissegundos
+            
+            # Parâmetros conforme documentação Pacifica
+            params = {
+                'symbol': symbol,
+                'interval': interval,
+                'start_time': start_time
+            }
+            
+            if end_time:
+                params['end_time'] = end_time
+            
+            # Fazer requisição para API da Pacifica
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(endpoint, params=params, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            
+                            # Processar resposta conforme documentação Pacifica
+                            if data.get('success') and data.get('data'):
+                                candles = []
+                                
+                                for candle_data in data['data']:
+                                    # Converter formato Pacifica para formato padrão
+                                    candle = {
+                                        'timestamp': int(candle_data['t']),  # Candle start time
+                                        'open': str(candle_data['o']),       # Open price
+                                        'high': str(candle_data['h']),       # High price  
+                                        'low': str(candle_data['l']),        # Low price
+                                        'close': str(candle_data['c']),      # Close price
+                                        'volume': str(candle_data['v'])      # Volume
+                                    }
+                                    candles.append(candle)
+                                
+                                if candles:
+                                    self.logger.debug(f"✅ Recebidos {len(candles)} candles para {symbol} ({interval}) da Pacifica API")
+                                    return candles
+                                else:
+                                    self.logger.warning(f"⚠️ Resposta vazia para klines {symbol} {interval}")
+                                    return []
+                            else:
+                                error_msg = data.get('error', 'Resposta inválida')
+                                self.logger.warning(f"⚠️ Erro na API Pacifica klines: {error_msg}")
+                                return []
+                        else:
+                            self.logger.warning(f"⚠️ Status HTTP {response.status} para klines {symbol}")
+                            return []
+                            
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erro ao buscar klines para {symbol}: {e}")
+                return []
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar klines: {e}")
+            return []
+
+
+    # ============================================================================
+    # MÉTODO 2: get_current_price() - Buscar Preço Atual
+    # ============================================================================
+
+    async def get_current_price(self, symbol: str) -> float:
+        """
+        Busca preço atual de um símbolo
+        
+        Args:
+            symbol: Símbolo do par
+        
+        Returns:
+            Preço atual como float
+        """
+        try:
+            # Estratégia 1: Tentar do último candle
+            klines = await self.get_klines(symbol=symbol, interval='1m', limit=1)
+            
+            if klines and len(klines) > 0:
+                return float(klines[0]['close'])
+            
+            # Estratégia 2: Fallback para ticker
+            endpoints_to_try = [
+                f"{self.base_url}/market/ticker",
+                f"{self.base_url}/ticker",
+                f"{self.base_url}/market/ticker/price"
+            ]
+            
+            for endpoint in endpoints_to_try:
+                try:
+                    params = {'symbol': symbol}
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(endpoint, params=params, timeout=5) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                
+                                # Possíveis formatos de resposta
+                                price = data.get('last') or data.get('price') or data.get('lastPrice')
+                                if price:
+                                    return float(price)
+                except:
+                    continue
+            
+            self.logger.warning(f"⚠️ Não foi possível obter preço atual de {symbol}")
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao buscar preço atual: {e}")
+            return 0.0
+
+
+    # ============================================================================
+    # MÉTODO 3: create_market_order() - Criar Ordem a Mercado
+    # ============================================================================
+
+    async def create_market_order(
+        self,
+        symbol: str,
+        side: str,
+        size: float,
+        leverage: int = 1,
+        reduce_only: bool = False
+    ) -> Optional[Dict]:
+        """
+        Cria ordem a mercado (Market Order)
+        
+        ⚠️ CRÍTICO: Este método DEVE usar a lógica de assinatura
+        existente em pacifica_auth.py (sign_message)
+        
+        Args:
+            symbol: Símbolo do par
+            side: 'buy' ou 'sell'
+            size: Quantidade
+            leverage: Alavancagem
+            reduce_only: Se True, apenas reduz posição (não abre nova)
+        
+        Returns:
+            Dicionário com dados da ordem ou None em caso de erro
+        """
+        try:
+            # Valida side (aceita ambos formatos conforme peculiaridade da API)
+            if side not in ['buy', 'sell', 'bid', 'ask']:
+                raise ValueError(f"Side inválido: {side}")
+            
+            # Normaliza side para o formato da API Pacifica
+            # ⚠️ AJUSTE conforme documentação real da API
+            normalized_side = 'bid' if side in ['buy', 'bid'] else 'ask'
+            
+            # Obter symbol_info para validações
+            symbol_info = self.get_symbol_info(symbol)
+            if not symbol_info:
+                self.logger.error(f"❌ Não foi possível obter info do símbolo {symbol}")
+                return None
+            
+            # Arredondar quantidade conforme lot_size
+            lot_size = float(symbol_info.get('lot_size', 0.0001))
+            size = self.round_quantity(size, lot_size)
+            
+            # Monta payload
+            payload = {
+                'symbol': symbol,
+                'side': normalized_side,
+                'type': 'market',  # Tipo market order
+                'size': size,
+                'leverage': leverage
+            }
+            
+            if reduce_only:
+                payload['reduce_only'] = True
+            
+            # ⚠️ CRÍTICO: USE O MÉTODO DE ASSINATURA EXISTENTE
+            # O método sign_message já existe em pacifica_auth.py
+            # Exemplo de uso (ajuste conforme sua implementação):
+            
+            # Preparar header
+            header = {
+                "account": self.wallet_address,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000)
+            }
+            
+            # Assinar a mensagem
+            message, signature = self.sign_message(header, payload)
+            
+            # Adicionar assinatura ao header
+            header["signature"] = signature
+            
+            # Envia ordem
+            url = f"{self.base_url}/orders/create"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, 
+                    json={'header': header, 'payload': payload},
+                    timeout=10
+                ) as response:
+                    if response.status in [200, 201]:
+                        data = await response.json()
+                        self.logger.info(f"✅ Ordem market criada: {data.get('id')} - {side} {size} {symbol}")
+                        return data
+                    else:
+                        error_text = await response.text()
+                        self.logger.error(f"❌ Erro ao criar ordem market: {response.status} - {error_text}")
+                        return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao criar ordem market: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+
 
 # ============================================================================
 # FUNÇÃO PRINCIPAL DE TESTE

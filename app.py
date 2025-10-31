@@ -24,8 +24,14 @@ from werkzeug.utils import secure_filename
 import shutil
 from src.csv_trade_parser import PacificaCSVParser, analyze_pacifica_csv
 
+# ===== IMPORTS PARA MARKET VISION =====
+from market_vision.market_vision_service import MarketVisionService
+
 # ===== IMPORT VOLUME TRACKER =====
 from src.volume_tracker import get_volume_tracker
+
+# ===== IMPORT SYMBOLS CACHE =====
+from src.cache import SymbolsCache
 
 # ===== IMPORTS PARA GERENCIAMENTO DE RISCO =====
 # NOTA: Imports condicionais movidos para initialize_risk_components()
@@ -75,6 +81,12 @@ Path('backups').mkdir(exist_ok=True)
 
 # Inicializar bot_manager (será implementado se necessário)
 bot_manager = None
+
+# ===== INICIALIZAR CACHE DE SÍMBOLOS =====
+symbols_cache = SymbolsCache(cache_duration_hours=24)
+
+# ===== MARKET VISION SERVICE =====
+market_vision_service = None
 
 # CONFIGURAÇÃO MAIS CONSERVADORA PARA WINDOWS  
 socketio = SocketIO(
@@ -447,6 +459,39 @@ def initialize_risk_components():
         logger.error(f"❌ Erro inesperado ao inicializar componentes: {e}")
         logger.debug(traceback.format_exc())
         risk_components_initialized = False
+        return False
+
+# ========== ✅ MARKET VISION: FUNÇÃO DE INICIALIZAÇÃO ==========
+
+def init_market_vision():
+    """Inicializa o Market Vision Service"""
+    global market_vision_service
+    
+    try:
+        # Importar componentes do bot
+        from src.pacifica_auth import PacificaAuth
+        from src.position_manager import PositionManager
+        
+        # Inicializar (usar credenciais já configuradas)
+        logger.info("🎯 Inicializando Market Vision Service...")
+        auth = PacificaAuth()
+        pos_mgr = PositionManager(auth)
+        
+        market_vision_service = MarketVisionService(
+            auth_client=auth,
+            position_manager=pos_mgr,
+            config={
+                'use_multi_timeframe': True,  # Análise 5m, 15m, 1h
+                'db_path': 'data/trade_decisions.db'
+            }
+        )
+        
+        logger.info("✅ Market Vision Service inicializado com sucesso")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao inicializar Market Vision: {e}")
+        logger.debug(traceback.format_exc())
         return False
 
 # ========== FUNÇÕES DE DADOS (MANTIDAS + MELHORIAS) ==========
@@ -826,6 +871,26 @@ def monitor_logs():
     
     logger.info("🛑 Logs monitor thread parada")
 
+# Thread para atualizar Market Vision
+def market_vision_update_loop():
+    """Loop que atualiza análise do Market Vision a cada 30 segundos"""
+    global monitor_active, market_vision_service
+    logger.info("🎯 Market Vision update thread iniciada")
+    
+    while monitor_active:
+        try:
+            if market_vision_service:
+                data = market_vision_service.get_dashboard_data('BTC')
+                socketio.emit('market_vision_update', data)
+            
+            time.sleep(30)  # Atualizar a cada 30s
+            
+        except Exception as e:
+            logger.error(f"Erro no market vision loop: {e}")
+            time.sleep(60)
+    
+    logger.info("🛑 Market Vision update thread parada")
+
 # ========== ROTAS HTTP BÁSICAS ==========
 
 # ========== 1. GERAÇÃO E GERENCIAMENTO DE CHAVE DE CRIPTOGRAFIA ==========
@@ -1069,31 +1134,44 @@ def validate_wallet_address(address: str) -> dict:
 
 
 def validate_private_key(private_key: str) -> dict:
-    """Valida chave privada"""
+    """Valida chave privada - Compatível com pacifica_auth.py"""
     try:
-        # Chave privada Solana em base58 tem ~88 caracteres
-        if not private_key or len(private_key) < 80:
+        if not private_key:
             return {
                 'valid': False,
-                'error': 'Chave privada muito curta'
+                'error': 'Chave privada é obrigatória'
             }
         
-        # Tentar decodificar
+        # Tentar decodificar base58
         import base58
         try:
-            decoded = base58.b58decode(private_key)
-            if len(decoded) != 64:
+            raw = base58.b58decode(private_key)
+            
+            # Aceitar tanto chaves seed (32 bytes) quanto keypair (64 bytes)
+            # Compatível com setup_agent_wallet() do pacifica_auth.py
+            if len(raw) == 32:
+                return {
+                    'valid': True,
+                    'type': 'seed',
+                    'message': 'Chave seed válida (32 bytes)'
+                }
+            elif len(raw) == 64:
+                return {
+                    'valid': True,
+                    'type': 'keypair',
+                    'message': 'Chave keypair válida (64 bytes)'
+                }
+            else:
                 return {
                     'valid': False,
-                    'error': 'Chave privada inválida: tamanho incorreto após decodificação'
+                    'error': f'Tamanho da chave inválido: {len(raw)} bytes (esperado: 32 ou 64 bytes)'
                 }
-        except Exception:
+                
+        except Exception as decode_error:
             return {
                 'valid': False,
-                'error': 'Chave privada inválida: não é base58 válido'
+                'error': f'Chave privada inválida: não é base58 válido ({str(decode_error)})'
             }
-        
-        return {'valid': True}
         
     except Exception as e:
         return {
@@ -1313,12 +1391,53 @@ def api_config():
 
 @app.route('/api/config/update', methods=['POST'])
 def api_config_update():
-    """API: Atualizar configurações"""
+    """API: Atualizar configurações com reload automático opcional"""
     try:
-        updates = request.json
+        data = request.json
+        updates = data if isinstance(data, dict) and 'updates' not in data else data.get('updates', data)
+        auto_restart = data.get('auto_restart', False)  # False por padrão para compatibilidade
+        
         result = update_env(updates)
-        status_code = 200 if result["status"] == "success" else 400
+        
+        if result["status"] == "success":
+            # ✅ NOVIDADE: Recarregar .env se atualização foi bem-sucedida
+            load_dotenv(override=True)
+            
+            # ✅ MELHORIA: Reinício opcional do bot
+            if auto_restart:
+                try:
+                    bot_was_running = is_bot_running()
+                    
+                    if bot_was_running:
+                        logger.info("🔄 Reiniciando bot após atualização de configuração...")
+                        
+                        stop_result = stop_bot()
+                        if stop_result.get("status") == "error":
+                            logger.warning(f"Aviso ao parar bot: {stop_result.get('message')}")
+                        
+                        time.sleep(2)
+                        
+                        start_result = start_bot()
+                        
+                        if start_result.get("status") == "success":
+                            result["bot_restarted"] = True
+                            result["message"] += " - Bot reiniciado automaticamente"
+                        else:
+                            result["status"] = "warning"
+                            result["message"] += " - Erro ao reiniciar bot"
+                            result["bot_restart_error"] = start_result.get('message')
+                    else:
+                        result["bot_restarted"] = False
+                        result["message"] += " (bot não estava rodando)"
+                        
+                except Exception as restart_error:
+                    logger.error(f"Erro durante reinício: {restart_error}")
+                    result["status"] = "warning"
+                    result["message"] += f" - Erro ao reiniciar: {str(restart_error)}"
+        
+        status_code = 200 if result["status"] in ["success", "warning"] else 400
         return jsonify(result), status_code
+        
     except Exception as e:
         logger.error(f"Erro em /api/config/update: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1912,9 +2031,12 @@ def create_config_backup():
 
 @app.route('/api/config/restore', methods=['POST'])
 def restore_config_backup():
-    """Restaura backup de configuração"""
+    """Restaura backup de configuração com reinício automático do bot"""
     try:
-        backup_file = request.json.get('backup_file')
+        data = request.json
+        backup_file = data.get('backup_file')
+        auto_restart = data.get('auto_restart', True)
+        
         if not backup_file:
             return jsonify({
                 "status": "error",
@@ -1938,10 +2060,74 @@ def restore_config_backup():
         # Restaurar backup
         shutil.copy2(backup_path, env_path)
         
-        return jsonify({
+        # ✅ NOVIDADE: Recarregar .env no processo atual
+        load_dotenv(override=True)
+        
+        response_data = {
             "status": "success",
             "message": "Configuração restaurada com sucesso"
-        })
+        }
+        
+        # ✅ MELHORIA: Sistema inteligente de reinício do bot após restore
+        if auto_restart:
+            try:
+                # Verificar se bot está rodando
+                bot_was_running = is_bot_running()
+                
+                if bot_was_running:
+                    logger.info("🔄 Reiniciando bot após restauração de configuração...")
+                    
+                    # Parar o bot atual
+                    stop_result = stop_bot()
+                    if stop_result.get("status") == "error":
+                        logger.warning(f"Aviso ao parar bot: {stop_result.get('message')}")
+                    
+                    # Aguardar cleanup completo
+                    time.sleep(2)
+                    
+                    # Iniciar bot com configuração restaurada
+                    start_result = start_bot()
+                    
+                    if start_result.get("status") == "success":
+                        response_data["bot_restarted"] = True
+                        response_data["message"] = "✅ Configuração restaurada e bot reiniciado automaticamente"
+                        
+                        # Emitir notificação via WebSocket
+                        socketio.emit('alert', {
+                            'type': 'success',
+                            'message': '🔄 Bot reiniciado com sucesso após restauração!',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                    else:
+                        response_data["status"] = "warning"
+                        response_data["message"] = "✅ Configuração restaurada, mas erro ao reiniciar bot"
+                        response_data["bot_restart_error"] = start_result.get('message')
+                        
+                        # Emitir alerta via WebSocket
+                        socketio.emit('alert', {
+                            'type': 'warning',
+                            'message': f'⚠️ Bot não pôde ser reiniciado: {start_result.get("message")}',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                else:
+                    response_data["bot_restarted"] = False
+                    response_data["message"] += " (bot não estava rodando)"
+                    
+            except Exception as restart_error:
+                logger.error(f"Erro durante reinício após restore: {restart_error}")
+                response_data["status"] = "warning"
+                response_data["message"] += ", mas erro durante reinício automático"
+                response_data["bot_restart_error"] = str(restart_error)
+                
+                # Emitir alerta de erro via WebSocket
+                socketio.emit('alert', {
+                    'type': 'error',
+                    'message': f'❌ Erro ao reiniciar bot após restore: {str(restart_error)}',
+                    'timestamp': datetime.now().isoformat()
+                })
+        
+        return jsonify(response_data)
         
     except Exception as e:
         logger.error(f"Erro ao restaurar backup: {e}")
@@ -1953,7 +2139,7 @@ def restore_config_backup():
 
 @app.route('/api/config/save', methods=['POST'])
 def save_config_advanced():
-    """Salva configurações com validação e backup automático"""
+    """Salva configurações com validação, backup automático e reinício inteligente do bot"""
     try:
         data = request.json
         config = data.get('config', {})
@@ -2061,38 +2247,73 @@ def save_config_advanced():
         with open(env_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
         
+        # ✅ NOVIDADE: Recarregar .env no processo atual
+        load_dotenv(override=True)
+        
         response_data = {
             "status": "success",
             "message": "Configurações salvas com sucesso",
             "backup_created": backup_created
         }
         
-        # 5. Reiniciar bot se solicitado
+        # ✅ MELHORIA: Sistema inteligente de reinício do bot
         if auto_restart:
-            # Verificar se bot está rodando usando bot_manager se disponível
-            bot_running = False
             try:
-                # Verificar se existe bot_manager global
-                if bot_manager and hasattr(bot_manager, 'is_running'):
-                    if bot_manager.is_running():
-                        bot_running = True
-                        logger.info("Parando bot para aplicar novas configurações...")
-                        bot_manager.stop()
-                        time.sleep(2)  # Aguardar término
+                # Verificar se bot está rodando usando as funções existentes
+                bot_was_running = is_bot_running()
+                
+                if bot_was_running:
+                    logger.info("🔄 Reiniciando bot com novas configurações...")
+                    
+                    # Parar o bot atual
+                    stop_result = stop_bot()
+                    if stop_result.get("status") == "error":
+                        logger.warning(f"Aviso ao parar bot: {stop_result.get('message')}")
+                    
+                    # Aguardar cleanup completo
+                    time.sleep(2)
+                    
+                    # Iniciar bot com novas configurações
+                    start_result = start_bot()
+                    
+                    if start_result.get("status") == "success":
+                        response_data["bot_restarted"] = True
+                        response_data["message"] = "✅ Configuração salva e bot reiniciado automaticamente"
                         
-                        # Reiniciar
-                        if bot_manager.start():
-                            response_data["bot_restarted"] = True
-                            response_data["message"] += " - Bot reiniciado automaticamente"
-                        else:
-                            response_data["status"] = "warning"
-                            response_data["message"] += " - Erro ao reiniciar bot automaticamente"
+                        # Emitir notificação via WebSocket
+                        socketio.emit('alert', {
+                            'type': 'success',
+                            'message': '🔄 Bot reiniciado com sucesso após mudança de configuração!',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                    else:
+                        response_data["status"] = "warning"
+                        response_data["message"] = "✅ Configuração salva, mas erro ao reiniciar bot automaticamente"
+                        response_data["bot_restart_error"] = start_result.get('message')
+                        
+                        # Emitir alerta via WebSocket
+                        socketio.emit('alert', {
+                            'type': 'warning',
+                            'message': f'⚠️ Bot não pôde ser reiniciado: {start_result.get("message")}',
+                            'timestamp': datetime.now().isoformat()
+                        })
                 else:
-                    response_data["message"] += " - Bot manager não disponível, reinicie manualmente se necessário"
+                    response_data["bot_restarted"] = False
+                    response_data["message"] = "✅ Configuração salva (bot não estava rodando)"
+                    
             except Exception as restart_error:
-                logger.error(f"Erro ao reiniciar bot: {restart_error}")
+                logger.error(f"Erro durante reinício automático do bot: {restart_error}")
                 response_data["status"] = "warning"
-                response_data["message"] += f" - Erro ao reiniciar bot: {restart_error}"
+                response_data["message"] = "✅ Configuração salva, mas erro durante reinício automático"
+                response_data["bot_restart_error"] = str(restart_error)
+                
+                # Emitir alerta de erro via WebSocket
+                socketio.emit('alert', {
+                    'type': 'error',
+                    'message': f'❌ Erro ao reiniciar bot: {str(restart_error)}',
+                    'timestamp': datetime.now().isoformat()
+                })
         
         return jsonify(response_data)
         
@@ -2137,6 +2358,156 @@ def list_config_backups():
             "status": "error",
             "message": str(e)
         }), 500
+
+
+# ==========================================
+# ENDPOINTS PARA SÍMBOLOS (CACHE)
+# ==========================================
+
+@app.route('/api/symbols/available', methods=['GET'])
+def get_available_symbols():
+    """Retorna símbolos disponíveis (usa cache se válido)"""
+    try:
+        force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+        
+        # Tentar usar API client se credenciais configuradas
+        api_client = None
+        try:
+            creds = load_credentials_secure()
+            if creds['status'] == 'configured':
+                from src.pacifica_auth import PacificaAuth
+                api_client = PacificaAuth(
+                    creds['credentials']['PRIVATE_KEY'],
+                    creds['credentials']['WALLET_ADDRESS']
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Não foi possível criar API client: {e}")
+        
+        # Buscar símbolos
+        symbols = symbols_cache.get_symbols(api_client, force_refresh)
+        cache_info = symbols_cache.get_cache_info()
+        
+        return jsonify({
+            'status': 'success',
+            'symbols': symbols,
+            'cache_info': cache_info
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar símbolos: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/symbols/refresh', methods=['POST'])
+def refresh_symbols():
+    """Força atualização dos símbolos usando a mesma lógica do bot"""
+    try:
+        # ✅ USAR A MESMA LÓGICA QUE O BOT USA (sem cache, direto da API)
+        from src.pacifica_auth import PacificaAuth
+        import os
+        
+        # Criar um client temporário para buscar símbolos
+        # get_prices() é endpoint público, não precisa de credenciais
+        temp_auth = PacificaAuth()
+        
+        # Buscar preços/símbolos da API (mesmo que o bot faz)
+        data = temp_auth.get_prices()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Falha ao conectar com API da Pacifica.fi',
+                'symbols': ['BTC', 'ETH', 'SOL', 'DOGE', 'AVAX'],  # Fallback básico
+                'symbols_count': 5,
+                'source': 'fallback'
+            }), 200  # 200 mesmo com erro pois tem fallback
+        
+        # Extrair símbolos (mesma lógica do MultiAssetEnhanced)
+        data_list = data.get('data', [])
+        if not data_list:
+            return jsonify({
+                'status': 'warning', 
+                'message': 'Lista de dados vazia na API',
+                'symbols': ['BTC', 'ETH', 'SOL'],
+                'symbols_count': 3,
+                'source': 'fallback_empty'
+            }), 200
+        
+        # Extrair símbolos dos dados
+        all_symbols = []
+        for item in data_list:
+            symbol = item.get('symbol')
+            if symbol:
+                all_symbols.append(symbol)
+        
+        if not all_symbols:
+            return jsonify({
+                'status': 'warning',
+                'message': 'Nenhum símbolo encontrado nos dados da API', 
+                'symbols': ['BTC', 'ETH', 'SOL'],
+                'symbols_count': 3,
+                'source': 'fallback_no_symbols'
+            }), 200
+        
+        # ✅ Aplicar blacklist (mesma lógica do bot)
+        use_blacklist = os.getenv('SYMBOLS_USE_BLACKLIST', 'true').lower() == 'true'
+        blacklist_str = os.getenv('SYMBOLS_BLACKLIST', 'PUMP,FARTCOIN')
+        
+        final_symbols = all_symbols.copy()
+        removed_symbols = []
+        
+        if use_blacklist and blacklist_str:
+            blacklist = [s.strip().upper() for s in blacklist_str.split(',')]
+            final_symbols = [s for s in all_symbols if s not in blacklist]
+            removed_symbols = [s for s in all_symbols if s in blacklist]
+        
+        logger.info(f"✅ Símbolos obtidos da API: {len(all_symbols)} total, {len(final_symbols)} após filtros")
+        if removed_symbols:
+            logger.info(f"🚫 Símbolos removidos: {removed_symbols}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Símbolos atualizados com sucesso da API Pacifica.fi',
+            'symbols': final_symbols,
+            'symbols_count': len(final_symbols),
+            'total_from_api': len(all_symbols),
+            'blacklisted': removed_symbols,
+            'source': 'pacifica_api',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar símbolos: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Erro interno: {str(e)}',
+            'symbols': ['BTC', 'ETH', 'SOL', 'DOGE', 'AVAX'],  # Fallback em caso de erro
+            'symbols_count': 5,
+            'source': 'error_fallback'
+        }), 200  # 200 mesmo com erro pois tem fallback
+
+@app.route('/api/symbols/cache-info', methods=['GET'])
+def get_symbols_cache_info():
+    """Retorna informações sobre o cache"""
+    try:
+        info = symbols_cache.get_cache_info()
+        return jsonify({
+            'status': 'success',
+            'cache': info
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# ENDPOINTS DE POSIÇÕES E ORDENS
+# ==========================================
 
 @app.route('/api/positions')
 def api_positions():
@@ -3050,6 +3421,83 @@ def api_csv_delete(filename):
         logger.error(f"Erro em /api/csv/delete/{filename}: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ==========================================
+# MARKET VISION - ROTAS
+# ==========================================
+
+@app.route('/api/market-vision', methods=['GET'])
+def get_market_vision_api():
+    """Retorna análise completa do mercado"""
+    try:
+        if market_vision_service is None:
+            return jsonify({'error': 'Market Vision não inicializado'}), 500
+        
+        symbol = request.args.get('symbol', 'BTC')
+        data = market_vision_service.get_dashboard_data(symbol)
+        
+        return jsonify(data)
+        
+    except Exception as e:
+        logger.error(f"Erro em /api/market-vision: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/record-decision', methods=['POST'])
+def record_decision_api():
+    """Registra decisão manual do usuário"""
+    try:
+        if market_vision_service is None:
+            return jsonify({'error': 'Market Vision não inicializado'}), 500
+        
+        user_decision = request.json
+        decision_id = market_vision_service.record_user_decision(user_decision)
+        
+        return jsonify({
+            'success': True,
+            'decision_id': decision_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro em /api/record-decision: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/decision-history', methods=['GET'])
+def get_decision_history_api():
+    """Retorna histórico de decisões"""
+    try:
+        if market_vision_service is None:
+            return jsonify({'error': 'Market Vision não inicializado'}), 500
+        
+        limit = int(request.args.get('limit', 10))
+        history = market_vision_service.get_decision_history(limit)
+        
+        return jsonify(history)
+        
+    except Exception as e:
+        logger.error(f"Erro em /api/decision-history: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/decision-patterns', methods=['GET'])
+def get_decision_patterns_api():
+    """Analisa padrões nas decisões"""
+    try:
+        if market_vision_service is None:
+            return jsonify({'error': 'Market Vision não inicializado'}), 500
+        
+        patterns = market_vision_service.get_decision_patterns()
+        
+        return jsonify(patterns)
+        
+    except Exception as e:
+        logger.error(f"Erro em /api/decision-patterns: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 # ========== WEBSOCKET EVENTS ==========
 
 @socketio.on('connect')
@@ -3278,12 +3726,15 @@ def validate_credentials_endpoint():
         private_key = data.get('private_key')
         
         errors = []
+        validation_details = {}
         
         # Validar endereço
         if wallet_address:
             wallet_validation = validate_wallet_address(wallet_address)
             if not wallet_validation['valid']:
                 errors.append(wallet_validation['error'])
+            else:
+                validation_details['wallet'] = 'Endereço da carteira válido'
         else:
             errors.append('Endereço da carteira é obrigatório')
         
@@ -3292,22 +3743,33 @@ def validate_credentials_endpoint():
             key_validation = validate_private_key(private_key)
             if not key_validation['valid']:
                 errors.append(key_validation['error'])
+            else:
+                # Adicionar informações sobre o tipo de chave detectado
+                key_type = key_validation.get('type', 'unknown')
+                key_message = key_validation.get('message', 'Chave privada válida')
+                validation_details['private_key'] = key_message
+                
+                logger.info(f"✅ Chave privada válida - Tipo: {key_type}")
         else:
             errors.append('Chave privada é obrigatória')
         
         # Se não houver erros, testar conexão
         if not errors:
+            logger.info("🔗 Testando conexão com API...")
             api_test = test_api_connection(wallet_address, private_key)
             if not api_test['valid']:
                 errors.append(api_test['error'])
             else:
+                logger.info("✅ Conexão com API estabelecida com sucesso")
                 return jsonify({
                     'status': 'success',
                     'valid': True,
                     'message': 'Credenciais válidas',
-                    'balance': api_test.get('balance')
+                    'balance': api_test.get('balance'),
+                    'details': validation_details
                 })
         
+        logger.warning(f"❌ Validação falhou: {errors}")
         return jsonify({
             'status': 'error',
             'valid': False,
@@ -3666,6 +4128,25 @@ if __name__ == '__main__':
     print("="*80)
     print("✅ Sistema de credenciais seguras carregado")
     print("   - Criptografia AES-256 (Fernet)")
+    
+    # ✅ Inicializar Market Vision
+    print("="*80)
+    print("🎯 Inicializando Market Vision...")
+    print("="*80)
+    
+    mv_init_success = init_market_vision()
+    
+    if mv_init_success:
+        print("="*80)
+        print("✅ SUCESSO: Market Vision inicializado")
+        print("   Análise multi-dimensional do mercado ativada")
+        print("   Dashboard com sistema de tomada de decisão")
+        print("="*80)
+    else:
+        print("="*80)
+        print("⚠️  AVISO: Market Vision não inicializado")
+        print("   Funcionalidades básicas continuarão funcionando")
+        print("="*80)
     print("   - Validação de wallet Solana")
     print("   - Teste de conexão API")
     print("   - Backup automático")
@@ -3678,6 +4159,13 @@ if __name__ == '__main__':
     
     logs_monitor_thread = threading.Thread(target=monitor_logs, daemon=True)
     logs_monitor_thread.start()
+    
+    # Iniciar Market Vision thread (se inicializado com sucesso)
+    market_vision_thread = None
+    if mv_init_success:
+        market_vision_thread = threading.Thread(target=market_vision_update_loop, daemon=True)
+        market_vision_thread.start()
+        print("🎯 Market Vision update thread iniciada")
     
     print("="*80)
     print("🛑 Para parar: Ctrl+C")
@@ -3702,7 +4190,7 @@ if __name__ == '__main__':
             monitor_thread.join(timeout=5)
         if logs_monitor_thread:
             logs_monitor_thread.join(timeout=5)
+        if market_vision_thread:
+            market_vision_thread.join(timeout=5)
         print("👋 Interface web encerrada")
-
-
 

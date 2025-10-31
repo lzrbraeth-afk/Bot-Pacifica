@@ -1,0 +1,982 @@
+.log-line { font-family: monospace; font-size: 0.875rem; }
+        .log-error { color: #ef4444; }
+        .log-warning { color: #f59e0b; }
+        .log-info { color: #3b82f6; }
+        .log-debug { color: #6b7280; }
+        .log-success { color: #10b981; }
+        
+        .pulse-dot { 
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; 
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .btn-disabled { 
+            opacity: 0.5; 
+            cursor: not-allowed; 
+        }
+        
+        .metric-card {
+            transition: transform 0.2s;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .alert-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+        
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+        
+        .trade-row-profit { background-color: rgba(16, 185, 129, 0.1); }
+        .trade-row-loss { background-color: rgba(239, 68, 68, 0.1); }
+        
+        .ws-connected { color: #10b981; }
+        .ws-disconnected { color: #ef4444; }
+        
+        .position-long { border-left: 4px solid #10b981; }
+        .position-short { border-left: 4px solid #ef4444; }
+        
+        .order-buy { 
+            border-left: 4px solid #10b981; 
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+        }
+        .order-sell { 
+            border-left: 4px solid #ef4444; 
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+        }
+        
+        .cancel-order-btn {
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+        
+        .cancel-order-btn:hover {
+            opacity: 1;
+            transform: scale(1.1);
+            color: #ef4444;
+        }
+        
+        #logs-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #logs-container::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        
+        #logs-container::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        
+        #logs-container::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+        
+        /* Risk Management Styles */
+        .risk-manager {
+            transition: all 0.3s ease;
+        }
+        
+        .risk-content {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .risk-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .risk-metric {
+            background: rgba(55, 65, 81, 0.5);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .risk-metric:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .risk-status-safe {
+            border-left: 4px solid #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        
+        .risk-status-warning {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        
+        .risk-status-danger {
+            border-left: 4px solid #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .risk-progress {
+            width: 100%;
+            background: #374151;
+            border-radius: 9999px;
+            height: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .risk-progress-bar {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 9999px;
+        }
+        
+        .risk-progress-safe { background: #10b981; }
+        .risk-progress-warning { background: #f59e0b; }
+        .risk-progress-danger { background: #ef4444; }
+        
+        /* Risk Monitor Styles */
+        .risk-positions-content {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .position-card {
+            background: rgba(55, 65, 81, 0.3);
+            border: 1px solid #374151;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .position-card:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        
+        .position-card.risk-level-1 {
+            border-left: 4px solid #10b981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+        
+        .position-card.risk-level-2 {
+            border-left: 4px solid #f59e0b;
+            background: rgba(245, 158, 11, 0.05);
+        }
+        
+        .position-card.risk-level-3 {
+            border-left: 4px solid #ef4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+        
+        .position-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #374151;
+        }
+        
+        .position-symbol {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .position-pnl {
+            font-family: monospace;
+            font-weight: 600;
+        }
+        
+        .position-pnl.positive { color: #10b981; }
+        .position-pnl.negative { color: #ef4444; }
+        .position-pnl.neutral { color: #9ca3af; }
+        
+        .risk-layers {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .risk-layer {
+            background: rgba(75, 85, 99, 0.3);
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+        
+        .risk-layer-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .risk-items {
+            display: grid;
+            gap: 0.5rem;
+        }
+        
+        .risk-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            background: rgba(55, 65, 81, 0.3);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+        
+        .risk-item-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .risk-item-value {
+            font-family: monospace;
+            font-weight: 500;
+        }
+        
+        .risk-status-indicator {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .risk-item-placeholder {
+            padding: 0.75rem;
+            background-color: rgba(75, 85, 99, 0.3);
+            border: 1px dashed rgba(156, 163, 175, 0.5);
+            border-radius: 0.375rem;
+            color: #9CA3AF;
+            text-align: center;
+            font-style: italic;
+            font-size: 0.875rem;
+        }
+        
+        .position-card.error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #EF4444;
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .status-safe { background-color: #10b981; }
+        .status-warning { background-color: #f59e0b; }
+        .status-critical { background-color: #ef4444; }
+        .status-near-target { background-color: #3b82f6; }
+        .status-approaching { background-color: #8b5cf6; }
+        
+        .risk-progress-container {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+        
+        .risk-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            margin-bottom: 0.25rem;
+        }
+        
+        .risk-progress-bar-container {
+            background: #374151;
+            height: 0.5rem;
+            border-radius: 0.25rem;
+            overflow: hidden;
+        }
+        
+        .risk-progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .monitor-status-connected {
+            color: #10b981;
+        }
+        
+        .monitor-status-disconnected {
+            color: #ef4444;
+        }
+        
+        .monitor-status-warning {
+            color: #f59e0b;
+        }
+
+        /* Estilos para Config V2 */
+
+        .config-section {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border-left: 4px solid #3b82f6;
+        }
+
+        .config-field {
+            transition: all 0.2s ease;
+        }
+
+        .config-field:hover {
+            background-color: rgba(55, 65, 81, 0.5);
+        }
+
+        .config-field.modified {
+            border-left: 3px solid #fbbf24;
+            background-color: rgba(251, 191, 36, 0.1);
+        }
+
+        .config-field.error {
+            border-left: 3px solid #ef4444;
+            background-color: rgba(239, 68, 68, 0.1);
+        }
+
+        .config-tooltip {
+            position: relative;
+            cursor: help;
+        }
+
+        .config-tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            white-space: nowrap;
+            z-index: 100;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #374151;
+        }
+
+        /* Estilos para interface de símbolos */
+        .symbols-list {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1f2937;
+        }
+
+        .symbols-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .symbols-list::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 3px;
+        }
+
+        .symbols-list::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+
+        .symbols-list::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .symbols-selector label:hover {
+            background-color: #374151;
+        }
+
+        .symbols-selector input[type="checkbox"]:checked + * {
+            background-color: #1e40af;
+        }
+
+        .preview-change-added {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-left: 3px solid #10b981;
+        }
+
+        .preview-change-modified {
+            background-color: rgba(251, 191, 36, 0.1);
+            border-left: 3px solid #fbbf24;
+        }
+
+        .preview-change-removed {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 3px solid #ef4444;
+        }
+
+        .validation-error {
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        /* Estilos para Onboarding */
+        .wizard-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+
+        .wizard-step.active {
+            opacity: 1;
+        }
+
+        .wizard-step.completed {
+            opacity: 1;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .wizard-step.active .step-number {
+            background: #3b82f6;
+            border-color: #60a5fa;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+
+        .wizard-step.completed .step-number {
+            background: #10b981;
+            border-color: #34d399;
+        }
+
+        .wizard-step.completed .step-number::after {
+            content: '✓';
+        }
+
+        .step-label {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+
+        .wizard-step.active .step-label {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .wizard-step-line {
+            height: 2px;
+            flex: 1;
+            background: #374151;
+            margin-top: 24px;
+            max-width: 100px;
+        }
+
+        .onboarding-step {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #onboarding-modal input:focus {
+            transform: scale(1.01);
+            transition: transform 0.2s ease;
+        }
+
+        .validation-success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid #10b981;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+
+        .validation-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+
+        /* ========== ESTILOS CONFIG V2 ========== */
+        .toggle-bg {
+            transition: background-color 0.3s;
+        }
+
+        input:checked ~ .toggle-bg {
+            background-color: #10b981;
+        }
+
+        input:checked ~ .toggle-bg .toggle-dot {
+            transform: translateX(1.5rem);
+        }
+
+        .toggle-dot {
+            transition: transform 0.3s;
+        }
+
+        .config-section {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .config-input:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+
+        .strategy-category-btn,
+        .strategy-btn {
+            transition: all 0.3s ease;
+        }
+
+        .strategy-category-btn:hover,
+        .strategy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Toggle switch personalizado */
+        .toggle-bg {
+            position: relative;
+        }
+
+        .toggle-dot {
+            position: absolute;
+            top: 0.125rem;
+            left: 0.125rem;
+            width: 1.25rem;
+            height: 1.25rem;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input:checked ~ .toggle-bg .toggle-dot {
+            transform: translateX(1.5rem);
+        }
+
+        /* Animações dos botões de estratégia */
+        .strategy-category-btn.border-blue-500,
+        .strategy-btn.border-green-500 {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .strategy-btn.border-green-500 {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+
+        /* ==========================================
+           CONFIGURAÇÃO V2 - ESTILOS APRIMORADOS
+           ========================================== */
+
+        /* Toggle Switch */
+        .toggle-bg {
+            transition: background-color 0.3s ease;
+        }
+
+        input:checked ~ .toggle-bg {
+            background-color: #10b981;
+        }
+
+        input:checked ~ .toggle-bg + div {
+            transform: translateX(1.5rem);
+        }
+
+        .toggle-dot {
+            transition: transform 0.3s ease;
+        }
+
+        /* Animações */
+        .config-section {
+            animation: fadeInUp 0.4s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Botões de Estratégia */
+        .strategy-category-btn,
+        .strategy-btn {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .strategy-category-btn::before,
+        .strategy-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .strategy-category-btn:hover::before,
+        .strategy-btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .strategy-category-btn:hover,
+        .strategy-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .strategy-category-btn:active,
+        .strategy-btn:active {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Inputs com validação */
+        .config-input {
+            transition: all 0.3s ease;
+        }
+
+        .config-input:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
+            border-color: #3b82f6;
+            transform: scale(1.01);
+        }
+
+        .config-input.valid {
+            border-color: #10b981;
+        }
+
+        .config-input.invalid {
+            border-color: #ef4444;
+        }
+
+        .config-input.warning {
+            border-color: #f59e0b;
+        }
+
+        /* Campo de configuração */
+        .config-field {
+            transition: opacity 0.3s ease;
+        }
+
+        .config-field:hover {
+            opacity: 1;
+        }
+
+        /* Botão de ajuda */
+        .config-field label button {
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+
+        .config-field label button:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+
+        /* Modal customizado */
+        #custom-modal {
+            animation: modalFadeIn 0.3s ease-out;
+            backdrop-filter: blur(4px);
+        }
+
+        #custom-modal > div {
+            animation: modalSlideUp 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes modalSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* Preview de mudanças */
+        .preview-change-item {
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .preview-change-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Badge de impacto */
+        .impact-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .impact-high {
+            background-color: #dc2626;
+            color: white;
+        }
+
+        .impact-medium {
+            background-color: #f59e0b;
+            color: white;
+        }
+
+        .impact-low {
+            background-color: #10b981;
+            color: white;
+        }
+
+        /* Loading states */
+        .config-loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        .config-loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 24px;
+            height: 24px;
+            margin: -12px 0 0 -12px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Scrollbar customizada para modal */
+        #custom-modal .modal-content {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1f2937;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        #custom-modal .modal-content::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .strategy-category-btn,
+            .strategy-btn {
+                padding: 1rem;
+            }
+            
+            .config-section h3 {
+                font-size: 1.125rem;
+            }
+            
+            #custom-modal > div {
+                max-width: 95%;
+                margin: 1rem;
+            }
+        }
+
+        /* Estados de seleção */
+        .strategy-category-btn.selected,
+        .strategy-btn.selected {
+            border-width: 3px;
+            font-weight: 600;
+        }
+
+        /* Feedback visual para campos preenchidos */
+        .config-input:not(:placeholder-shown) {
+            background-color: #374151;
+        }
+
+        /* Destaque para campos obrigatórios */
+        .config-field.required label::after {
+            content: ' *';
+            color: #ef4444;
+        }
+
+        /* Tooltip de ajuda */
+        .help-tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .help-tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #1f2937;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .help-tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Gradientes suaves para seções */
+        .config-section {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        }
+
+        .config-section:hover {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            transition: background 0.3s ease;
+        }
+
+        /* Animação de pulso para botões de ação */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
+        }
+
+        .config-actions button:hover {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Efeito de brilho para estratégia selecionada */
+        .strategy-btn.selected::after,
+        .strategy-category-btn.selected::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #3b82f6, #10b981, #3b82f6);
+            border-radius: 0.5rem;
+            z-index: -1;
+            opacity: 0.3;
+            filter: blur(8px);
+        }
+
+        /* Modal customizado original */
+        #custom-modal .bg-gray-800 {
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Validação de campos original */
+        .text-green-400 {
+            color: #34d399;
+        }
+
+        .text-yellow-400 {
+            color: #fbbf24;
+        }
+
+        .text-red-400 {
+            color: #f87171;
+        }
