@@ -3425,6 +3425,29 @@ def api_csv_delete(filename):
 # MARKET VISION - ROTAS
 # ==========================================
 
+def sanitize_for_json(obj):
+    """Converte numpy types para tipos Python nativos para serialização JSON"""
+    import numpy as np
+    
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(sanitize_for_json(item) for item in obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.int32, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif hasattr(obj, 'item'):  # numpy scalars
+        return obj.item()
+    else:
+        return obj
+
 @app.route('/api/market-vision', methods=['GET'])
 def get_market_vision_api():
     """Retorna análise completa do mercado"""
@@ -3433,9 +3456,23 @@ def get_market_vision_api():
             return jsonify({'error': 'Market Vision não inicializado'}), 500
         
         symbol = request.args.get('symbol', 'BTC')
-        data = market_vision_service.get_dashboard_data(symbol)
         
-        return jsonify(data)
+        # Verificar se é para forçar dados frescos
+        force_fresh = request.args.get('fresh', 'true').lower() == 'true'
+        
+        if force_fresh:
+            # Limpar cache manualmente
+            market_vision_service._last_analysis = None
+            market_vision_service._last_analysis_time = None
+            logger.debug("Cache do Market Vision limpo manualmente")
+        
+        # Forçar dados frescos para API (sem cache)
+        data = market_vision_service.get_dashboard_data(symbol, use_cache=False)
+        
+        # Sanitizar dados para JSON
+        sanitized_data = sanitize_for_json(data)
+        
+        return jsonify(sanitized_data)
         
     except Exception as e:
         logger.error(f"Erro em /api/market-vision: {e}")

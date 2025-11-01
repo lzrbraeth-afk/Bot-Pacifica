@@ -1084,13 +1084,63 @@
     <!-- Market Vision Tab -->
     <div id="content-market-vision" class="hidden">
         
+        <!-- Seletor de Ativo -->
+        <div class="mb-6 bg-gray-800 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold">📊 Selecione o Ativo</h3>
+                <div class="flex gap-2">
+                    <button onclick="changeMarketVisionAsset('BTC')" 
+                            id="mv-asset-BTC"
+                            class="mv-asset-btn bg-blue-600 px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        BTC
+                    </button>
+                    <button onclick="changeMarketVisionAsset('ETH')" 
+                            id="mv-asset-ETH"
+                            class="mv-asset-btn bg-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                        ETH
+                    </button>
+                    <button onclick="changeMarketVisionAsset('SOL')" 
+                            id="mv-asset-SOL"
+                            class="mv-asset-btn bg-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                        SOL
+                    </button>
+                    <button onclick="changeMarketVisionAsset('BNB')" 
+                            id="mv-asset-BNB"
+                            class="mv-asset-btn bg-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                        BNB
+                    </button>
+                    <button onclick="changeMarketVisionAsset('HYPE')" 
+                            id="mv-asset-HYPE"
+                            class="mv-asset-btn bg-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                        HYPE
+                    </button>
+                    <button onclick="changeMarketVisionAsset('SUI')" 
+                            id="mv-asset-SUI"
+                            class="mv-asset-btn bg-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                        SUI
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-gray-400 text-sm">Auto-refresh:</span>
+                    <div class="flex items-center gap-2">
+                        <div id="mv-refresh-indicator" class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                        <span id="mv-last-update" class="text-xs text-gray-400">Carregando...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- Header com Score Global -->
         <div class="mb-6 bg-gradient-to-r from-blue-900 to-purple-900 rounded-2xl p-6">
             <div class="text-center">
-                <h2 class="text-3xl font-bold mb-2">🎯 ANÁLISE DE MERCADO</h2>
+                <h2 class="text-3xl font-bold mb-2">🎯 ANÁLISE DE MERCADO - <span id="mv-current-symbol">BTC</span></h2>
                 <div class="flex items-center justify-center gap-4 mb-4">
                     <span class="text-6xl font-bold" id="mv-global-score">-</span>
                     <span class="text-2xl">/10</span>
+                </div>
+                <div class="flex items-center justify-center gap-3 mb-2 text-sm">
+                    <span id="mv-global-direction" class="px-2 py-1 rounded bg-gray-700 text-gray-300">-</span>
+                    <span id="mv-global-confidence" class="px-2 py-1 rounded bg-gray-700 text-gray-300">Confiança: -%</span>
                 </div>
                 <div class="w-full bg-gray-700 rounded-full h-4 mb-4">
                     <div id="mv-score-bar" class="bg-green-500 h-4 rounded-full transition-all" style="width: 0%"></div>
@@ -1101,14 +1151,34 @@
             </div>
         </div>
         
-        <!-- Grid de Scores -->
-        <div class="grid grid-cols-5 gap-4 mb-6">
+        <!-- Heatmap / Confluência MTF -->
+        <div class="mb-6">
+            <h3 class="font-semibold mb-2">Confluência Multi-Timeframe</h3>
+            <div id="mv-mtf-heatmap" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+        </div>
+        
+        <!-- Grid de Scores - ATUALIZADO COM VOLATILIDADE -->
+        <div class="grid grid-cols-6 gap-4 mb-6">
             <div class="bg-gray-800 rounded-xl p-4 text-center">
                 <div class="text-sm text-gray-400 mb-2">📈 Técnico</div>
                 <div class="text-3xl font-bold" id="mv-tech-score">-</div>
                 <div class="text-xs mt-2">
                     <div id="mv-tech-rsi">RSI: -</div>
                     <div id="mv-tech-adx">ADX: -</div>
+                    <div id="mv-tech-macd">MACD: -</div>
+                    <div id="mv-tech-ema">EMA9/21: -</div>
+                </div>
+            </div>
+            
+            <!-- NOVA COLUNA DE VOLATILIDADE -->
+            <div class="bg-gray-800 rounded-xl p-4 text-center border-2" id="mv-volatility-card">
+                <div class="text-sm text-gray-400 mb-2">🌪️ Volatilidade</div>
+                <div class="text-3xl font-bold" id="mv-volatility-score">-</div>
+                <div class="text-xs mt-2 space-y-1">
+                    <div id="mv-volatility-status" class="font-semibold">⚪ Neutro</div>
+                    <div id="mv-volatility-atr" class="text-gray-400">ATR: -</div>
+                    <div id="mv-volatility-bbw" class="text-gray-400">BBW: -</div>
+                    <div id="mv-volatility-signal" class="text-xs italic mt-1">-</div>
                 </div>
             </div>
             
@@ -1118,6 +1188,7 @@
                 <div class="text-xs mt-2">
                     <div id="mv-vol-ratio">Ratio: -</div>
                     <div id="mv-vol-delta">Delta: -</div>
+                    <div id="mv-vol-poc">POC: -</div>
                 </div>
             </div>
             
@@ -1127,6 +1198,7 @@
                 <div class="text-xs mt-2">
                     <div id="mv-sent-funding">Funding: -</div>
                     <div id="mv-sent-oi">OI: -</div>
+                    <div id="mv-sent-orderbook">Orderbook: -</div>
                 </div>
             </div>
             
@@ -1138,6 +1210,38 @@
             <div class="bg-gray-800 rounded-xl p-4 text-center">
                 <div class="text-sm text-gray-400 mb-2">🛡️ Risco</div>
                 <div class="text-3xl font-bold" id="mv-risk-score">-</div>
+            </div>
+        </div>
+        
+        <!-- Painel de Detalhes de Volatilidade -->
+        <div id="mv-volatility-details" class="mb-6 bg-gray-800 rounded-xl p-4 border-l-4" style="border-color: gray;">
+            <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                <span id="mv-vol-emoji">🌪️</span>
+                Análise de Volatilidade
+            </h3>
+            <div class="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                    <div class="text-gray-400 mb-1">Bollinger Band Width</div>
+                    <div class="font-bold" id="mv-vol-bbw-detail">-</div>
+                    <div class="text-xs text-gray-500" id="mv-vol-bbw-percentile">-</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 mb-1">ATR (Average True Range)</div>
+                    <div class="font-bold" id="mv-vol-atr-detail">-</div>
+                    <div class="text-xs text-gray-500" id="mv-vol-atr-trend">-</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 mb-1">Bollinger Bands</div>
+                    <div class="text-xs space-y-1">
+                        <div>Upper: <span id="mv-bb-upper" class="font-mono">-</span></div>
+                        <div>Middle: <span id="mv-bb-middle" class="font-mono">-</span></div>
+                        <div>Lower: <span id="mv-bb-lower" class="font-mono">-</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 p-3 rounded bg-gray-700/50">
+                <div class="text-xs font-semibold text-gray-300 mb-1">� Recomendação:</div>
+                <div class="text-sm" id="mv-vol-recommendation">-</div>
             </div>
         </div>
         
@@ -1192,7 +1296,7 @@
             
             <!-- Botões de Ação -->
             <div class="grid grid-cols-3 gap-4 mt-6">
-                <button class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg"
+                <button id="mv-execute-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         onclick="executeMarketVisionTrade()">
                     ✅ Executar Trade
                 </button>
@@ -1207,6 +1311,12 @@
             </div>
         </div>
         
+        <!-- Checklist quando não há setup -->
+        <div id="mv-missing-conditions" class="hidden bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6"></div>
+
+        <!-- Mudanças recentes -->
+        <div id="mv-diff" class="hidden bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6"></div>
+
         <!-- Warnings -->
         <div id="mv-warnings" class="space-y-2"></div>
         

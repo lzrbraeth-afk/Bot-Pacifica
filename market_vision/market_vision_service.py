@@ -235,37 +235,49 @@ class MarketVisionService:
             'multi_timeframe': {}
         }
     
-    def get_dashboard_data(self, symbol: str = 'BTC') -> Dict:
+    def get_dashboard_data(self, symbol: str = 'BTC', use_cache: bool = True, cache_ttl: int = 30) -> Dict:
         """
         Obtém dados formatados para o dashboard web
+        
+        Args:
+            symbol: Símbolo para analisar
+            use_cache: Usar cache se disponível
+            cache_ttl: TTL do cache em segundos
         
         Returns:
             Dict pronto para serializar como JSON
         """
         
         try:
-            vision = self.get_market_vision(symbol, use_cache=True, cache_ttl=30)
+            vision = self.get_market_vision(symbol, use_cache=use_cache, cache_ttl=cache_ttl)
             
             analysis = vision.get('analysis', {})
             setup = vision.get('setup', {})
             
+            # Função auxiliar para conversão segura de scores
+            def safe_score(value, default=0.0):
+                if hasattr(value, 'item'):
+                    return float(value.item())
+                return float(value) if value is not None else default
+            
             # Formatar para dashboard
             dashboard_data = {
-                'timestamp': vision['timestamp'],
-                'symbol': vision['symbol'],
+                'timestamp': str(vision['timestamp']),
+                'symbol': str(vision['symbol']),
                 
                 # Score global
-                'global_score': analysis.get('global', {}).get('global_score', 0),
-                'global_status': analysis.get('global', {}).get('status', ''),
-                'global_direction': analysis.get('global', {}).get('direction', 'NEUTRO'),
-                'global_confidence': analysis.get('global', {}).get('confidence', 0),
+                'global_score': safe_score(analysis.get('global', {}).get('global_score', 0)),
+                'global_status': str(analysis.get('global', {}).get('status', '')),
+                'global_direction': str(analysis.get('global', {}).get('direction', 'NEUTRO')),
+                'global_confidence': safe_score(analysis.get('global', {}).get('confidence', 0)),
                 
                 # Scores por categoria
-                'technical_score': analysis.get('technical', {}).get('score', 0),
-                'volume_score': analysis.get('volume', {}).get('score', 0),
-                'sentiment_score': analysis.get('sentiment', {}).get('score', 0),
-                'structure_score': analysis.get('structure', {}).get('score', 0),
-                'risk_score': analysis.get('risk', {}).get('score', 0),
+                'technical_score': safe_score(analysis.get('technical', {}).get('score', 0)),
+                'volume_score': safe_score(analysis.get('volume', {}).get('score', 0)),
+                'sentiment_score': safe_score(analysis.get('sentiment', {}).get('score', 0)),
+                'structure_score': safe_score(analysis.get('structure', {}).get('score', 0)),
+                'risk_score': safe_score(analysis.get('risk', {}).get('score', 0)),
+                'volatility_score': safe_score(analysis.get('volatility', {}).get('score', 5.0)),
                 
                 # Detalhes técnicos
                 'technical_details': self._format_technical_details(analysis.get('technical', {})),
@@ -275,6 +287,9 @@ class MarketVisionService:
                 
                 # Detalhes de sentimento
                 'sentiment_details': self._format_sentiment_details(analysis.get('sentiment', {})),
+                
+                # Detalhes de volatilidade
+                'volatility_details': self._format_volatility_details(analysis.get('volatility', {})),
                 
                 # Setup
                 'has_setup': setup.get('has_setup', False),
@@ -299,16 +314,22 @@ class MarketVisionService:
         indicators = technical.get('indicators', {})
         details = technical.get('details', {})
         
+        # Função auxiliar para conversão segura
+        def safe_float(value, default=0.0):
+            if hasattr(value, 'item'):
+                return float(value.item())
+            return float(value) if value is not None else default
+        
         return {
-            'rsi': indicators.get('rsi_14', 0),
-            'rsi_status': details.get('rsi', {}).get('status', ''),
-            'ema9': indicators.get('ema_9', 0),
-            'ema21': indicators.get('ema_21', 0),
-            'ema_status': details.get('ema', {}).get('status', ''),
-            'adx': indicators.get('adx', 0),
-            'adx_status': details.get('adx', {}).get('status', ''),
-            'macd': indicators.get('macd', 0),
-            'macd_status': details.get('macd', {}).get('status', '')
+            'rsi': safe_float(indicators.get('rsi_14', 0)),
+            'rsi_status': str(details.get('rsi', {}).get('status', '')),
+            'ema9': safe_float(indicators.get('ema_9', 0)),
+            'ema21': safe_float(indicators.get('ema_21', 0)),
+            'ema_status': str(details.get('ema', {}).get('status', '')),
+            'adx': safe_float(indicators.get('adx', 0)),
+            'adx_status': str(details.get('adx', {}).get('status', '')),
+            'macd': safe_float(indicators.get('macd', 0)),
+            'macd_status': str(details.get('macd', {}).get('status', ''))
         }
     
     def _format_volume_details(self, volume: Dict) -> Dict:
@@ -317,13 +338,19 @@ class MarketVisionService:
         metrics = volume.get('metrics', {})
         details = volume.get('details', {})
         
+        # Função auxiliar para conversão segura
+        def safe_float(value, default=0.0):
+            if hasattr(value, 'item'):
+                return float(value.item())
+            return float(value) if value is not None else default
+        
         return {
-            'current_volume': metrics.get('current', 0),
-            'volume_ratio': metrics.get('ratio', 0),
-            'volume_status': details.get('volume_abs', {}).get('status', ''),
-            'delta': metrics.get('delta', 0),
-            'delta_status': details.get('delta', {}).get('status', ''),
-            'poc': volume.get('profile', {}).get('poc', 0)
+            'current_volume': safe_float(metrics.get('current', 0)),
+            'volume_ratio': safe_float(metrics.get('ratio', 0)),
+            'volume_status': str(details.get('volume_abs', {}).get('status', '')),
+            'delta': safe_float(metrics.get('delta', 0)),
+            'delta_status': str(details.get('delta', {}).get('status', '')),
+            'poc': safe_float(volume.get('profile', {}).get('poc', 0))
         }
     
     def _format_sentiment_details(self, sentiment: Dict) -> Dict:
@@ -331,13 +358,19 @@ class MarketVisionService:
         
         details = sentiment.get('details', {})
         
+        # Função auxiliar para conversão segura
+        def safe_float(value, default=0.0):
+            if hasattr(value, 'item'):
+                return float(value.item())
+            return float(value) if value is not None else default
+        
         return {
-            'funding_rate': details.get('funding', {}).get('value', 0),
-            'funding_status': details.get('funding', {}).get('status', ''),
-            'oi_change': details.get('open_interest', {}).get('change', 0),
-            'oi_status': details.get('open_interest', {}).get('status', ''),
-            'bid_ask_ratio': details.get('orderbook', {}).get('ratio', 1.0),
-            'orderbook_status': details.get('orderbook', {}).get('status', '')
+            'funding_rate': safe_float(details.get('funding', {}).get('value', 0)),
+            'funding_status': str(details.get('funding', {}).get('status', '')),
+            'oi_change': safe_float(details.get('open_interest', {}).get('change', 0)),
+            'oi_status': str(details.get('open_interest', {}).get('status', '')),
+            'bid_ask_ratio': safe_float(details.get('orderbook', {}).get('ratio', 1.0)),
+            'orderbook_status': str(details.get('orderbook', {}).get('status', ''))
         }
     
     def _format_mtf_summary(self, mtf_data: Dict) -> Dict:
@@ -346,16 +379,61 @@ class MarketVisionService:
         if not mtf_data:
             return {}
         
+        # Função auxiliar para conversão segura
+        def safe_score(value, default=0.0):
+            if hasattr(value, 'item'):
+                return float(value.item())
+            return float(value) if value is not None else default
+        
         summary = {}
         for tf, data in mtf_data.items():
             global_data = data.get('global', {})
-            summary[tf] = {
-                'score': global_data.get('global_score', 0),
-                'direction': global_data.get('direction', 'NEUTRO'),
-                'status': global_data.get('status', '')
+            summary[str(tf)] = {
+                'score': safe_score(global_data.get('global_score', 0)),
+                'direction': str(global_data.get('direction', 'NEUTRO')),
+                'status': str(global_data.get('status', ''))
             }
         
         return summary
+    
+    def _format_volatility_details(self, volatility: Dict) -> Dict:
+        """Formata detalhes de volatilidade para dashboard"""
+        
+        bbw = volatility.get('bbw', {})
+        atr = volatility.get('atr', {})
+        state = volatility.get('state', {})
+        bb = volatility.get('bollinger_bands', {})
+        details = volatility.get('details', {})
+        
+        # Função auxiliar para garantir conversão de tipos numpy
+        def safe_convert(value, default=0):
+            if hasattr(value, 'item'):  # numpy scalar
+                return value.item()
+            elif hasattr(value, 'tolist'):  # numpy array
+                return value.tolist() if len(value.shape) > 0 else float(value)
+            return value if value is not None else default
+        
+        return {
+            'score': float(safe_convert(volatility.get('score', 5.0))),
+            'bbw_current': float(safe_convert(bbw.get('current', 0))),
+            'bbw_percentile': float(safe_convert(bbw.get('percentile', 50))),
+            'bbw_status': str(bbw.get('status', '⚪ Neutro')),
+            'bbw_description': str(bbw.get('description', '')),
+            'atr_value': float(safe_convert(atr.get('value', 0))),
+            'atr_trend': int(safe_convert(atr.get('trend', 0))),
+            'atr_symbol': str(atr.get('symbol', '→')),
+            'state_emoji': str(state.get('emoji', '⚪')),
+            'state_color': str(state.get('color', 'gray')),
+            'state_signal': str(state.get('signal', 'neutral')),
+            'recommendation': str(state.get('recommendation', '')),
+            'compression_detected': bool(safe_convert(details.get('compression_detected', False))),
+            'expansion_detected': bool(safe_convert(details.get('expansion_detected', False))),
+            'high_volatility': bool(safe_convert(details.get('high_volatility', False))),
+            'bb_upper': float(safe_convert(bb.get('upper', 0))),
+            'bb_middle': float(safe_convert(bb.get('middle', 0))),
+            'bb_lower': float(safe_convert(bb.get('lower', 0))),
+            'bb_position': str(bb.get('position', 'middle'))
+        }
     
     def _collect_all_warnings(self, analysis: Dict) -> list:
         """Coleta todos os warnings de todas as categorias"""

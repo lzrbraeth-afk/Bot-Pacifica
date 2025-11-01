@@ -5010,6 +5010,14 @@ ${error.stack || ''}
                 loadSymbolsForConfig();
             }, 500);
         }
+        
+        // Controlar auto-refresh do Market Vision
+        if (tab === 'market-vision') {
+            loadMarketVision(currentMarketVisionSymbol);
+            startMarketVisionAutoRefresh();
+        } else {
+            stopMarketVisionAutoRefresh();
+        }
     };
 
     // ========== FUNÇÕES PARA SÍMBOLOS MULTISELECT ==========
@@ -5203,27 +5211,116 @@ ${error.stack || ''}
     console.log('✅ Sistema de símbolos dinâmicos carregado');
 
 // ==========================================
-// MARKET VISION
+// MARKET VISION - VERSÃO ATUALIZADA
 // ==========================================
 
 let currentMarketVision = null;
+let currentMarketVisionSymbol = 'BTC';
+let marketVisionRefreshInterval = null;
 
-function loadMarketVision() {
-    fetch('/api/market-vision?symbol=BTC')
+// Iniciar refresh automático
+function startMarketVisionAutoRefresh() {
+    // Limpar intervalo existente
+    if (marketVisionRefreshInterval) {
+        clearInterval(marketVisionRefreshInterval);
+    }
+    
+    // Refresh a cada 30 segundos
+    marketVisionRefreshInterval = setInterval(() => {
+        if (currentTab === 'market-vision') {
+            console.log('🔄 Auto-refresh Market Vision');
+            loadMarketVision(currentMarketVisionSymbol);
+        }
+    }, 30000);
+    
+    console.log('✅ Auto-refresh Market Vision ativado (30s)');
+}
+
+// Parar refresh automático
+function stopMarketVisionAutoRefresh() {
+    if (marketVisionRefreshInterval) {
+        clearInterval(marketVisionRefreshInterval);
+        marketVisionRefreshInterval = null;
+        console.log('⏸️ Auto-refresh Market Vision pausado');
+    }
+}
+
+function loadMarketVision(symbol = 'BTC') {
+    currentMarketVisionSymbol = symbol;
+    
+    // Atualizar indicador de loading
+    const indicator = document.getElementById('mv-refresh-indicator');
+    if (indicator) {
+        indicator.classList.remove('bg-green-500');
+        indicator.classList.add('bg-yellow-500');
+    }
+    
+    fetch(`/api/market-vision?symbol=${symbol}&fresh=true`)
         .then(response => response.json())
         .then(data => {
             currentMarketVision = data;
             updateMarketVisionUI(data);
+            
+            // Atualizar timestamp
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('pt-BR');
+            document.getElementById('mv-last-update').textContent = `Última atualização: ${timeStr}`;
+            
+            // Indicador verde
+            if (indicator) {
+                indicator.classList.remove('bg-yellow-500');
+                indicator.classList.add('bg-green-500');
+            }
         })
         .catch(error => {
             console.error('Erro ao carregar Market Vision:', error);
+            
+            // Indicador vermelho em caso de erro
+            if (indicator) {
+                indicator.classList.remove('bg-yellow-500', 'bg-green-500');
+                indicator.classList.add('bg-red-500');
+            }
         });
+}
+
+function changeMarketVisionAsset(symbol) {
+    // Atualizar botões
+    document.querySelectorAll('.mv-asset-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600');
+        btn.classList.add('bg-gray-700');
+    });
+    
+    const btn = document.getElementById(`mv-asset-${symbol}`);
+    if (btn) {
+        btn.classList.remove('bg-gray-700');
+        btn.classList.add('bg-blue-600');
+    }
+    
+    // Atualizar símbolo exibido
+    document.getElementById('mv-current-symbol').textContent = symbol;
+    
+    // Carregar nova análise
+    loadMarketVision(symbol);
 }
 
 function updateMarketVisionUI(data) {
     // Score global
     document.getElementById('mv-global-score').textContent = data.global_score.toFixed(1);
     document.getElementById('mv-global-status').textContent = data.global_status;
+    // Direção e confiança
+    const dirEl = document.getElementById('mv-global-direction');
+    const confEl = document.getElementById('mv-global-confidence');
+    if (dirEl) {
+        dirEl.textContent = data.global_direction || '-';
+        let cls = 'px-2 py-1 rounded border ';
+        if (data.global_direction === 'LONG') cls += 'bg-green-800/40 text-green-200 border-green-500/40';
+        else if (data.global_direction === 'SHORT') cls += 'bg-red-800/40 text-red-200 border-red-500/40';
+        else cls += 'bg-gray-700 text-gray-300 border-gray-600';
+        dirEl.className = cls;
+    }
+    if (confEl && typeof data.global_confidence === 'number') {
+        confEl.textContent = `Confiança: ${data.global_confidence.toFixed(0)}%`;
+    }
     
     const scoreBar = document.getElementById('mv-score-bar');
     const percentage = (data.global_score / 10) * 100;
@@ -5245,22 +5342,141 @@ function updateMarketVisionUI(data) {
     document.getElementById('mv-struct-score').textContent = data.structure_score.toFixed(1);
     document.getElementById('mv-risk-score').textContent = data.risk_score.toFixed(1);
     
+    // ==========================================
+    // NOVO: VOLATILIDADE
+    // ==========================================
+    if (data.volatility_score !== undefined && data.volatility_details) {
+        const vd = data.volatility_details;
+        
+        // Score
+        document.getElementById('mv-volatility-score').textContent = data.volatility_score.toFixed(1);
+        
+        // Status com emoji
+        document.getElementById('mv-volatility-status').textContent = vd.bbw_status || '⚪ Neutro';
+        
+        // ATR
+        const atrSymbol = vd.atr_symbol || '→';
+        document.getElementById('mv-volatility-atr').textContent = `ATR: ${vd.atr_value.toFixed(0)} ${atrSymbol}`;
+        
+        // BBW
+        document.getElementById('mv-volatility-bbw').textContent = `BBW: ${vd.bbw_current.toFixed(4)}`;
+        
+        // Signal/Description curto
+        let shortSignal = '';
+        if (vd.compression_detected) shortSignal = 'Compressão';
+        else if (vd.expansion_detected) shortSignal = 'Expansão';
+        else if (vd.high_volatility) shortSignal = 'Alta Vol';
+        else shortSignal = 'Neutro';
+        document.getElementById('mv-volatility-signal').textContent = shortSignal;
+        
+        // Card border color
+        const card = document.getElementById('mv-volatility-card');
+        if (card) {
+            const colorMap = {
+                'green': 'border-green-500',
+                'yellow': 'border-yellow-500',
+                'red': 'border-red-500',
+                'gray': 'border-gray-600'
+            };
+            // Remover todas as classes de cor
+            Object.values(colorMap).forEach(c => card.classList.remove(c));
+            // Adicionar cor apropriada
+            const borderClass = colorMap[vd.state_color] || colorMap['gray'];
+            card.classList.add(borderClass);
+        }
+        
+        // Painel de detalhes
+        document.getElementById('mv-vol-emoji').textContent = vd.state_emoji || '🌪️';
+        document.getElementById('mv-vol-bbw-detail').textContent = vd.bbw_current.toFixed(4);
+        document.getElementById('mv-vol-bbw-percentile').textContent = `Percentil ${vd.bbw_percentile.toFixed(0)}% - ${vd.bbw_description}`;
+        
+        const atrTrendText = vd.atr_trend > 0 ? 'Aumentando' : vd.atr_trend < 0 ? 'Diminuindo' : 'Estável';
+        document.getElementById('mv-vol-atr-detail').textContent = `${vd.atr_value.toFixed(2)} ${vd.atr_symbol}`;
+        document.getElementById('mv-vol-atr-trend').textContent = atrTrendText;
+        
+        document.getElementById('mv-bb-upper').textContent = `$${vd.bb_upper.toFixed(2)}`;
+        document.getElementById('mv-bb-middle').textContent = `$${vd.bb_middle.toFixed(2)}`;
+        document.getElementById('mv-bb-lower').textContent = `$${vd.bb_lower.toFixed(2)}`;
+        
+        document.getElementById('mv-vol-recommendation').textContent = vd.recommendation || '-';
+        
+        // Cor do painel de detalhes (borda esquerda)
+        const detailsPanel = document.getElementById('mv-volatility-details');
+        if (detailsPanel) {
+            const colorHex = {
+                'green': '#10b981',
+                'yellow': '#f59e0b',
+                'red': '#ef4444',
+                'gray': '#6b7280'
+            };
+            detailsPanel.style.borderColor = colorHex[vd.state_color] || colorHex['gray'];
+        }
+    }
+    
     // Detalhes técnicos
     if (data.technical_details) {
         document.getElementById('mv-tech-rsi').textContent = `RSI: ${data.technical_details.rsi.toFixed(0)}`;
         document.getElementById('mv-tech-adx').textContent = `ADX: ${data.technical_details.adx.toFixed(0)}`;
+        if (document.getElementById('mv-tech-macd')) {
+            const macdVal = typeof data.technical_details.macd === 'number' ? data.technical_details.macd.toFixed(2) : '-';
+            const macdStatus = data.technical_details.macd_status || '';
+            document.getElementById('mv-tech-macd').textContent = `MACD: ${macdVal} ${macdStatus ? `(${macdStatus})` : ''}`;
+        }
+        if (document.getElementById('mv-tech-ema')) {
+            const e9 = typeof data.technical_details.ema9 === 'number' ? data.technical_details.ema9.toFixed(0) : '-';
+            const e21 = typeof data.technical_details.ema21 === 'number' ? data.technical_details.ema21.toFixed(0) : '-';
+            const emaStatus = data.technical_details.ema_status || '';
+            document.getElementById('mv-tech-ema').textContent = `EMA9/21: ${e9}/${e21} ${emaStatus ? `- ${emaStatus}` : ''}`;
+        }
     }
     
     // Detalhes de volume
     if (data.volume_details) {
         document.getElementById('mv-vol-ratio').textContent = `Ratio: ${data.volume_details.volume_ratio.toFixed(2)}x`;
         document.getElementById('mv-vol-delta').textContent = `Delta: ${data.volume_details.delta > 0 ? '+' : ''}${(data.volume_details.delta).toFixed(0)}`;
+        if (document.getElementById('mv-vol-poc') && typeof data.volume_details.poc === 'number') {
+            document.getElementById('mv-vol-poc').textContent = `POC: $${data.volume_details.poc.toFixed(0)}`;
+        }
     }
     
     // Detalhes de sentimento
     if (data.sentiment_details) {
         document.getElementById('mv-sent-funding').textContent = `Funding: ${(data.sentiment_details.funding_rate * 100).toFixed(3)}%`;
         document.getElementById('mv-sent-oi').textContent = `OI: ${(data.sentiment_details.oi_change * 100).toFixed(1)}%`;
+        if (document.getElementById('mv-sent-orderbook')) {
+            document.getElementById('mv-sent-orderbook').textContent = `Orderbook: ${data.sentiment_details.orderbook_status || '-'}`;
+        }
+    }
+    
+    // Heatmap MTF (sempre visível)
+    if (data.mtf_summary) {
+        const order = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d'];
+        const entries = Object.entries(data.mtf_summary).sort((a, b) => {
+            const ia = order.indexOf(a[0]);
+            const ib = order.indexOf(b[0]);
+            return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        });
+        const heatEl = document.getElementById('mv-mtf-heatmap');
+        if (heatEl) {
+            const statusToColor = (s = '') => {
+                if (s.includes('🟢')) return 'bg-green-600/70';
+                if (s.includes('🟡')) return 'bg-yellow-600/70';
+                if (s.includes('🔴') || s.includes('🟥')) return 'bg-red-600/70';
+                return 'bg-gray-600/70';
+            };
+            heatEl.innerHTML = entries.map(([tf, info]) => {
+                const color = statusToColor(info.status || '');
+                const score = typeof info.score === 'number' ? info.score.toFixed(1) : '-';
+                return `
+                    <div class=\"rounded p-2 text-center bg-gray-800\">
+                        <div class=\"text-xs text-gray-300 mb-1\">${tf}</div>
+                        <div class=\"${color} rounded px-2 py-1 text-xs font-semibold\">${(info.status || info.direction || '-')}
+                        </div>
+                        <div class=\"text-[10px] text-gray-400 mt-1\">${score}/10</div>
+                    </div>
+                `;
+            }).join('');
+        }
     }
     
     // Setup
@@ -5305,6 +5521,100 @@ function updateMarketVisionUI(data) {
         document.getElementById('mv-setup-panel').style.display = 'none';
     }
     
+    // Checklist quando não há setup
+    (function(){
+        const checklistEl = document.getElementById('mv-missing-conditions');
+        if (!checklistEl) return;
+        if (!data.has_setup) {
+            const missing = [];
+            const td = data.technical_details || {};
+            const vd = data.volume_details || {};
+            const sd = data.sentiment_details || {};
+            const mtf = data.mtf_summary || {};
+            const volD = data.volatility_details || {};
+            
+            if ((td.ema_status || '').toLowerCase().includes('abaixo')) missing.push('Aguardar fechamento acima das EMAs 9/21');
+            if ((td.macd_status || '').toLowerCase().includes('bearish')) missing.push('MACD virar positivo/cruzar sinal pra cima');
+            if ((vd.delta_status || '').toLowerCase().includes('vendedor')) missing.push('Delta enfraquecer/virar comprador');
+            if (!((sd.orderbook_status || '').toLowerCase().includes('compradora'))) missing.push('Orderbook indicar pressão compradora');
+            if (volD.high_volatility) missing.push('Aguardar redução da volatilidade extrema');
+            
+            const globalDir = data.global_direction;
+            const aligned = Object.values(mtf).filter(i => i && i.direction && i.direction !== 'NEUTRO' && i.direction === globalDir).length;
+            if (aligned < 2) missing.push('Alinhar MTF com a direção global (≥2 TF)');
+            if (missing.length > 0) {
+                checklistEl.classList.remove('hidden');
+                checklistEl.innerHTML = `<div class="font-semibold mb-2">Sem setup no momento — o que falta:</div><ul class="list-disc list-inside text-sm text-gray-300">${missing.map(m => `<li>${m}</li>`).join('')}</ul>`;
+            } else {
+                checklistEl.classList.add('hidden');
+                checklistEl.innerHTML = '';
+            }
+        } else {
+            checklistEl.classList.add('hidden');
+            checklistEl.innerHTML = '';
+        }
+    })();
+
+    // Gating do botão Executar Trade (regras simples)
+    (function(){
+        const execBtn = document.getElementById('mv-execute-btn');
+        if (!execBtn) return;
+        const mtf = data.mtf_summary || {};
+        const globalDir = data.global_direction;
+        const aligned = Object.values(mtf).filter(i => i && i.direction && i.direction !== 'NEUTRO' && i.direction === globalDir).length;
+        const enabled = (data.has_setup && data.setup) && (aligned >= 2) && (data.global_score >= 6) && (data.risk_score >= 6);
+        execBtn.disabled = !enabled;
+    })();
+
+    // Mudanças recentes
+    (function(){
+        const diffEl = document.getElementById('mv-diff');
+        if (!diffEl) return;
+        const prev = window.prevMarketVision || null;
+        if (prev) {
+            const diffs = [];
+            if (prev.global_direction !== data.global_direction) {
+                diffs.push(`Direção mudou: ${prev.global_direction || '-'} → ${data.global_direction || '-'}`);
+            }
+            if (typeof prev.global_score === 'number' && typeof data.global_score === 'number') {
+                const ds = (data.global_score - prev.global_score);
+                if (Math.abs(ds) >= 0.3) diffs.push(`Score ${ds > 0 ? '+' : ''}${ds.toFixed(1)}`);
+            }
+            
+            // Novo: diff de volatilidade
+            const prevVol = prev.volatility_details?.bbw_status || '';
+            const currVol = data.volatility_details?.bbw_status || '';
+            if (prevVol !== currVol) {
+                diffs.push(`Volatilidade: ${prevVol || '-'} → ${currVol || '-'}`);
+            }
+            
+            const prevDelta = (prev.volume_details && typeof prev.volume_details.delta === 'number') ? prev.volume_details.delta : 0;
+            const currDelta = (data.volume_details && typeof data.volume_details.delta === 'number') ? data.volume_details.delta : 0;
+            if (Math.sign(prevDelta) !== Math.sign(currDelta) && Math.sign(currDelta) !== 0) {
+                diffs.push(`Delta inverteu para ${currDelta > 0 ? 'COMPRADOR' : 'VENDEDOR'}`);
+            }
+            if ((prev.sentiment_details?.orderbook_status || '') !== (data.sentiment_details?.orderbook_status || '')) {
+                diffs.push(`Orderbook: ${(prev.sentiment_details?.orderbook_status || '-') } → ${(data.sentiment_details?.orderbook_status || '-')}`);
+            }
+            if ((prev.sentiment_details?.funding_status || '') !== (data.sentiment_details?.funding_status || '')) {
+                diffs.push(`Funding: ${(prev.sentiment_details?.funding_status || '-') } → ${(data.sentiment_details?.funding_status || '-')}`);
+            }
+            if (diffs.length > 0) {
+                diffEl.classList.remove('hidden');
+                diffEl.innerHTML = `<div class="font-semibold mb-2">Mudanças desde a última leitura</div><ul class="list-disc list-inside text-sm text-gray-300">${diffs.map(d => `<li>${d}</li>`).join('')}</ul>`;
+            } else {
+                diffEl.classList.add('hidden');
+                diffEl.innerHTML = '';
+            }
+        } else {
+            diffEl.classList.add('hidden');
+            diffEl.innerHTML = '';
+        }
+    })();
+
+    // Guardar para próximo diff
+    window.prevMarketVision = data;
+
     // Warnings
     const warningsContainer = document.getElementById('mv-warnings');
     if (data.warnings && data.warnings.length > 0) {
@@ -5426,4 +5736,4 @@ function modifyMarketVisionSetup() {
     });
 }
 
-console.log('✅ Market Vision JavaScript carregado');
+console.log('✅ Market Vision JavaScript atualizado - v2.0 com Volatilidade e Seletor de Ativos');

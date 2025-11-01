@@ -14,6 +14,7 @@ from ..indicators.volume_analyzer import VolumeAnalyzer
 from ..indicators.sentiment_analyzer import SentimentAnalyzer
 from ..indicators.structure_analyzer import StructureAnalyzer
 from ..indicators.risk_analyzer import RiskAnalyzer
+from ..indicators.volatility_analyzer import VolatilityAnalyzer
 from .scoring_engine import ScoringEngine
 
 
@@ -38,6 +39,7 @@ class MarketAnalyzer:
         self.sentiment_analyzer = SentimentAnalyzer(logger=self.logger)
         self.structure_analyzer = StructureAnalyzer(logger=self.logger)
         self.risk_analyzer = RiskAnalyzer(logger=self.logger)
+        self.volatility_analyzer = VolatilityAnalyzer(logger=self.logger)
         
         # Scoring engine
         weights = self.config.get('scoring_weights', None)
@@ -130,7 +132,17 @@ class MarketAnalyzer:
             )
             
             # ==================
-            # 6. SCORE GLOBAL
+            # 6. ANÁLISE DE VOLATILIDADE
+            # ==================
+            self.logger.debug("Executando análise de volatilidade...")
+
+            # Pegar ATR da análise técnica
+            atr_value = technical_result.get('indicators', {}).get('atr', None)
+
+            volatility_result = self.volatility_analyzer.analyze(ohlcv_df, atr=atr_value)
+            
+            # ==================
+            # 7. SCORE GLOBAL
             # ==================
             self.logger.debug("Calculando score global...")
             
@@ -139,7 +151,8 @@ class MarketAnalyzer:
                 'volume': volume_result,
                 'sentiment': sentiment_result,
                 'structure': structure_result,
-                'risk': risk_result
+                'risk': risk_result,
+                'volatility': volatility_result
             }
             
             global_result = self.scoring_engine.calculate_global_score(analysis_results)
@@ -164,6 +177,7 @@ class MarketAnalyzer:
                 'sentiment': sentiment_result,
                 'structure': structure_result,
                 'risk': risk_result,
+                'volatility': volatility_result,
                 
                 # Metadados
                 'metadata': {

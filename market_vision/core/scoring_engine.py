@@ -14,11 +14,12 @@ class ScoringEngine:
     
     # Pesos padrão para cada categoria (devem somar 1.0)
     DEFAULT_WEIGHTS = {
-        'technical': 0.30,      # 30% - Indicadores técnicos
-        'volume': 0.25,         # 25% - Volume e order flow
-        'sentiment': 0.20,      # 20% - Sentiment (funding, OI, orderbook)
+        'technical': 0.25,      # 25% - Indicadores técnicos
+        'volume': 0.20,         # 20% - Volume e order flow
+        'sentiment': 0.15,      # 15% - Sentiment (funding, OI, orderbook)
         'structure': 0.15,      # 15% - Estrutura e padrões
-        'risk': 0.10            # 10% - Gestão de risco
+        'risk': 0.15,           # 15% - Gestão de risco
+        'volatility': 0.10      # 10% - Análise de volatilidade
     }
     
     def __init__(self, weights: Optional[Dict[str, float]] = None,
@@ -255,7 +256,8 @@ class ScoringEngine:
             'volume': 'Volume e Order Flow',
             'sentiment': 'Sentimento de Mercado',
             'structure': 'Estrutura e Padrões',
-            'risk': 'Gestão de Risco'
+            'risk': 'Gestão de Risco',
+            'volatility': 'Análise de Volatilidade'
         }
         return labels.get(category, category.title())
     
@@ -265,7 +267,7 @@ class ScoringEngine:
         """
         
         lines = []
-        for category in ['technical', 'volume', 'sentiment', 'structure', 'risk']:
+        for category in ['technical', 'volume', 'sentiment', 'structure', 'risk', 'volatility']:
             if category in scores:
                 score = scores[category]
                 weight = weights[category]
